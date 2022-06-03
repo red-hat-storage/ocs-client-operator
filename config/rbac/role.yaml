@@ -7,6 +7,14 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - odf.openshift.io
   resources:
   - ocsclients
@@ -32,3 +40,35 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - storageclassclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - storageclassclaims/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

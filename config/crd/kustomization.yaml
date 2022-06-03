@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/odf.openshift.io_ocsclients.yaml
+- bases/odf.openshift.io_storageclassclaims.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

@@ -11,6 +11,14 @@ metadata:
             "name": "ocsclient-sample"
           },
           "spec": null
+        },
+        {
+          "apiVersion": "odf.openshift.io/v1alpha1",
+          "kind": "StorageClassClaim",
+          "metadata": {
+            "name": "storageclassclaim-sample"
+          },
+          "spec": null
         }
       ]
     capabilities: Basic Install
@@ -29,6 +37,11 @@ spec:
       kind: OcsClient
       name: ocsclients.odf.openshift.io
       version: v1alpha1
+    - description: StorageClassClaim is the Schema for the storageclassclaims API
+      displayName: Storage Class Claim
+      kind: StorageClassClaim
+      name: storageclassclaims.odf.openshift.io
+      version: v1alpha1
   description: foo
   displayName: OpenShift Data Foundation Client
   icon:
@@ -38,6 +51,14 @@ spec:
     spec:
       clusterPermissions:
       - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumes
+          verbs:
+          - get
+          - list
+          - watch
         - apiGroups:
           - odf.openshift.io
           resources:
@@ -64,6 +85,38 @@ spec:
           - get
           - patch
           - update
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - storageclassclaims
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - storageclassclaims/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
         - apiGroups:
           - authentication.k8s.io
           resources:

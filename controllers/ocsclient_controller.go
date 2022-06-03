@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -30,15 +31,19 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -63,13 +68,30 @@ type OcsClientReconciler struct {
 //+kubebuilder:rbac:groups=odf.openshift.io,resources=ocsclients,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=odf.openshift.io,resources=ocsclients/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=odf.openshift.io,resources=ocsclients/finalizers,verbs=update
+//+kubebuilder:rbac:groups=odf.openshift.io,resources=storageclassclaims,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=odf.openshift.io,resources=storageclassclaims/status,verbs=get;update;patch
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OcsClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	annotationMapFunc := handler.EnqueueRequestsFromMapFunc(
+		func(obj client.Object) []reconcile.Request {
+			annotations := obj.GetAnnotations()
+			if annotation, found := annotations[ocsClientAnnotation]; found {
+				parts := strings.Split(annotation, "/")
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Namespace: parts[0],
+						Name:      parts[1],
+					},
+				}}
+			}
+			return []reconcile.Request{}
+		})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.OcsClient{}, builder.WithPredicates(
 			predicate.GenerationChangedPredicate{},
 		)).
+		Watches(&source.Kind{Type: &v1alpha1.StorageClassClaim{}}, annotationMapFunc).
 		Complete(r)
 }
 
@@ -392,8 +414,62 @@ func (r *OcsClientReconciler) logGrpcErrorAndReportEvent(instance *v1alpha1.OcsC
 	}
 }
 
-// TODO: claims should be created only once and should not be created/updated again if user deletes/update it.
+func (r *OcsClientReconciler) createAndOwnStorageClassClaim(instance *v1alpha1.OcsClient, claim *v1alpha1.StorageClassClaim) error {
+
+	err := controllerutil.SetOwnerReference(instance, claim, r.Client.Scheme())
+	if err != nil {
+		return err
+	}
+
+	claim.Annotations = map[string]string{
+		ocsClientAnnotation: fmt.Sprintf("%s/%s", instance.Namespace, instance.Name),
+	}
+
+	err = r.Client.Create(context.TODO(), claim)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+// claims should be created only once and should not be created/updated again if user deletes/update it.
 func (r *OcsClientReconciler) createDefaultStorageClassClaims(instance *v1alpha1.OcsClient) error {
+
+	storageClassClaimFile := &v1alpha1.StorageClassClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      generateNameForCephFilesystemSC(instance.Name),
+			Namespace: instance.Namespace,
+			Labels:    map[string]string{
+				//defaultStorageClassClaimLabel: "true",
+			},
+		},
+		Spec: v1alpha1.StorageClassClaimSpec{
+			Type: "sharedfilesystem",
+		},
+	}
+
+	storageClassClaimBlock := &v1alpha1.StorageClassClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      generateNameForCephBlockPoolSC(instance.Name),
+			Namespace: instance.Namespace,
+			Labels:    map[string]string{
+				//defaultStorageClassClaimLabel: "true",
+			},
+		},
+		Spec: v1alpha1.StorageClassClaimSpec{
+			Type: "blockpool",
+		},
+	}
+
+	err := r.createAndOwnStorageClassClaim(instance, storageClassClaimFile)
+	if err != nil {
+		return err
+	}
+
+	err = r.createAndOwnStorageClassClaim(instance, storageClassClaimBlock)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

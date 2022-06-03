@@ -15,6 +15,11 @@ spec:
       kind: OcsClient
       name: ocsclients.odf.openshift.io
       version: v1alpha1
+    - description: StorageClassClaim is the Schema for the storageclassclaims API
+      displayName: Storage Class Claim
+      kind: StorageClassClaim
+      name: storageclassclaims.odf.openshift.io
+      version: v1alpha1
   description: foo
   displayName: OpenShift Data Foundation Client
   icon:
