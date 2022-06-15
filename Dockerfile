@@ -14,6 +14,7 @@ COPY main.go Makefile ./
 COPY hack/ hack/
 COPY api/ api/
 COPY controllers/ controllers/
+COPY pkg/ pkg/
 COPY config/ config/
 
 # Run tests and linting
