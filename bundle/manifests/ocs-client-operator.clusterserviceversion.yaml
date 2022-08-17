@@ -2,7 +2,17 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
   annotations:
-    alm-examples: '[]'
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "odf.openshift.io/v1alpha1",
+          "kind": "OcsClient",
+          "metadata": {
+            "name": "ocsclient-sample"
+          },
+          "spec": null
+        }
+      ]
     capabilities: Basic Install
     olm.skipRange: ""
     operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
@@ -12,9 +22,15 @@ metadata:
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
-  customresourcedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: OcsClient is the Schema for the ocsclients API
+      displayName: Ocs Client
+      kind: OcsClient
+      name: ocsclients.odf.openshift.io
+      version: v1alpha1
   description: foo
-  displayName: OpenShift Data Foundation Client Operator
+  displayName: OpenShift Data Foundation Client
   icon:
   - base64data: ""
     mediatype: ""
@@ -22,6 +38,32 @@ spec:
     spec:
       clusterPermissions:
       - rules:
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - ocsclients
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - ocsclients/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - ocsclients/status
+          verbs:
+          - get
+          - patch
+          - update
         - apiGroups:
           - authentication.k8s.io
           resources:

@@ -8,7 +8,13 @@ metadata:
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
-  customresourcedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: OcsClient is the Schema for the ocsclients API
+      displayName: Ocs Client
+      kind: OcsClient
+      name: ocsclients.odf.openshift.io
+      version: v1alpha1
   description: foo
   displayName: OpenShift Data Foundation Client
   icon:

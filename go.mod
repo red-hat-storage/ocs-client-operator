@@ -8,6 +8,8 @@ replace (
 	github.com/red-hat-storage/ocs-operator/services/provider => github.com/jarrpa/ocs-operator/services/provider v1.4.12-0.rc2
 )
 
+require github.com/red-hat-storage/ocs-operator/services/provider v1.4.12-0.rc2
+
 // === Rook hacks ===
 
 // This tag doesn't exist, but is imported by github.com/portworx/sched-ops.
@@ -23,9 +25,12 @@ replace (
 require (
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.18.1
+	github.com/openshift/api v0.0.0-20220421141645-441fe135b2fc
 	github.com/stretchr/testify v1.7.0
+	google.golang.org/grpc v1.45.0
 	k8s.io/apimachinery v0.23.6
 	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/klog/v2 v2.60.1
 	sigs.k8s.io/controller-runtime v0.11.2
 )
 
@@ -77,6 +82,7 @@ require (
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/genproto v0.0.0-20220207185906-7721543eae58 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -86,7 +92,6 @@ require (
 	k8s.io/api v0.23.6 // indirect
 	k8s.io/apiextensions-apiserver v0.23.5 // indirect
 	k8s.io/component-base v0.23.5 // indirect
-	k8s.io/klog/v2 v2.60.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220124234850-424119656bbf // indirect
 	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect

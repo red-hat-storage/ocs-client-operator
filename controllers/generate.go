@@ -15,3 +15,15 @@ limitations under the License.
 */
 
 package controllers
+
+import (
+	"fmt"
+)
+
+func generateNameForCephFilesystemSC(name string) string {
+	return fmt.Sprintf("%s-cephfs", name)
+}
+
+func generateNameForCephBlockPoolSC(name string) string {
+	return fmt.Sprintf("%s-ceph-rbd", name)
+}
