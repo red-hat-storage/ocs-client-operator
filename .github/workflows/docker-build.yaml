@@ -1,0 +1,64 @@
+---
+name: image-builder
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: ['*']
+
+jobs:
+  container-build:
+    name: operator-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.17", "1.18"]
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+
+      - uses: actions/checkout@v2
+
+      - name: Build operator container image
+        run: make build
+
+  bundle-build:
+    name: bundle-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.17", "1.18"]
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+
+      - uses: actions/checkout@v2
+
+      - name: Build operator bundle container image
+        run: make bundle-build
+
+  catalog-build:
+    name: catalog-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.17", "1.18"]
+    steps:
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+
+      - uses: actions/checkout@v2
+
+      - name: Build catalog container image
+        env:
+          IMAGE_REGISTRY: localhost:5000
+        run: |
+          docker run -d -p 5000:5000 --name registry registry:2
+          make bundle-build bundle-push catalog-build
