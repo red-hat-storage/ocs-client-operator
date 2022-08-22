@@ -6,3 +6,69 @@ metadata:
   creationTimestamp: null
   name: manager-role
 rules:
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - ocsclients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - ocsclients/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - ocsclients/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - storageclassclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - storageclassclaims/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
