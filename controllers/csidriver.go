@@ -14,37 +14,65 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
+	"fmt"
+
 	v1k8scsi "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
-type csiDriver struct {
-	name           string
-	fsGroupPolicy  v1k8scsi.FSGroupPolicy
-	attachRequired bool
-	mountInfo      bool
-}
-
-func (d csiDriver) getCSIDriver() *v1k8scsi.CSIDriver {
-	// Get CSIDriver object
+func (r *ClusterVersionReconciler) ensureCsiDriverCr(
+	ctx context.Context,
+	driverName string,
+	fsGroupPolicy v1k8scsi.FSGroupPolicy,
+	attachRequired, mountInfo bool,
+) error {
 	csiDriver := &v1k8scsi.CSIDriver{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: d.name,
+			Name: driverName,
 		},
 		Spec: v1k8scsi.CSIDriverSpec{
-			AttachRequired: &d.attachRequired,
-			PodInfoOnMount: &d.mountInfo,
+			AttachRequired: &attachRequired,
+			PodInfoOnMount: &mountInfo,
 		},
 	}
-	csiDriver.Spec.FSGroupPolicy = &d.fsGroupPolicy
-	return csiDriver
-}
+	csiDriver.Spec.FSGroupPolicy = &fsGroupPolicy
 
-func shouldDelete(driver, csiDriver *v1k8scsi.CSIDriver) bool {
-	// As FSGroupPolicy field is immutable, should be set only during create time.
-	// if the request is to change the FSGroupPolicy, we need to delete the CSIDriver object and create it.
-	if driver.Spec.FSGroupPolicy != nil && csiDriver.Spec.FSGroupPolicy != nil && *driver.Spec.FSGroupPolicy != *csiDriver.Spec.FSGroupPolicy {
-		return true
+	actualDriver := &v1k8scsi.CSIDriver{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: csiDriver.Name,
+		},
 	}
-	return false
+
+	err := r.Client.Get(ctx, types.NamespacedName{Name: csiDriver.Name}, actualDriver)
+
+	if errors.IsNotFound(err) {
+		err = r.Client.Create(ctx, csiDriver)
+	} else if err == nil {
+		// As FSGroupPolicy field is immutable, if it requires an
+		// update we need to delete the CSIDriver object first and
+		// requeue the reconcile request.
+		if csiDriver.Spec.FSGroupPolicy != nil && actualDriver.Spec.FSGroupPolicy != nil &&
+			*actualDriver.Spec.FSGroupPolicy != *csiDriver.Spec.FSGroupPolicy {
+			r.Log.Info("FSGroupPolicy mismatch, CR deletion required",
+				"driverName", csiDriver.Name,
+				"expected", csiDriver.Spec.FSGroupPolicy,
+				"actual", actualDriver.Spec.FSGroupPolicy,
+			)
+
+			err = r.Client.Delete(ctx, actualDriver)
+			if err == nil {
+				err = fmt.Errorf("deleted existing CSIDriver, requeueing")
+			}
+		}
+	}
+
+	if err != nil {
+		r.Log.Error(err, "error ensuring CSIDriver", "driverName", csiDriver.Name)
+		return err
+	}
+
+	return nil
 }

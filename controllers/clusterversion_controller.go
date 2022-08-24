@@ -18,11 +18,11 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8scsi "k8s.io/api/storage/v1"
-	v1k8scsi "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -142,75 +142,32 @@ func (r *ClusterVersionReconciler) ensureCsiDrivers(clusterVersion string) error
 
 	r.Log.Info("csi plugin", "operation", result, "name", cephFSDaemonSet.Name)
 
-	// create csidriver objects
-	cephFScsiDriver := &csiDriver{
-		name:           getCephFSDriverName(r.Namespace),
-		fsGroupPolicy:  k8scsi.ReadWriteOnceWithFSTypeFSGroupPolicy,
-		attachRequired: true,
-		mountInfo:      false,
+	// An error in reconciling one CSIDriver should not block
+	// reconciliation of the other. An error from either should still
+	// requeue the request.
+
+	// ensure CephFs CSIDriver
+	cephFsErr := r.ensureCsiDriverCr(
+		ctx,
+		getCephFSDriverName(r.Namespace),
+		k8scsi.ReadWriteOnceWithFSTypeFSGroupPolicy,
+		true,
+		false,
+	)
+
+	// ensure RBD CSIDriver
+	rbdErr := r.ensureCsiDriverCr(
+		ctx,
+		getRBDDriverName(r.Namespace),
+		k8scsi.ReadWriteOnceWithFSTypeFSGroupPolicy,
+		true,
+		false,
+	)
+
+	if cephFsErr != nil || rbdErr != nil {
+		return fmt.Errorf("error creating CSIDrivers")
 	}
 
-	csiDriverObj := &v1k8scsi.CSIDriver{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: cephFScsiDriver.name,
-		},
-	}
-
-	result, err = controllerutil.CreateOrUpdate(ctx, r.Client, csiDriverObj, func() error {
-		driver := cephFScsiDriver.getCSIDriver()
-		if shouldDelete(csiDriverObj, driver) {
-			csiDriverObj.Spec = driver.Spec
-			// As we are deleting the object we cannot update with same UID we
-			// need to remove it
-			csiDriverObj.UID = ""
-			err = r.Client.Delete(ctx, driver)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		r.Log.Error(err, "csi driver reconcile failure", "name", cephFScsiDriver.name)
-		return err
-	}
-
-	r.Log.Info("csi driver", "operation", result, "name", cephFScsiDriver.name)
-
-	rbdcsiDriver := &csiDriver{
-		name:           getRBDDriverName(r.Namespace),
-		fsGroupPolicy:  k8scsi.ReadWriteOnceWithFSTypeFSGroupPolicy,
-		attachRequired: true,
-		mountInfo:      false,
-	}
-	csiDriverObj = &v1k8scsi.CSIDriver{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: rbdcsiDriver.name,
-		},
-	}
-
-	result, err = controllerutil.CreateOrUpdate(ctx, r.Client, csiDriverObj, func() error {
-		driver := rbdcsiDriver.getCSIDriver()
-		if shouldDelete(csiDriverObj, driver) {
-			csiDriverObj.Spec = driver.Spec
-			// As we are deleting the object we cannot update with same UID we
-			// need to remove it
-			csiDriverObj.UID = ""
-			err = r.Client.Delete(ctx, driver)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		r.Log.Error(err, "csi driver reconcile failure", "name", rbdcsiDriver.name)
-		return err
-	}
-
-	r.Log.Info("csi driver", "operation", result, "name", rbdcsiDriver.name)
 	return nil
 }
 
