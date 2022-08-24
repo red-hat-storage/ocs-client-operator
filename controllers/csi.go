@@ -22,14 +22,47 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+type csiReleaseImages struct {
+	clusterVersion      string
+	csiPluginImage      string
+	csiRegistrarImage   string
+	csiProvisionerImage string
+	csiAttacherImage    string
+	csiSnapshotterImage string
+	csiResizerImage     string
+}
+
 var (
 	// image names
-	defaultCSIPluginImage   = "quay.io/cephcsi/cephcsi:v3.6.2"
-	defaultRegistrarImage   = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.5.1"
-	defaultProvisionerImage = "registry.k8s.io/sig-storage/csi-provisioner:v3.1.0"
-	defaultAttacherImage    = "registry.k8s.io/sig-storage/csi-attacher:v3.4.0"
-	defaultSnapshotterImage = "registry.k8s.io/sig-storage/csi-snapshotter:v6.0.1"
-	defaultResizerImage     = "registry.k8s.io/sig-storage/csi-resizer:v1.4.0"
+	csiImages = []csiReleaseImages{
+		{
+			clusterVersion:      "4.11.0",
+			csiPluginImage:      "registry.redhat.io/odf4/cephcsi-rhel8:v4.11",
+			csiRegistrarImage:   "registry.redhat.io/openshift4/ose-csi-node-driver-registrar:v4.11",
+			csiProvisionerImage: "registry.redhat.io/openshift4/ose-csi-external-provisioner:v4.11",
+			csiAttacherImage:    "registry.redhat.io/openshift4/ose-csi-external-attacher-rhel8:v4.11",
+			csiSnapshotterImage: "registry.redhat.io/openshift4/ose-csi-external-snapshotter-rhel8:v4.11",
+			csiResizerImage:     "registry.redhat.io/openshift4/ose-csi-external-resizer:v4.11",
+		},
+		{
+			clusterVersion:      "4.10.0",
+			csiPluginImage:      "registry.redhat.io/odf4/cephcsi-rhel8:v4.10",
+			csiRegistrarImage:   "registry.redhat.io/openshift4/ose-csi-node-driver-registrar:v4.10",
+			csiProvisionerImage: "registry.redhat.io/openshift4/ose-csi-external-provisioner:v4.10",
+			csiAttacherImage:    "registry.redhat.io/openshift4/ose-csi-external-attacher-rhel8:v4.10",
+			csiSnapshotterImage: "registry.redhat.io/openshift4/ose-csi-external-snapshotter-rhel8:v4.10",
+			csiResizerImage:     "registry.redhat.io/openshift4/ose-csi-external-resizer:v4.10",
+		},
+		{
+			clusterVersion:      "4.9.0",
+			csiPluginImage:      "registry.redhat.io/odf4/cephcsi-rhel8:v4.9",
+			csiRegistrarImage:   "registry.redhat.io/openshift4/ose-csi-node-driver-registrar:v4.9",
+			csiProvisionerImage: "registry.redhat.io/openshift4/ose-csi-external-provisioner:v4.9",
+			csiAttacherImage:    "registry.redhat.io/openshift4/ose-csi-external-attacher-rhel8:v4.9",
+			csiSnapshotterImage: "registry.redhat.io/openshift4/ose-csi-external-snapshotter-rhel8:v4.9",
+			csiResizerImage:     "registry.redhat.io/openshift4/ose-csi-external-resizer:v4.9",
+		},
+	}
 )
 
 const (
@@ -361,6 +394,7 @@ func getRBDDaemonSet(s *sideCarContainer) *appsv1.DaemonSet {
 type sideCarContainer struct {
 	namespace      string
 	clusterVersion string
+	csiImages      csiReleaseImages
 }
 
 func (s *sideCarContainer) getCsiProvisionerContainer() *corev1.Container {
@@ -395,7 +429,7 @@ func (s *sideCarContainer) getCsiProvisionerContainer() *corev1.Container {
 
 	csiProvisioner := &corev1.Container{
 		Name:         "csi-provisioner",
-		Image:        defaultProvisionerImage,
+		Image:        s.csiImages.csiProvisionerImage,
 		Args:         args,
 		Resources:    resourceRequirements,
 		VolumeMounts: volumeMounts,
@@ -435,7 +469,7 @@ func (s *sideCarContainer) getCsiResizerContainer() *corev1.Container {
 
 	csiResizer := &corev1.Container{
 		Name:            "csi-resizer",
-		Image:           defaultResizerImage,
+		Image:           s.csiImages.csiResizerImage,
 		Args:            args,
 		Resources:       resourceRequirements,
 		VolumeMounts:    volumeMounts,
@@ -475,7 +509,7 @@ func (s *sideCarContainer) getCsiAttacherContainer() *corev1.Container {
 
 	csiAttacher := &corev1.Container{
 		Name:            "csi-attacher",
-		Image:           defaultAttacherImage,
+		Image:           s.csiImages.csiAttacherImage,
 		Args:            args,
 		Resources:       resourceRequirements,
 		VolumeMounts:    volumeMounts,
@@ -516,7 +550,7 @@ func (s *sideCarContainer) getCsiSnapshotterContainer() *corev1.Container {
 
 	csiSnapshotter := &corev1.Container{
 		Name:            "csi-snaphotter",
-		Image:           defaultSnapshotterImage,
+		Image:           s.csiImages.csiSnapshotterImage,
 		Args:            args,
 		Resources:       resourceRequirements,
 		VolumeMounts:    volumeMounts,
@@ -610,7 +644,7 @@ func (s *sideCarContainer) getCephCsiContainer(pluginType string, controller boo
 
 	cephCsiPlugin := &corev1.Container{
 		Name:            fmt.Sprintf("csi-%splugin", pluginType),
-		Image:           defaultCSIPluginImage,
+		Image:           s.csiImages.csiPluginImage,
 		Args:            args,
 		Resources:       resourceRequirements,
 		VolumeMounts:    volumeMounts,
@@ -656,7 +690,7 @@ func (s *sideCarContainer) getDriverRegistrarContainer(registrationPath string) 
 
 	csiDriverRegistrar := &corev1.Container{
 		Name:  "csi-driver-registrar",
-		Image: defaultRegistrarImage,
+		Image: s.csiImages.csiRegistrarImage,
 		SecurityContext: &corev1.SecurityContext{
 			Privileged: pointer.BoolPtr(true),
 		},

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/blang/semver"
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8scsi "k8s.io/api/storage/v1"
@@ -96,6 +97,20 @@ func (r *ClusterVersionReconciler) ensureCsiDrivers(clusterVersion string) error
 	csiSidecars := &sideCarContainer{
 		namespace:      r.Namespace,
 		clusterVersion: clusterVersion,
+	}
+	clusterSemVer, err := semver.Make(clusterVersion)
+	if err != nil {
+		return err
+	}
+	for i := range csiImages {
+		imagesSemVer, err := semver.Make(csiImages[i].clusterVersion)
+		if err != nil {
+			return err
+		}
+		if clusterSemVer.Compare(imagesSemVer) >= 0 {
+			csiSidecars.csiImages = csiImages[i]
+			break
+		}
 	}
 
 	ctx := context.TODO()
