@@ -55,7 +55,7 @@ func getRBDDriverName(namespace string) string {
 	return fmt.Sprintf("%s.%s", namespace, rbdDriverSuffix)
 }
 
-func getRBDControllerDeployment(namespace, clusterVersion string) *appsv1.Deployment {
+func getRBDControllerDeployment(s *sideCarContainer) *appsv1.Deployment {
 	// RBD CSI Controller Deployment
 	name := "csi-rbdplugin-provisioner"
 	var replicas int32 = 2
@@ -85,10 +85,6 @@ func getRBDControllerDeployment(namespace, clusterVersion string) *appsv1.Deploy
 
 	labels := map[string]string{
 		"app": "csi-rbdplugin-provisioner",
-	}
-	s := sideCarContainer{
-		namespace:      namespace,
-		clusterVersion: clusterVersion,
 	}
 
 	// get all containers that are part of csi controller deployment
@@ -135,7 +131,7 @@ func getRBDControllerDeployment(namespace, clusterVersion string) *appsv1.Deploy
 	return controllerDeployment
 }
 
-func getCephFSControllerDeployment(namespace, clusterVersion string) *appsv1.Deployment {
+func getCephFSControllerDeployment(s *sideCarContainer) *appsv1.Deployment {
 	// CephFS CSI Controller Deployment
 	name := "csi-cephfsplugin-provisioner"
 	var replicas int32 = 2
@@ -151,10 +147,6 @@ func getCephFSControllerDeployment(namespace, clusterVersion string) *appsv1.Dep
 
 	labels := map[string]string{
 		"app": "csi-cephfsplugin-provisioner",
-	}
-	s := sideCarContainer{
-		namespace:      namespace,
-		clusterVersion: clusterVersion,
 	}
 	// get all containers that are part of csi controller deployment
 	containers := []corev1.Container{
@@ -197,10 +189,10 @@ func getCephFSControllerDeployment(namespace, clusterVersion string) *appsv1.Dep
 	return controllerDeployment
 }
 
-func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
+func getCephFSDaemonSet(s *sideCarContainer) *appsv1.DaemonSet {
 	// CephFS Plugin DeamonSet
 	name := "csi-cephfsplugin"
-	driverName := getCephFSDriverName(namespace)
+	driverName := getCephFSDriverName(s.namespace)
 	pluginPath := fmt.Sprintf("%s/plugins/%s", defaultKubeletDirPath, driverName)
 	hostPathDirectoryorCreate := corev1.HostPathDirectoryOrCreate
 	hostPathDirectory := corev1.HostPathDirectory
@@ -223,11 +215,6 @@ func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 
 	labels := map[string]string{
 		"app": name,
-	}
-
-	s := sideCarContainer{
-		namespace:      namespace,
-		clusterVersion: clusterVersion,
 	}
 
 	cephFsPluginContainer := s.getCephCsiContainer("cephfs", false)
@@ -281,10 +268,10 @@ func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 
 }
 
-func getRBDDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
+func getRBDDaemonSet(s *sideCarContainer) *appsv1.DaemonSet {
 	// CephFS Plugin DeamonSet
 	name := "csi-rbdplugin"
-	driverName := getRBDDriverName(namespace)
+	driverName := getRBDDriverName(s.namespace)
 	pluginPath := fmt.Sprintf("%s/plugins/%s", defaultKubeletDirPath, driverName)
 	hostPathDirectoryorCreate := corev1.HostPathDirectoryOrCreate
 	hostPathDirectory := corev1.HostPathDirectory
@@ -319,10 +306,6 @@ func getRBDDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 
 	labels := map[string]string{
 		"app": name,
-	}
-	s := sideCarContainer{
-		namespace:      namespace,
-		clusterVersion: clusterVersion,
 	}
 	rbdPluginContainer := s.getCephCsiContainer("rbd", false)
 	// set security context for cephfs plugin which is only required when

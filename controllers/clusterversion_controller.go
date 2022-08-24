@@ -93,8 +93,13 @@ func (r *ClusterVersionReconciler) ensureCsiDrivers(clusterVersion string) error
 		return err
 	}
 
+	csiSidecars := &sideCarContainer{
+		namespace:      r.Namespace,
+		clusterVersion: clusterVersion,
+	}
+
 	ctx := context.TODO()
-	rbdDeployment := getRBDControllerDeployment(r.Namespace, clusterVersion)
+	rbdDeployment := getRBDControllerDeployment(csiSidecars)
 	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, rbdDeployment, func() error {
 		// TODO need to set ownerRef?
 		return nil
@@ -106,7 +111,7 @@ func (r *ClusterVersionReconciler) ensureCsiDrivers(clusterVersion string) error
 
 	r.Log.Info("csi controller", "operation", result, "name", rbdDeployment.Name)
 
-	cephFSDeployment := getCephFSControllerDeployment(r.Namespace, clusterVersion)
+	cephFSDeployment := getCephFSControllerDeployment(csiSidecars)
 	result, err = controllerutil.CreateOrUpdate(ctx, r.Client, cephFSDeployment, func() error {
 		// TODO need to set ownerRef?
 		return nil
@@ -118,7 +123,7 @@ func (r *ClusterVersionReconciler) ensureCsiDrivers(clusterVersion string) error
 
 	r.Log.Info("csi controller", "operation", result, "name", cephFSDeployment.Name)
 
-	rbdDaemonSet := getRBDDaemonSet(r.Namespace, clusterVersion)
+	rbdDaemonSet := getRBDDaemonSet(csiSidecars)
 	result, err = controllerutil.CreateOrUpdate(ctx, r.Client, rbdDaemonSet, func() error {
 		// TODO need to set ownerRef?
 		return nil
@@ -130,7 +135,7 @@ func (r *ClusterVersionReconciler) ensureCsiDrivers(clusterVersion string) error
 
 	r.Log.Info("csi plugin", "operation", result, "name", rbdDaemonSet.Name)
 
-	cephFSDaemonSet := getCephFSDaemonSet(r.Namespace, clusterVersion)
+	cephFSDaemonSet := getCephFSDaemonSet(csiSidecars)
 	result, err = controllerutil.CreateOrUpdate(ctx, r.Client, cephFSDaemonSet, func() error {
 		// TODO need to set ownerRef?
 		return nil
