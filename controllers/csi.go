@@ -97,7 +97,7 @@ func getRBDControllerDeployment(namespace, clusterVersion string) *appsv1.Deploy
 		*s.getCsiResizerContainer(),
 		*s.getCsiSnapshotterContainer(),
 		*s.getCsiAttacherContainer(),
-		*s.getCephCsiContainer("rbd", getRBDDriverName(namespace), true),
+		*s.getCephCsiContainer("rbd", true),
 		// not includuing below sidecar yet as they are not default
 		// liveness probe
 		// omap generator
@@ -108,7 +108,7 @@ func getRBDControllerDeployment(namespace, clusterVersion string) *appsv1.Deploy
 	controllerDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: s.namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -119,7 +119,7 @@ func getRBDControllerDeployment(namespace, clusterVersion string) *appsv1.Deploy
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
-					Namespace: namespace,
+					Namespace: s.namespace,
 					Labels:    labels,
 				},
 				Spec: corev1.PodSpec{
@@ -162,7 +162,7 @@ func getCephFSControllerDeployment(namespace, clusterVersion string) *appsv1.Dep
 		*s.getCsiResizerContainer(),
 		*s.getCsiSnapshotterContainer(),
 		*s.getCsiAttacherContainer(),
-		*s.getCephCsiContainer("cephfs", getCephFSDriverName(namespace), true),
+		*s.getCephCsiContainer("cephfs", true),
 		// not includuing below sidecar yet as they are not default
 		// liveness probe
 	}
@@ -170,7 +170,7 @@ func getCephFSControllerDeployment(namespace, clusterVersion string) *appsv1.Dep
 	controllerDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: s.namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -181,7 +181,7 @@ func getCephFSControllerDeployment(namespace, clusterVersion string) *appsv1.Dep
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
-					Namespace: namespace,
+					Namespace: s.namespace,
 					Labels:    labels,
 				},
 				Spec: corev1.PodSpec{
@@ -251,7 +251,7 @@ func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 	pluginDaemonSet := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: s.namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.DaemonSetSpec{
@@ -261,7 +261,7 @@ func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
-					Namespace: namespace,
+					Namespace: s.namespace,
 					Labels:    labels,
 				},
 				Spec: corev1.PodSpec{
@@ -324,7 +324,7 @@ func getRBDDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 		namespace:      namespace,
 		clusterVersion: clusterVersion,
 	}
-	rbdPluginContainer := s.getCephCsiContainer("rbd", driverName, false)
+	rbdPluginContainer := s.getCephCsiContainer("rbd", false)
 	// set security context for cephfs plugin which is only required when
 	// running as daemonset
 	rbdPluginContainer.SecurityContext = &corev1.SecurityContext{
@@ -345,7 +345,7 @@ func getRBDDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 	pluginDaemonSet := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: s.namespace,
 			Labels:    labels,
 		},
 		Spec: appsv1.DaemonSetSpec{
@@ -355,7 +355,7 @@ func getRBDDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
-					Namespace: namespace,
+					Namespace: s.namespace,
 					Labels:    labels,
 				},
 				Spec: corev1.PodSpec{
@@ -544,8 +544,16 @@ func (s *sideCarContainer) getCsiSnapshotterContainer() *corev1.Container {
 	return csiSnapshotter
 }
 
-func (s *sideCarContainer) getCephCsiContainer(pluginType, driverName string, controller bool) *corev1.Container {
+func (s *sideCarContainer) getCephCsiContainer(pluginType string, controller bool) *corev1.Container {
 	// csi plugin container
+	var driverName string
+	switch pluginType {
+	case "rbd":
+		driverName = getRBDDriverName(s.namespace)
+	case "cephfs":
+		driverName = getCephFSDriverName(s.namespace)
+	}
+
 	args := []string{
 		"--nodeid=$(NODE_ID)",
 		"--endpoint=$(CSI_ENDPOINT)",
