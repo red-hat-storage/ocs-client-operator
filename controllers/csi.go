@@ -230,10 +230,10 @@ func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 		clusterVersion: clusterVersion,
 	}
 
-	cepfsPluginContainer := s.getCephCsiContainer("cephfs", driverName, false)
+	cephFsPluginContainer := s.getCephCsiContainer("cephfs", false)
 	// set security context for cephfs plugin which is only required when
 	// running as daemonset
-	cepfsPluginContainer.SecurityContext = &corev1.SecurityContext{
+	cephFsPluginContainer.SecurityContext = &corev1.SecurityContext{
 		Privileged: pointer.BoolPtr(true),
 		Capabilities: &corev1.Capabilities{
 			Add: []corev1.Capability{"SYS_ADMIN"},
@@ -243,7 +243,7 @@ func getCephFSDaemonSet(namespace, clusterVersion string) *appsv1.DaemonSet {
 	// get all containers that are part of csi controller deployment
 	containers := []corev1.Container{
 		*s.getDriverRegistrarContainer(fmt.Sprintf("%s/csi.sock", pluginPath)),
-		*cepfsPluginContainer,
+		*cephFsPluginContainer,
 		// not includuing below sidecar yet as they are not default
 		// liveness probe
 	}

@@ -98,7 +98,7 @@ func main() {
 
 	operatorNamespace, err := utils.GetOperatorNamespace()
 	if err != nil {
-		setupLog.Error(err, "unable to get opeartor namespace")
+		setupLog.Error(err, "unable to get operator namespace")
 		os.Exit(1)
 	}
 
