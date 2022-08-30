@@ -1,0 +1,24 @@
+# permissions for end users to edit ocsclients.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ocsclient-editor-role
+rules:
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - ocsclients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - odf.openshift.io
+  resources:
+  - ocsclients/status
+  verbs:
+    - get

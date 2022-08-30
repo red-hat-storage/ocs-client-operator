@@ -16,3 +16,9 @@ resources:
 - auth_proxy_role.yaml
 - auth_proxy_role_binding.yaml
 - auth_proxy_client_clusterrole.yaml
+## Ceph-CSI RBAC
+# TODO: point to generated files when we figure out how
+#- csi_service_accounts.yaml
+#- csi_roles.yaml
+#- csi_role_bindings.yaml
+#- csi_cluster_role_bindings.yaml

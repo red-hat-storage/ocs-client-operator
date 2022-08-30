@@ -2,7 +2,25 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
   annotations:
-    alm-examples: '[]'
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "odf.openshift.io/v1alpha1",
+          "kind": "OcsClient",
+          "metadata": {
+            "name": "ocsclient-sample"
+          },
+          "spec": null
+        },
+        {
+          "apiVersion": "odf.openshift.io/v1alpha1",
+          "kind": "StorageClassClaim",
+          "metadata": {
+            "name": "storageclassclaim-sample"
+          },
+          "spec": null
+        }
+      ]
     capabilities: Basic Install
     olm.skipRange: ""
     operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
@@ -12,9 +30,20 @@ metadata:
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
-  customresourcedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: OcsClient is the Schema for the ocsclients API
+      displayName: Ocs Client
+      kind: OcsClient
+      name: ocsclients.odf.openshift.io
+      version: v1alpha1
+    - description: StorageClassClaim is the Schema for the storageclassclaims API
+      displayName: Storage Class Claim
+      kind: StorageClassClaim
+      name: storageclassclaims.odf.openshift.io
+      version: v1alpha1
   description: foo
-  displayName: OpenShift Data Foundation Client Operator
+  displayName: OpenShift Data Foundation Client
   icon:
   - base64data: ""
     mediatype: ""
@@ -22,6 +51,247 @@ spec:
     spec:
       clusterPermissions:
       - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          - events
+          - nodes
+          - persistentvolumeclaims
+          - persistentvolumeclaims/status
+          - persistentvolumes
+          - secrets
+          - serviceaccounts
+          - serviceaccounts/token
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - daemonsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - daemonsets/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - apps
+          resources:
+          - deployments
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - deployments/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - clusterversions
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - clusterversions/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - clusterversions/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumes
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - csiaddons.openshift.io
+          resources:
+          - csiaddonsnodes
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - ocsclients
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - ocsclients/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - ocsclients/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - storageclassclaims
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - odf.openshift.io
+          resources:
+          - storageclassclaims/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - replication.storage.k8s.io
+          resources:
+          - volumereplicationclasses
+          - volumereplicationclasses/status
+          - volumereplications
+          - volumereplications/finalizers
+          - volumereplications/status
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumeshapshotcontents
+          - volumesnapshotclasses
+          - volumesnapshotcontents/status
+          - volumesnapshots
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - csidrivers
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses
+          - volumeattachments
+          - volumeattachments/statuscsinodes
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
         - apiGroups:
           - authentication.k8s.io
           resources:
@@ -77,6 +347,11 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
+                env:
+                - name: OPERATOR_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
                 image: quay.io/ocs-dev/ocs-client-operator:latest
                 livenessProbe:
                   httpGet:

@@ -1,0 +1,6 @@
+apiVersion: odf.openshift.io/v1alpha1
+kind: StorageClassClaim
+metadata:
+  name: storageclassclaim-sample
+spec:
+  # TODO(user): Add fields here

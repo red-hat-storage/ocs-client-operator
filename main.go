@@ -24,6 +24,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -32,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/controllers"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -44,6 +47,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(apiv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(configv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -74,6 +78,36 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OcsClientReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "OcsClient")
+		os.Exit(1)
+	}
+	if err = (&controllers.StorageClassClaimReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "StorageClassClaim")
+		os.Exit(1)
+	}
+
+	operatorNamespace, err := utils.GetOperatorNamespace()
+	if err != nil {
+		setupLog.Error(err, "unable to get operator namespace")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.ClusterVersionReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Namespace: operatorNamespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterVersionReconciler")
 		os.Exit(1)
 	}
 
