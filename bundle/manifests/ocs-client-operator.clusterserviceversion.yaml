@@ -187,7 +187,10 @@ spec:
           - create
           - delete
           - get
+          - list
+          - patch
           - update
+          - watch
         - apiGroups:
           - storage.k8s.io
           resources:
