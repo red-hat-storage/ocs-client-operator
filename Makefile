@@ -33,6 +33,8 @@ help: ## Display this help.
 
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	# TODO: Figure out a way to generate Ceph-CSI RBAC
+	# $(CONTROLLER_GEN) rbac:roleName=csi-role webhook paths="./..." output:rbac:artifacts:config=config/rbac/csi output:none
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."

@@ -9,6 +9,26 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - events
+  - nodes
+  - persistentvolumeclaims
+  - persistentvolumeclaims/status
+  - persistentvolumes
+  - secrets
+  - serviceaccounts
+  - serviceaccounts/token
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - services
   verbs:
   - create
@@ -81,12 +101,36 @@ rules:
   - patch
   - update
 - apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - ""
   resources:
   - persistentvolumes
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - csiaddons.openshift.io
+  resources:
+  - csiaddonsnodes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - odf.openshift.io
@@ -135,6 +179,37 @@ rules:
   - patch
   - update
 - apiGroups:
+  - replication.storage.k8s.io
+  resources:
+  - volumereplicationclasses
+  - volumereplicationclasses/status
+  - volumereplications
+  - volumereplications/finalizers
+  - volumereplications/status
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumeshapshotcontents
+  - volumesnapshotclasses
+  - volumesnapshotcontents/status
+  - volumesnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - storage.k8s.io
   resources:
   - csidrivers
@@ -150,6 +225,20 @@ rules:
   - storage.k8s.io
   resources:
   - storageclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  - volumeattachments
+  - volumeattachments/statuscsinodes
   verbs:
   - create
   - delete

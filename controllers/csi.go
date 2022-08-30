@@ -22,6 +22,14 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+// TODO: Narrow down actual RBAC requirements
+//+kubebuilder:rbac:groups="",resources=nodes;secrets;persistentvolumes;persistentvolumeclaims;persistentvolumeclaims/status;events;configmaps;serviceaccounts;serviceaccounts/token,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="coordination.k8s.io",resources=leases,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="storage.k8s.io",resources=storageclasses;volumeattachments;volumeattachments/statuscsinodes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="replication.storage.k8s.io",resources=volumereplications;volumereplicationclasses;volumereplications/finalizers;volumereplications/status;volumereplicationclasses/status,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="snapshot.storage.k8s.io",resources=volumesnapshots;volumesnapshotclasses;volumeshapshotcontents;volumesnapshotcontents/status,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="csiaddons.openshift.io",resources=csiaddonsnodes,verbs=get;list;watch;create;update;patch;delete
+
 type csiReleaseImages struct {
 	clusterVersion      string
 	csiPluginImage      string
@@ -153,7 +161,7 @@ func getRBDControllerDeployment(s *sideCarContainer) *appsv1.Deployment {
 				},
 				Spec: corev1.PodSpec{
 					Containers:         containers,
-					ServiceAccountName: "csi-rbd-provisioner-sa",
+					ServiceAccountName: "ocs-client-operator-controller-manager",
 					PriorityClassName:  "system-cluster-critical",
 					Volumes:            volumes,
 				},
@@ -211,7 +219,7 @@ func getCephFSControllerDeployment(s *sideCarContainer) *appsv1.Deployment {
 				},
 				Spec: corev1.PodSpec{
 					Containers:         containers,
-					ServiceAccountName: "csi-cephfs-provisioner-sa",
+					ServiceAccountName: "ocs-client-operator-controller-manager",
 					PriorityClassName:  "system-cluster-critical",
 					Volumes:            volumes,
 				},
@@ -289,7 +297,7 @@ func getCephFSDaemonSet(s *sideCarContainer) *appsv1.DaemonSet {
 					HostPID:            true,
 					DNSPolicy:          corev1.DNSClusterFirstWithHostNet,
 					Containers:         containers,
-					ServiceAccountName: "csi-cephfs-plugin-sa",
+					ServiceAccountName: "ocs-client-operator-controller-manager",
 					PriorityClassName:  "system-node-critical",
 					Volumes:            volumes,
 				},
@@ -379,7 +387,7 @@ func getRBDDaemonSet(s *sideCarContainer) *appsv1.DaemonSet {
 					HostPID:            true,
 					DNSPolicy:          corev1.DNSClusterFirstWithHostNet,
 					Containers:         containers,
-					ServiceAccountName: "csi-rbd-plugin-sa",
+					ServiceAccountName: "ocs-client-operator-controller-manager",
 					PriorityClassName:  "system-node-critical",
 					Volumes:            volumes,
 				},
