@@ -64,7 +64,7 @@ endif
 
 # manager env variables
 OPERATOR_NAMESPACE ?= openshift-storage
-OPERATOR_CATALOGSOURCE ?= odf-catalogsource
+OPERATOR_CATALOGSOURCE ?= ocs-catalogsource
 
 # kube rbac proxy image variables
 CLUSTER_ENV ?= openshift

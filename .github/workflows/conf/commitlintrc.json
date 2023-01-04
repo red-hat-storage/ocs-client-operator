@@ -70,6 +70,7 @@
                 "action",
                 "api",
                 "bundle",
+		"csi",
                 "ci",
                 "console",
                 "controllers",
