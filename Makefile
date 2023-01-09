@@ -47,7 +47,7 @@ lint: ## Run golangci-lint against code.
 	docker run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
 godeps-update:  ## Run go mod tidy & vendor
-	go mod tidy -compat=1.17 && go mod vendor
+	go mod tidy && go mod vendor
 
 test-setup: godeps-update generate fmt vet ## Run setup targets for tests
 
@@ -64,6 +64,7 @@ e2e-test: ginkgo ## TODO: Run end to end functional tests.
 ##@ Build
 
 build: container-build ## Build manager binary
+	go build -o ./bin/manager main.go
 
 go-build: ## Run go build against code.
 	@GOBIN=${GOBIN} ./hack/go-build.sh

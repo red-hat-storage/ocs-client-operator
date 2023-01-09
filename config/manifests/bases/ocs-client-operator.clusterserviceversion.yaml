@@ -10,7 +10,7 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions: {}
   description: foo
-  displayName: OpenShift Data Foundation Client
+  displayName: OpenShift Data Foundation Client Operator
   icon:
   - base64data: ""
     mediatype: ""

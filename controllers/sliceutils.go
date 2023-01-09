@@ -27,6 +27,7 @@ func contains(slice []string, s string) bool {
 }
 
 // Removes a given string from a slice and returns the new slice
+//
 //nolint:deadcode,unused
 func remove(slice []string, s string) (result []string) {
 	result = []string{}
