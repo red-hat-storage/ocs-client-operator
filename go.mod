@@ -20,7 +20,9 @@ require (
 	github.com/onsi/gomega v1.20.1
 	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
 	github.com/pkg/errors v0.9.1
+	github.com/red-hat-storage/ocs-operator v0.4.11
 	github.com/stretchr/testify v1.8.0
+	google.golang.org/grpc v1.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.25.2
 	k8s.io/apimachinery v0.25.2
@@ -85,6 +87,7 @@ require (
 	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/genproto v0.0.0-20220207185906-7721543eae58 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect

@@ -31,6 +31,8 @@ import (
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	ocsv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/controllers"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -56,6 +58,7 @@ func init() {
 	utilruntime.Must(configv1.AddToScheme(scheme))
 	utilruntime.Must(secv1.AddToScheme(scheme))
 	utilruntime.Must(appsv1.AddToScheme(scheme))
+	utilruntime.Must(ocsv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -96,6 +99,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controllers.StorageClientReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
