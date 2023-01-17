@@ -27,6 +27,8 @@ const (
 	StorageClientInitializing storageClientPhase = "Initializing"
 	// StorageClientOnboarding represents Onboarding state of storageClient
 	StorageClientOnboarding storageClientPhase = "Onboarding"
+	// StorageClientOnboardingProgressing represents OnboardingProgressing state of storageClient
+	StorageClientOnboardingProgressing storageClientPhase = "Progressing"
 	// StorageClientConnected represents Onboarding state of storageClient
 	StorageClientConnected storageClientPhase = "Connected"
 	// StorageClientOffboarding represents Onboarding state of storageClient
