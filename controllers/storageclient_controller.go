@@ -30,13 +30,16 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -46,7 +49,10 @@ const (
 	GetStorageConfig      = "GetStorageConfig"
 	AcknowledgeOnboarding = "AcknowledgeOnboarding"
 
+	storageClientLabel     = "ocs.openshift.io/storageclient"
 	storageClientFinalizer = "storageclient.ocs.openshift.io"
+	// defaultStorageClassClaimLabel is added to all default storage class claims
+	defaultStorageClassClaimLabel = "storageclassclaim.ocs.openshift.io/default"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -60,9 +66,22 @@ type StorageClientReconciler struct {
 
 // SetupWithManager sets up the controller with the Manages.
 func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
+		func(obj client.Object) []reconcile.Request {
+			annotations := obj.GetAnnotations()
+			if _, found := annotations[storageClassClaimAnnotation]; found {
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Name: obj.GetName(),
+					},
+				}}
+			}
+			return []reconcile.Request{}
+		})
 	s.recorder = utils.NewEventReporter(mgr.GetEventRecorderFor("controller_storageclient"))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
+		Watches(&source.Kind{Type: &v1alpha1.StorageClassClaim{}}, enqueueStorageClientRequest).
 		Complete(s)
 }
 
@@ -163,6 +182,16 @@ func (s *StorageClientReconciler) deletionPhase(instance *v1alpha1.StorageClient
 	if contains(instance.GetFinalizers(), storageClientFinalizer) {
 		instance.Status.Phase = v1alpha1.StorageClientOffboarding
 
+		err := s.deleteDefaultStorageClassClaims(instance)
+		if err != nil {
+			s.Log.Error(err, "Failed to delete default StorageClassClaims.")
+			return reconcile.Result{}, fmt.Errorf("failed to delete default StorageClassClaims: %v", err)
+		}
+		err = s.verifyNoStorageClassClaimsExist(instance)
+		if err != nil {
+			s.Log.Error(err, "still storageclassclaims exist for this storageclient")
+			return reconcile.Result{}, fmt.Errorf("still storageclassclaims exist for this storageclient: %v", err)
+		}
 		if res, err := s.offboardConsumer(instance, externalClusterClient); err != nil {
 			s.Log.Error(err, "Offboarding in progress.")
 		} else if !res.IsZero() {
@@ -239,6 +268,16 @@ func (s *StorageClientReconciler) acknowledgeOnboarding(instance *v1alpha1.Stora
 		s.Log.Error(err, "Failed to acknowledge onboarding.")
 		return reconcile.Result{}, fmt.Errorf("failed to acknowledge onboarding: %v", err)
 	}
+	instance.Status.Phase = v1alpha1.StorageClientOnboardingProgressing
+
+	// claims should be created only once and should not be created/updated again if user deletes/update it.
+	if err := s.createDefaultStorageClassClaimsForRBD(instance); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to create default storageclassclaims for rbd: %v", err)
+	}
+
+	if err := s.createDefaultStorageClassClaimsForCephFS(instance); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to create default storageclassclaims for cephfs: %v", err)
+	}
 
 	instance.Status.Phase = v1alpha1.StorageClientConnected
 
@@ -260,6 +299,121 @@ func (s *StorageClientReconciler) offboardConsumer(instance *v1alpha1.StorageCli
 	return reconcile.Result{}, nil
 }
 
+func (s *StorageClientReconciler) createDefaultStorageClassClaimsForRBD(instance *v1alpha1.StorageClient) error {
+	storageClassClaimBlock := &v1alpha1.StorageClassClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      generateNameForCephBlockPoolSC(instance),
+			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				storageClientLabel:            instance.Name,
+				defaultStorageClassClaimLabel: "true",
+			},
+		},
+		Spec: v1alpha1.StorageClassClaimSpec{
+			Type:       "blockpool",
+			ConsumerID: instance.Status.ConsumerID,
+		},
+	}
+
+	if err := s.createDefaultStorageClassClaim(storageClassClaimBlock); err != nil {
+		return fmt.Errorf("failed to create default blockpool storageClassClaim %s. %v", storageClassClaimBlock.Name, err)
+	}
+	return nil
+}
+
+func (s *StorageClientReconciler) createDefaultStorageClassClaimsForCephFS(instance *v1alpha1.StorageClient) error {
+	storageClassClaimFile := &v1alpha1.StorageClassClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      generateNameForCephFilesystemSC(instance),
+			Namespace: instance.Namespace,
+			Labels: map[string]string{
+				storageClientLabel:            instance.Name,
+				defaultStorageClassClaimLabel: "true",
+			},
+		},
+		Spec: v1alpha1.StorageClassClaimSpec{
+			Type:       "sharedfilesystem",
+			ConsumerID: instance.Status.ConsumerID,
+		},
+	}
+
+	if err := s.createDefaultStorageClassClaim(storageClassClaimFile); err != nil {
+		return fmt.Errorf("failed to create default filesystem storageClassClaim %s. %v", storageClassClaimFile.Name, err)
+	}
+
+	return nil
+}
+
+func (s *StorageClientReconciler) createDefaultStorageClassClaim(claim *v1alpha1.StorageClassClaim) error {
+	err := s.Client.Create(s.ctx, claim)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+func (s *StorageClientReconciler) deleteDefaultStorageClassClaims(instance *v1alpha1.StorageClient) error {
+
+	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			defaultStorageClassClaimLabel: "true",
+			storageClientLabel:            instance.Name,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	storageClassClaims := &v1alpha1.StorageClassClaimList{}
+	err = s.Client.List(s.ctx, storageClassClaims, &client.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return fmt.Errorf("failed to list storageClassClaims: %v", err)
+	}
+
+	for i := range storageClassClaims.Items {
+		storageClassClaim := &storageClassClaims.Items[i]
+
+		err = s.Client.Delete(s.ctx, storageClassClaim)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete storageClassClaim %s: %v", storageClassClaim.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// TODO fix name generation as it can exceed name length limit
+func generateNameForCephFilesystemSC(initData *v1alpha1.StorageClient) string {
+	return fmt.Sprintf("%s-%s-cephfs", initData.Name, initData.Namespace)
+}
+
+// TODO fix name generation as it can exceed name length limit
+func generateNameForCephBlockPoolSC(initData *v1alpha1.StorageClient) string {
+	return fmt.Sprintf("%s-%s-ceph-rbd", initData.Name, initData.Namespace)
+}
+
+func (s *StorageClientReconciler) verifyNoStorageClassClaimsExist(instance *v1alpha1.StorageClient) error {
+
+	storageClassClaims := &v1alpha1.StorageClassClaimList{}
+	err := s.Client.List(s.ctx, storageClassClaims)
+	if err != nil {
+		return fmt.Errorf("failed to list storageClassClaims: %v", err)
+	}
+
+	for i := range storageClassClaims.Items {
+		storageClassClaim := &storageClassClaims.Items[i]
+		sc := storageClassClaim.Labels[storageClientLabel]
+		if sc == instance.Name {
+			err = fmt.Errorf("Failed to cleanup resources. storageClassClaims are present." +
+				"Delete all storageClassClaims for the cleanup to proceed")
+			s.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, "Cleanup", err.Error())
+			s.Log.Error(err, "Waiting for all storageClassClaims to be deleted.")
+			return err
+		}
+	}
+
+	return nil
+}
 func (s *StorageClientReconciler) logGrpcErrorAndReportEvent(instance *v1alpha1.StorageClient, grpcCallName string, err error, errCode codes.Code) {
 
 	var msg, eventReason, eventType string
