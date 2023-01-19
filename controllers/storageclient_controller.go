@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -28,6 +29,7 @@ import (
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +38,7 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -171,6 +174,10 @@ func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClie
 		return s.onboardConsumer(instance, externalClusterClient)
 	} else if instance.Status.Phase == v1alpha1.StorageClientOnboarding {
 		return s.acknowledgeOnboarding(instance, externalClusterClient)
+	}
+
+	if res, err := s.reconcileClientStatusReporterJob(instance, externalClusterClient); err != nil {
+		return res, err
 	}
 
 	return reconcile.Result{}, nil
@@ -460,4 +467,62 @@ func (s *StorageClientReconciler) logGrpcErrorAndReportEvent(instance *v1alpha1.
 		s.Log.Error(err, "StorageProvider:"+grpcCallName+":"+msg)
 		s.recorder.ReportIfNotPresent(instance, eventType, eventReason, msg)
 	}
+}
+
+func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1alpha1.StorageClient, externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
+	// start the cronJob to ping the provider api server
+	cronJob := &batchv1.CronJob{}
+	cronJob.Name = "report-status-to-provider"
+	cronJob.Namespace = instance.Namespace
+
+	_, err := controllerutil.CreateOrUpdate(s.ctx, s.Client, cronJob, func() error {
+		if err := controllerutil.SetOwnerReference(instance, cronJob, s.Client.Scheme()); err != nil {
+			return fmt.Errorf("Failed to set owner reference: %v", err)
+		}
+		cronJob.Spec = batchv1.CronJobSpec{
+			Schedule: "* * * * *",
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "heartbeat",
+									Image: os.Getenv(utils.StatusReporterImageEnvVar),
+									Command: []string{
+										"/status-reporter",
+									},
+									Env: []corev1.EnvVar{
+										{
+											Name: utils.StorageClientNamespaceEnvVar,
+											ValueFrom: &corev1.EnvVarSource{
+												FieldRef: &corev1.ObjectFieldSelector{
+													FieldPath: "metadata.namespace",
+												},
+											},
+										},
+										{
+											Name: utils.StorageClientNameEnvVar,
+											ValueFrom: &corev1.EnvVarSource{
+												FieldRef: &corev1.ObjectFieldSelector{
+													FieldPath: "metadata.name",
+												},
+											},
+										},
+									},
+								},
+							},
+							RestartPolicy:      corev1.RestartPolicyOnFailure,
+							ServiceAccountName: "ocs-status-reporter",
+						},
+					},
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
+	}
+	return reconcile.Result{}, nil
 }

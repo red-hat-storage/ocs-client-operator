@@ -18,6 +18,7 @@ COPY config/ config/
 COPY csi/ csi/
 COPY pkg/ pkg/
 COPY templates/ templates/
+COPY status-report/ status-report/
 # Run tests and linting
 RUN make go-test
 
@@ -29,7 +30,6 @@ RUN make go-build
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
+COPY --from=builder /workspace/bin/status-reporter .
 COPY --from=builder /workspace/images.yaml /etc/ocs-client-operator/images.yaml
 USER 65532:65532
-
-ENTRYPOINT ["/manager"]

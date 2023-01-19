@@ -25,6 +25,14 @@ import (
 // which is the namespace where operator pod is deployed.
 const OperatorNamespaceEnvVar = "OPERATOR_NAMESPACE"
 
+// StorageClientNameEnvVar is the constant for env variable STORAGE_CLIENT_NAME
+const StorageClientNameEnvVar = "STORAGE_CLIENT_NAME"
+
+// StorageClientNamespaceEnvVar is the constant for env variable STORAGE_CLIENT_NAMESPACE
+const StorageClientNamespaceEnvVar = "STORAGE_CLIENT_NAMESPACE"
+
+const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
+
 // GetOperatorNamespace returns the namespace where the operator is deployed.
 func GetOperatorNamespace() string {
 	return os.Getenv(OperatorNamespaceEnvVar)
@@ -34,6 +42,15 @@ func ValidateOperatorNamespace() error {
 	ns := GetOperatorNamespace()
 	if ns == "" {
 		return fmt.Errorf("namespace not found for operator")
+	}
+
+	return nil
+}
+
+func ValidateStausReporterImage() error {
+	image := os.Getenv(StatusReporterImageEnvVar)
+	if image == "" {
+		return fmt.Errorf("status reporter image not found")
 	}
 
 	return nil
