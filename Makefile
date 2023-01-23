@@ -109,6 +109,9 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 		$(KUSTOMIZE) edit add patch --name ocs-client-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts=ocs-client-operator-csi-cephfs-provisioner-sa,ocs-client-operator-csi-cephfs-plugin-sa,ocs-client-operator-csi-rbd-provisioner-sa,ocs-client-operator-csi-rbd-plugin-sa,ocs-client-operator-status-reporter
+	sed -i "s|packageName:.*|packageName: ${CSI_ADDONS_PACKAGE_NAME}|g" "config/metadata/dependencies.yaml"
+	sed -i "s|version:.*|version: "${CSI_ADDONS_PACKAGE_VERSION}"|g" "config/metadata/dependencies.yaml"
+	cp config/metadata/* bundle/metadata/
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build

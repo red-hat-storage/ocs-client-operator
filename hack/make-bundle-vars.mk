@@ -36,9 +36,12 @@ SKIP_RANGE ?=
 # Image URL to use all building/pushing image targets
 IMAGE_REGISTRY ?= quay.io
 REGISTRY_NAMESPACE ?= ocs-dev
+CSI_ADDONS_REGISTRY_NAMESPACE ?= csiaddons
 IMAGE_TAG ?= latest
 IMAGE_NAME ?= ocs-client-operator
 BUNDLE_IMAGE_NAME ?= $(IMAGE_NAME)-bundle
+CSI_ADDONS_BUNDLE_IMAGE_NAME ?= k8s-bundle
+CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.5.0
 CATALOG_IMAGE_NAME ?= $(IMAGE_NAME)-catalog
 
 # IMG defines the image used for the operator.
@@ -46,6 +49,9 @@ IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(IMAGE_NAME):$(IMAGE_TAG)
 
 # BUNDLE_IMG defines the image used for the bundle.
 BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(BUNDLE_IMAGE_NAME):$(IMAGE_TAG)
+
+CSI_ADDONS_BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(CSI_ADDONS_REGISTRY_NAMESPACE)/$(CSI_ADDONS_BUNDLE_IMAGE_NAME):$(CSI_ADDONS_BUNDLE_IMAGE_TAG)
+
 
 # CATALOG_IMG defines the image used for the catalog.
 CATALOG_IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(CATALOG_IMAGE_NAME):$(IMAGE_TAG)
@@ -55,7 +61,7 @@ CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
-BUNDLE_IMGS ?= $(shell echo $(BUNDLE_IMG) | sed "s/ /,/g")
+BUNDLE_IMGS ?= $(shell echo $(BUNDLE_IMG) $(CSI_ADDONS_BUNDLE_IMG) | sed "s/ /,/g")
 
 # Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
 ifneq ($(origin CATALOG_BASE_IMG), undefined)
@@ -76,3 +82,7 @@ ifeq ($(CLUSTER_ENV), openshift)
 else ifeq ($(CLUSTER_ENV), kubernetes)
 	RBAC_PROXY_IMG ?= $(KUBE_RBAC_PROXY_IMG)
 endif
+
+# csi-addons dependencies
+CSI_ADDONS_PACKAGE_NAME ?= csi-addons
+CSI_ADDONS_PACKAGE_VERSION ?= "0.5.0"
