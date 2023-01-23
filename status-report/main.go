@@ -21,7 +21,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/client"
@@ -59,17 +61,17 @@ func main() {
 		klog.Exitf("%s env var not set", utils.StorageClientNameEnvVar)
 	}
 
-	storageclient := &v1alpha1.StorageClient{}
-	storageclient.Name = storageClientName
-	storageclient.Namespace = storageClientNamespace
+	storageClient := &v1alpha1.StorageClient{}
+	storageClient.Name = storageClientName
+	storageClient.Namespace = storageClientNamespace
 
-	if err = cl.Get(ctx, types.NamespacedName{Name: storageclient.Name, Namespace: storageclient.Namespace}, storageclient); err != nil {
-		klog.Exitf("Failed to get storageClient %q/%q: %v", storageclient.Namespace, storageclient.Name, err)
+	if err = cl.Get(ctx, types.NamespacedName{Name: storageClient.Name, Namespace: storageClient.Namespace}, storageClient); err != nil {
+		klog.Exitf("Failed to get storageClient %q/%q: %v", storageClient.Namespace, storageClient.Name, err)
 	}
 
 	providerClient, err := providerclient.NewProviderClient(
 		ctx,
-		storageclient.Spec.StorageProviderEndpoint,
+		storageClient.Spec.StorageProviderEndpoint,
 		10*time.Second,
 	)
 	if err != nil {
@@ -77,8 +79,26 @@ func main() {
 	}
 	defer providerClient.Close()
 
-	if _, err = providerClient.ReportStatus(ctx, storageclient.Status.ConsumerID); err != nil {
-		klog.Exitf("Failed to update lastHeartbeat of storageClient %v: %v", storageclient.Status.ConsumerID, err)
+	if _, err = providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID); err != nil {
+		klog.Exitf("Failed to update lastHeartbeat of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
 
+	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
+	scResponse, err := providerClient.GetStorageConfig(ctx, storageClient.Status.ConsumerID)
+	if err != nil {
+		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
+	for _, eResource := range scResponse.ExternalResource {
+		if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
+			monitorIps, err := csi.ExtractMonitor(eResource.Data)
+			if err != nil {
+				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+			}
+			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
+		}
+	}
+	err = csi.UpdateMonConfigMap(ctx, cl, logr.FromContextOrDiscard(ctx), "", storageClient.Status.ConsumerID, csiClusterConfigEntry)
+	if err != nil {
+		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
 }

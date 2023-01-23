@@ -18,6 +18,8 @@ package csi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -40,9 +42,10 @@ var (
 )
 
 type ClusterConfigEntry struct {
-	ClusterID string      `json:"clusterID"`
-	Monitors  []string    `json:"monitors"`
-	CephFS    *CephFSSpec `json:"cephFS,omitempty"`
+	ClusterID       string      `json:"clusterID"`
+	StorageClientID string      `json:"storageClientID"`
+	Monitors        []string    `json:"monitors"`
+	CephFS          *CephFSSpec `json:"cephFS,omitempty"`
 }
 
 type CephFSSpec struct {
@@ -70,7 +73,7 @@ func formatCsiClusterConfig(cc csiClusterConfig) (string, error) {
 
 // updateCsiClusterConfig returns a json-formatted string containing
 // the cluster-to-mon mapping required to configure ceph csi.
-func updateCsiClusterConfig(curr, clusterKey string, newClusterConfigEntry *ClusterConfigEntry) (string, error) {
+func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newClusterConfigEntry *ClusterConfigEntry) (string, error) {
 	var (
 		cc     csiClusterConfig
 		centry ClusterConfigEntry
@@ -89,8 +92,7 @@ func updateCsiClusterConfig(curr, clusterKey string, newClusterConfigEntry *Clus
 	if newClusterConfigEntry != nil {
 		for i, centry := range cc {
 			// If the clusterID belongs to the same cluster, update the entry.
-			// update default clusterID's entry
-			if clusterKey == newClusterConfigEntry.ClusterID {
+			if storageClientID == cc[i].StorageClientID || clusterKey == newClusterConfigEntry.ClusterID {
 				centry.Monitors = newClusterConfigEntry.Monitors
 				cc[i] = centry
 			}
@@ -116,7 +118,7 @@ func updateCsiClusterConfig(curr, clusterKey string, newClusterConfigEntry *Clus
 	if !found {
 		// If it's the first time we create the cluster, the entry does not exist, so the removal
 		// will fail with a dangling pointer
-		if newClusterConfigEntry != nil {
+		if newClusterConfigEntry != nil && clusterKey != "" {
 			centry.ClusterID = clusterKey
 			centry.Monitors = newClusterConfigEntry.Monitors
 			// Add a condition not to fill with empty values
@@ -162,7 +164,7 @@ func createMonConfigMap(ctx context.Context, c client.Client, ownerDep *appsv1.D
 // value that is provided to ceph-csi uses in the storage class.
 // The locker l is typically a mutex and is used to prevent the config
 // map from being updated for multiple clusters simultaneously.
-func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, clusterID string, newClusterConfigEntry *ClusterConfigEntry) error {
+func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, clusterID, storageClientID string, newClusterConfigEntry *ClusterConfigEntry) error {
 	ConfigKey := "config.json"
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -185,7 +187,7 @@ func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, c
 
 	// update ConfigMap contents for current cluster
 	currData := configMap.Data[ConfigKey]
-	newData, err := updateCsiClusterConfig(currData, clusterID, newClusterConfigEntry)
+	newData, err := updateCsiClusterConfig(currData, clusterID, storageClientID, newClusterConfigEntry)
 	if err != nil {
 		return errors.Wrap(err, "failed to update csi config map data")
 	}
@@ -200,4 +202,23 @@ func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, c
 	log.Info("successfully updated monitor configmap", "name", configMap.Name)
 
 	return nil
+}
+
+func ExtractMonitor(monitorData []byte) ([]string, error) {
+	data := map[string]string{}
+	monitorIPs := []string{}
+	err := json.Unmarshal(monitorData, &data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
+	// Ip will be in the format of "b=172.30.60.238:6789","c=172.30.162.124:6789","a=172.30.1.100:6789"
+	monIPs := strings.Split(data["data"], ",")
+	for _, monIP := range monIPs {
+		ip := strings.Split(monIP, "=")
+		if len(ip) != 2 {
+			return nil, fmt.Errorf("invalid mon ips: %s", monIPs)
+		}
+		monitorIPs = append(monitorIPs, ip[1])
+	}
+	return monitorIPs, nil
 }

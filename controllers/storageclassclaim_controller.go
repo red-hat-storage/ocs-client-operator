@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -298,20 +297,11 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		}
 		for _, eResource := range scResponse.ExternalResource {
 			if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
-				data := map[string]string{}
-				err = json.Unmarshal(eResource.Data, &data)
+				monitorIps, err := csi.ExtractMonitor(eResource.Data)
 				if err != nil {
-					return reconcile.Result{}, fmt.Errorf("failed to unmarshal data: %v", err)
+					return reconcile.Result{}, fmt.Errorf("failed to extract monitor data: %v", err)
 				}
-				// Ip will be in the format of "b=172.30.60.238:6789","c=172.30.162.124:6789","a=172.30.1.100:6789"
-				monIPs := strings.Split(data["data"], ",")
-				for _, monIP := range monIPs {
-					ip := strings.Split(monIP, "=")
-					if len(ip) != 2 {
-						return reconcile.Result{}, fmt.Errorf("invalid mon ips: %s", monIPs)
-					}
-					csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, ip[1])
-				}
+				csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
 			}
 		}
 		// Go over the received objects and operate on them accordingly.
@@ -389,7 +379,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		}
 
 		// update monitor configuration for cephcsi
-		err = csi.UpdateMonConfigMap(r.ctx, r.Client, r.log, r.storageClassClaim.Name, csiClusterConfigEntry)
+		err = csi.UpdateMonConfigMap(r.ctx, r.Client, r.log, r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
@@ -422,7 +412,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		}
 
 		// Delete configmap entry for cephcsi
-		err = csi.UpdateMonConfigMap(r.ctx, r.Client, r.log, r.storageClassClaim.Name, nil)
+		err = csi.UpdateMonConfigMap(r.ctx, r.Client, r.log, r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, nil)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
