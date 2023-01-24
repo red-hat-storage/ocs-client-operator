@@ -15,7 +15,7 @@ COPY hack/ hack/
 COPY api/ api/
 COPY controllers/ controllers/
 COPY config/ config/
-
+COPY pkg/ pkg/
 # Run tests and linting
 RUN make go-test
 
