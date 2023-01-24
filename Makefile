@@ -47,7 +47,7 @@ lint: ## Run golangci-lint against code.
 	docker run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
 godeps-update:  ## Run go mod tidy & vendor
-	go mod tidy -compat=1.17 && go mod vendor
+	go mod tidy && go mod vendor
 
 test-setup: godeps-update generate fmt vet ## Run setup targets for tests
 
