@@ -105,7 +105,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	//+kubebuilder:scaffold:builder
+	err = utils.ValidateStausReporterImage()
+	if err != nil {
+		setupLog.Error(err, "unable to validate status reporter image")
+		os.Exit(1)
+	}
+
 	if err = (&controllers.StorageClientReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
