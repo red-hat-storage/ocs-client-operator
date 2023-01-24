@@ -31,6 +31,17 @@ spec:
           - delete
           - update
         - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
           - apps
           resources:
           - daemonsets
@@ -93,6 +104,40 @@ spec:
           - patch
           - update
         - apiGroups:
+          - ""
+          resources:
+          - persistentvolumes
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclassclaims
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclassclaims/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclassclaims/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
           - ocs.openshift.io
           resources:
           - storageclients
@@ -130,9 +175,31 @@ spec:
           - update
           - watch
         - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotclasses
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - watch
+        - apiGroups:
           - storage.k8s.io
           resources:
           - csidrivers
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses
           verbs:
           - create
           - delete
