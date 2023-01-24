@@ -77,6 +77,32 @@ rules:
   - patch
   - update
 - apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclients/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclients/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - security.openshift.io
   resources:
   - securitycontextconstraints
