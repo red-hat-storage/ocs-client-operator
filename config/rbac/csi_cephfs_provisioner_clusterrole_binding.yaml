@@ -1,0 +1,11 @@
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-cephfs-provisioner-crb
+subjects:
+  - kind: ServiceAccount
+    name: ocs-client-operator-csi-cephfs-provisioner-sa
+roleRef:
+  kind: ClusterRole
+  name: ocs-client-operator-csi-cephfs-provisioner-cr
+  apiGroup: rbac.authorization.k8s.io

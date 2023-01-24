@@ -1,0 +1,11 @@
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-rbd-provisioner-rb
+subjects:
+  - kind: ServiceAccount
+    name: ocs-client-operator-csi-rbd-provisioner-sa
+roleRef:
+  kind: Role
+  name: ocs-client-operator-csi-rbd-provisioner-role
+  apiGroup: rbac.authorization.k8s.io
