@@ -11,7 +11,7 @@ data:
       port: 9443
     leaderElection:
       leaderElect: true
-      resourceName: 7cb6f2e5.odf.openshift.io
+      resourceName: 7cb6f2e5.ocs.openshift.io
 kind: ConfigMap
 metadata:
   name: ocs-client-operator-manager-config
