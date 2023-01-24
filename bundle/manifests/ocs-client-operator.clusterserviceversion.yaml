@@ -462,6 +462,13 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
+                env:
+                - name: OPERATOR_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: STATUS_REPORTER_IMAGE
+                  value: quay.io/ocs-dev/ocs-client-operator:latest
                 image: quay.io/ocs-dev/ocs-client-operator:latest
                 livenessProbe:
                   httpGet:
@@ -563,6 +570,23 @@ spec:
           verbs:
           - create
         serviceAccountName: ocs-client-operator-csi-rbd-provisioner-sa
+      - rules:
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclients
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - update
+        serviceAccountName: ocs-client-operator-status-reporter
     strategy: deployment
   installModes:
   - supported: false
