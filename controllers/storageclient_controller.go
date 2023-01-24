@@ -35,8 +35,10 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -61,9 +63,22 @@ type StorageClientReconciler struct {
 
 // SetupWithManager sets up the controller with the Manages.
 func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
+		func(obj client.Object) []reconcile.Request {
+			annotations := obj.GetAnnotations()
+			if _, found := annotations[storageClassClaimAnnotation]; found {
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Name: obj.GetName(),
+					},
+				}}
+			}
+			return []reconcile.Request{}
+		})
 	s.recorder = utils.NewEventReporter(mgr.GetEventRecorderFor("controller_storageclient"))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
+		Watches(&source.Kind{Type: &v1alpha1.StorageClassClaim{}}, enqueueStorageClientRequest).
 		Complete(s)
 }
 
@@ -163,6 +178,11 @@ func (s *StorageClientReconciler) deletionPhase(instance *v1alpha1.StorageClient
 	// storageClient and also the default SCC created for this storageClient
 	if contains(instance.GetFinalizers(), storageClientFinalizer) {
 		instance.Status.Phase = v1alpha1.StorageClientOffboarding
+		err := s.verifyNoStorageClassClaimsExist(instance)
+		if err != nil {
+			s.Log.Error(err, "still storageclassclaims exist for this storageclient")
+			return reconcile.Result{}, fmt.Errorf("still storageclassclaims exist for this storageclient: %v", err)
+		}
 		if res, err := s.offboardConsumer(instance, externalClusterClient); err != nil {
 			s.Log.Error(err, "Offboarding in progress.")
 		} else if !res.IsZero() {
@@ -259,6 +279,28 @@ func (s *StorageClientReconciler) offboardConsumer(instance *v1alpha1.StorageCli
 	return reconcile.Result{}, nil
 }
 
+func (s *StorageClientReconciler) verifyNoStorageClassClaimsExist(instance *v1alpha1.StorageClient) error {
+
+	storageClassClaims := &v1alpha1.StorageClassClaimList{}
+	err := s.Client.List(s.ctx, storageClassClaims)
+	if err != nil {
+		return fmt.Errorf("failed to list storageClassClaims: %v", err)
+	}
+
+	for i := range storageClassClaims.Items {
+		storageClassClaim := &storageClassClaims.Items[i]
+		sc := storageClassClaim.Labels[storageClientLabel]
+		if sc == instance.Name {
+			err = fmt.Errorf("Failed to cleanup resources. storageClassClaims are present." +
+				"Delete all storageClassClaims for the cleanup to proceed")
+			s.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, "Cleanup", err.Error())
+			s.Log.Error(err, "Waiting for all storageClassClaims to be deleted.")
+			return err
+		}
+	}
+
+	return nil
+}
 func (s *StorageClientReconciler) logGrpcErrorAndReportEvent(instance *v1alpha1.StorageClient, grpcCallName string, err error, errCode codes.Code) {
 
 	var msg, eventReason, eventType string
