@@ -589,7 +589,7 @@ spec:
         serviceAccountName: ocs-client-operator-status-reporter
     strategy: deployment
   installModes:
-  - supported: false
+  - supported: true
     type: OwnNamespace
   - supported: false
     type: SingleNamespace
