@@ -6,3 +6,189 @@ metadata:
   creationTimestamp: null
   name: manager-role
 rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclassclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclassclaims/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclassclaims/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclients/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclients/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshotclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - csidrivers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

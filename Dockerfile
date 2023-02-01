@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.17 as builder
+FROM golang:1.18 as builder
 
 WORKDIR /workspace
 
@@ -10,12 +10,13 @@ COPY go.mod go.sum ./
 COPY vendor/ vendor/
 
 # Copy the project source
-COPY main.go Makefile ./
+COPY main.go Makefile images.yaml ./
 COPY hack/ hack/
 COPY api/ api/
 COPY controllers/ controllers/
 COPY config/ config/
-
+COPY pkg/ pkg/
+COPY service/ service/
 # Run tests and linting
 RUN make go-test
 
@@ -27,6 +28,8 @@ RUN make go-build
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
+COPY --from=builder /workspace/bin/status-reporter .
+COPY --from=builder /workspace/images.yaml /etc/ocs-client-operator/images.yaml
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]

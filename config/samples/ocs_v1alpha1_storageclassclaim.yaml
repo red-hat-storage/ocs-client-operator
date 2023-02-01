@@ -1,0 +1,12 @@
+apiVersion: ocs.openshift.io/v1alpha1
+kind: StorageClassClaim
+metadata:
+  labels:
+    app.kubernetes.io/name: storageclassclaim
+    app.kubernetes.io/instance: storageclassclaim-sample
+    app.kubernetes.io/part-of: ocs-client-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: ocs-client-operator
+  name: storageclassclaim-sample
+spec:
+  # TODO(user): Add fields here

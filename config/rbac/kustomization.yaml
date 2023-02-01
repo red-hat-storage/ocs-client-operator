@@ -16,3 +16,24 @@ resources:
 - auth_proxy_role.yaml
 - auth_proxy_role_binding.yaml
 - auth_proxy_client_clusterrole.yaml
+
+# status reporter RBAC
+- status-reporter-sa.yaml
+- status-reporter-role.yaml
+- status-reporter-role_binding.yaml
+# CSI RBAC
+- csi_cephfs_plugin_service_account.yaml
+- csi_cephfs_provisioner_clusterrole.yaml
+- csi_cephfs_provisioner_role.yaml
+- csi_cephfs_provisioner_role_binding.yaml
+- csi_cephfs_provisioner_service_account.yaml
+- csi_rbd_plugin_clusterrole.yaml
+- csi_rbd_plugin_clusterrole_binding.yaml
+- csi_rbd_plugin_role.yaml
+- csi_rbd_plugin_role_binding.yaml
+- csi_rbd_plugin_service_account.yaml
+- csi_rbd_provisioner_clusterrole.yaml
+- csi_rbd_provisioner_clusterrole_binding.yaml
+- csi_rbd_provisioner_role.yaml
+- csi_rbd_provisioner_role_binding.yaml
+- csi_rbd_provisioner_service_account.yaml

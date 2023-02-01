@@ -20,16 +20,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	odfv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -42,9 +41,7 @@ var testEnv *envtest.Environment
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "controller Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -60,7 +57,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = odfv1alpha1.AddToScheme(scheme.Scheme)
+	err = v1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme

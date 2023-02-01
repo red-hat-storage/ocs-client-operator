@@ -71,6 +71,8 @@
                 "api",
                 "bundle",
                 "ci",
+                "cleanup",
+                "csi",
                 "console",
                 "controllers",
                 "docs",
