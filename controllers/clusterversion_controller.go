@@ -49,7 +49,7 @@ type ClusterVersionReconciler struct {
 	scc              *secv1.SecurityContextConstraints
 }
 
-// SetupWithManager sets up the controller with the Managec.
+// SetupWithManager sets up the controller with the Manager.
 func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}).

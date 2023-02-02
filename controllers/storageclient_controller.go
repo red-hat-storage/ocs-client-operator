@@ -64,7 +64,7 @@ type StorageClientReconciler struct {
 	recorder *utils.EventReporter
 }
 
-// SetupWithManager sets up the controller with the Manages.
+// SetupWithManager sets up the controller with the Manager.
 func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
 		func(obj client.Object) []reconcile.Request {
