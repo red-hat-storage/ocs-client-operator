@@ -64,6 +64,10 @@ type ClusterVersionReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	clusterVersionPredicates := builder.WithPredicates(
+		predicate.GenerationChangedPredicate{},
+	)
+
 	configMapPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(client client.Object) bool {
@@ -85,7 +89,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&configv1.ClusterVersion{}).
+		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueClusterVersionRequest, configMapPredicates).
 		Complete(c)
 }
