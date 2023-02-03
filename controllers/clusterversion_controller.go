@@ -27,10 +27,23 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+)
+
+const (
+	operatorConfigMapName = "ocs-client-operator-config"
+	// ClusterVersionName is the name of the ClusterVersion object in the
+	// openshift cluster.
+	clusterVersionName = "version"
 )
 
 // ClusterVersionReconciler reconciles a ClusterVersion object
@@ -51,8 +64,29 @@ type ClusterVersionReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	configMapPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				namespace := client.GetNamespace()
+				name := client.GetName()
+				return ((namespace == c.OperatorNamespace) && (name == operatorConfigMapName))
+			},
+		),
+	)
+	// Reconcile the ClusterVersion object when the operator config map is updated
+	enqueueClusterVersionRequest := handler.EnqueueRequestsFromMapFunc(
+		func(client client.Object) []reconcile.Request {
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Name: clusterVersionName,
+				},
+			}}
+		},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueClusterVersionRequest, configMapPredicates).
 		Complete(c)
 }
 
@@ -64,7 +98,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="apps",resources=daemonsets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="storage.k8s.io",resources=csidrivers,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=create;update;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update
 
 // For more details, check Reconcile and its Result here:
@@ -252,4 +286,13 @@ func (c *ClusterVersionReconciler) own(obj client.Object) error {
 
 func (c *ClusterVersionReconciler) create(obj client.Object) error {
 	return c.Client.Create(c.ctx, obj)
+}
+
+func (c *ClusterVersionReconciler) getOperatorConfig() (*corev1.ConfigMap, error) {
+	cm := &corev1.ConfigMap{}
+	err := c.Client.Get(c.ctx, types.NamespacedName{Name: operatorConfigMapName, Namespace: c.OperatorNamespace}, cm)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return nil, err
+	}
+	return cm, nil
 }
