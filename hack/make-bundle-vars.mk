@@ -69,8 +69,8 @@ FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
 # manager env variables
-OPERATOR_NAMESPACE ?= openshift-storage
-OPERATOR_CATALOGSOURCE ?= odf-catalogsource
+OPERATOR_NAMESPACE ?= ocs-client-operator-system
+OPERATOR_CATALOGSOURCE ?= oco-catalogsource
 
 # kube rbac proxy image variables
 CLUSTER_ENV ?= openshift

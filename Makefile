@@ -56,8 +56,8 @@ go-test: ## Run go test against code.
 
 test: test-setup go-test ## Run go unit tests.
 
-ODF_OPERATOR_INSTALL ?= true
-ODF_OPERATOR_UNINSTALL ?= true
+OCO_OPERATOR_INSTALL ?= true
+OCO_OPERATOR_UNINSTALL ?= true
 e2e-test: ginkgo ## TODO: Run end to end functional tests.
 	@echo "build and run e2e tests"
 
