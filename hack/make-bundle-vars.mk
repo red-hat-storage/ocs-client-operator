@@ -33,6 +33,13 @@ REPLACES ?=
 # but can skip several. This can be accomplished using the skipRange annotation:
 SKIP_RANGE ?=
 
+# Set to true for generating fusion bundle
+FUSION ?= false
+MANIFEST_PATH=config/manifests
+ifeq ($(FUSION), true)
+MANIFEST_PATH=config/manifests/fusion
+endif
+
 # Image URL to use all building/pushing image targets
 IMAGE_REGISTRY ?= quay.io
 REGISTRY_NAMESPACE ?= ocs-dev
