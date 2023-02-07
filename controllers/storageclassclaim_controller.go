@@ -107,9 +107,6 @@ func (r *StorageClassClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.2/pkg/reconcile
 func (r *StorageClassClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	if ok := r.Cache.WaitForCacheSync(ctx); !ok {
-		return reconcile.Result{}, fmt.Errorf("cache sync failed")
-	}
 
 	r.log = ctrllog.FromContext(ctx, "StorageClassClaim", req)
 	r.ctx = ctrllog.IntoContext(ctx, r.log)
