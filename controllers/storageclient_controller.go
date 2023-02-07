@@ -64,8 +64,20 @@ type StorageClientReconciler struct {
 	recorder *utils.EventReporter
 }
 
-// SetupWithManager sets up the controller with the Manages.
+// SetupWithManager sets up the controller with the Manager.
 func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Index should be registered before cache start.
+	// IndexField is used to filter out the objects that already exists with
+	// status.phase != failed This will help in blocking
+	// the new storageclient creation if there is already with one with same
+	// provider endpoint with status.phase != failed
+	_ = mgr.GetCache().IndexField(context.TODO(), &v1alpha1.StorageClient{}, "spec.storageProviderEndpoint", func(o client.Object) []string {
+		res := []string{}
+		if o.(*v1alpha1.StorageClient).Status.Phase != v1alpha1.StorageClientFailed {
+			res = append(res, o.(*v1alpha1.StorageClient).Spec.StorageProviderEndpoint)
+		}
+		return res
+	})
 	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
 		func(obj client.Object) []reconcile.Request {
 			annotations := obj.GetAnnotations()
@@ -110,6 +122,11 @@ func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %v", err)
 	}
 
+	// Dont Reconcile the StorageClient if it is in failed state
+	if instance.Status.Phase == v1alpha1.StorageClientFailed {
+		return reconcile.Result{}, nil
+	}
+
 	result, reconcileErr := s.reconcilePhases(instance)
 
 	// Apply status changes to the StorageClient
@@ -127,22 +144,20 @@ func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClient) (ctrl.Result, error) {
 	storageClientListOption := []client.ListOption{
-		client.InNamespace(instance.Namespace),
+		client.MatchingFields{"spec.storageProviderEndpoint": instance.Spec.StorageProviderEndpoint},
 	}
 
 	storageClientList := &v1alpha1.StorageClientList{}
 	if err := s.Client.List(s.ctx, storageClientList, storageClientListOption...); err != nil {
-		return reconcile.Result{}, err
+		s.Log.Error(err, "unable to list storage clients")
+		return ctrl.Result{}, err
 	}
 
 	if len(storageClientList.Items) > 1 {
-		// This check is to ensure we will only reject new request not the
-		// ongoing one.
-		if instance.Status.Phase == "" {
-			s.Log.Info("one StorageClient is allowed per namespace but found more than one. Rejecting new request.")
-			instance.Status.Phase = v1alpha1.StorageClientFailed
-			return reconcile.Result{}, fmt.Errorf("one StorageClient is allowed per namespace")
-		}
+		s.Log.Info("one StorageClient is allowed per namespace but found more than one. Rejecting new request.")
+		instance.Status.Phase = v1alpha1.StorageClientFailed
+		// Dont Reconcile again	as there is already a StorageClient with same provider endpoint
+		return reconcile.Result{}, nil
 	}
 
 	externalClusterClient, err := s.newExternalClusterClient(instance)
