@@ -18,6 +18,9 @@ package controllers
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -31,7 +34,9 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -51,8 +56,10 @@ const (
 	GetStorageConfig      = "GetStorageConfig"
 	AcknowledgeOnboarding = "AcknowledgeOnboarding"
 
-	storageClientLabel     = "ocs.openshift.io/storageclient"
-	storageClientFinalizer = "storageclient.ocs.openshift.io"
+	storageClientLabel          = "ocs.openshift.io/storageclient"
+	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
+	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
+	storageClientFinalizer      = "storageclient.ocs.openshift.io"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -62,6 +69,8 @@ type StorageClientReconciler struct {
 	Log      klog.Logger
 	Scheme   *runtime.Scheme
 	recorder *utils.EventReporter
+
+	OperatorNamespace string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -101,6 +110,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/finalizers,verbs=update
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
+//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 
 func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -211,6 +221,16 @@ func (s *StorageClientReconciler) deletionPhase(instance *v1alpha1.StorageClient
 			// result is not empty
 			return res, nil
 		}
+
+		cronJob := &batchv1.CronJob{}
+		cronJob.Name = getStatusReporterName(instance.Namespace, instance.Name)
+		cronJob.Namespace = s.OperatorNamespace
+
+		if err := s.delete(cronJob); err != nil {
+			s.Log.Error(err, "Failed to delete the status reporter job")
+			return reconcile.Result{}, fmt.Errorf("failed to delete the status reporter job: %v", err)
+		}
+
 		s.Log.Info("removing finalizer from StorageClient.", "StorageClient", klog.KRef(instance.Namespace, instance.Name))
 		// Once all finalizers have been removed, the object will be deleted
 		instance.ObjectMeta.Finalizers = remove(instance.ObjectMeta.Finalizers, storageClientFinalizer)
@@ -371,16 +391,52 @@ func (s *StorageClientReconciler) logGrpcErrorAndReportEvent(instance *v1alpha1.
 	}
 }
 
+func getStatusReporterName(namespace, name string) string {
+	// getStatusReporterName generates a name for a StatusReporter CronJob.
+	var s struct {
+		StorageClientName      string `json:"storageClientName"`
+		StorageClientNamespace string `json:"storageClientNamespace"`
+	}
+	s.StorageClientName = name
+	s.StorageClientNamespace = namespace
+
+	statusReporterName, err := json.Marshal(s)
+	if err != nil {
+		klog.Errorf("failed to marshal a name for a storage client based on %v. %v", s, err)
+		panic("failed to marshal storage client name")
+	}
+	reporterName := md5.Sum([]byte(statusReporterName))
+	// The name of the StorageClient is the MD5 hash of the JSON
+	// representation of the StorageClient name and namespace.
+	return fmt.Sprintf("storageclient-%s-status-reporter", hex.EncodeToString(reporterName[:8]))
+}
+
+// addLabel add a label to a resource metadata
+func addLabel(obj metav1.Object, key string, value string) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+		obj.SetLabels(labels)
+	}
+	labels[key] = value
+}
+
+func (s *StorageClientReconciler) delete(obj client.Object) error {
+	if err := s.Client.Delete(s.ctx, obj); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1alpha1.StorageClient, externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
 	// start the cronJob to ping the provider api server
 	cronJob := &batchv1.CronJob{}
-	cronJob.Name = "report-status-to-provider"
-	cronJob.Namespace = instance.Namespace
+	cronJob.Name = getStatusReporterName(instance.Namespace, instance.Name)
+	cronJob.Namespace = s.OperatorNamespace
+	addLabel(cronJob, storageClientNameLabel, instance.Name)
+	addLabel(cronJob, storageClientNamespaceLabel, instance.Namespace)
 
 	_, err := controllerutil.CreateOrUpdate(s.ctx, s.Client, cronJob, func() error {
-		if err := controllerutil.SetOwnerReference(instance, cronJob, s.Client.Scheme()); err != nil {
-			return fmt.Errorf("Failed to set owner reference: %v", err)
-		}
 		cronJob.Spec = batchv1.CronJobSpec{
 			Schedule: "* * * * *",
 			JobTemplate: batchv1.JobTemplateSpec{
