@@ -13,7 +13,10 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -105,6 +108,16 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - prometheusrules
+  verbs:
+  - create
+  - get
+  - list
+  - update
   - watch
 - apiGroups:
   - ocs.openshift.io
