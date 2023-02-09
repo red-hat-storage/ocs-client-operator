@@ -444,6 +444,23 @@ spec:
           - list
           - watch
         serviceAccountName: ocs-client-operator-csi-rbd-provisioner-sa
+      - rules:
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclients
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - update
+        serviceAccountName: ocs-client-operator-status-reporter
       deployments:
       - label:
           control-plane: controller-manager
@@ -594,23 +611,6 @@ spec:
           verbs:
           - create
         serviceAccountName: ocs-client-operator-csi-rbd-provisioner-sa
-      - rules:
-        - apiGroups:
-          - ocs.openshift.io
-          resources:
-          - storageclients
-          verbs:
-          - get
-          - list
-        - apiGroups:
-          - ""
-          resources:
-          - configmaps
-          verbs:
-          - get
-          - list
-          - update
-        serviceAccountName: ocs-client-operator-status-reporter
     strategy: deployment
   installModes:
   - supported: true
