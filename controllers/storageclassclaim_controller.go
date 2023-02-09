@@ -347,7 +347,14 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 
 				if resource.Name == "cephfs" {
 					csiClusterConfigEntry.CephFS = new(csi.CephFSSpec)
-					csiClusterConfigEntry.CephFS.SubvolumeGroup = data["subvolumegroupname"]
+					subVolumeGroupName := data["subvolumegroupname"]
+					// In ODF 4.12 the subvolume group name is not passed in
+					// the GetStorageConfig RPC call, so we need to generate it
+					// here as this is expected to work with ODF 4.12
+					if subVolumeGroupName == "" {
+						subVolumeGroupName = fmt.Sprintf("cephfilesystemsubvolumegroup-storageconsumer-%s", r.storageClient.Status.ConsumerID)
+					}
+					csiClusterConfigEntry.CephFS.SubvolumeGroup = subVolumeGroupName
 					// delete groupname from data as its not required in storageclass
 					delete(data, "subvolumegroupname")
 					storageClass = r.getCephFSStorageClass(data)
