@@ -452,20 +452,12 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 									},
 									Env: []corev1.EnvVar{
 										{
-											Name: utils.StorageClientNamespaceEnvVar,
-											ValueFrom: &corev1.EnvVarSource{
-												FieldRef: &corev1.ObjectFieldSelector{
-													FieldPath: "metadata.namespace",
-												},
-											},
+											Name:  utils.StorageClientNamespaceEnvVar,
+											Value: instance.Namespace,
 										},
 										{
-											Name: utils.StorageClientNameEnvVar,
-											ValueFrom: &corev1.EnvVarSource{
-												FieldRef: &corev1.ObjectFieldSelector{
-													FieldPath: "metadata.name",
-												},
-											},
+											Name:  utils.StorageClientNameEnvVar,
+											Value: instance.Name,
 										},
 										{
 											Name:  utils.OperatorNamespaceEnvVar,
