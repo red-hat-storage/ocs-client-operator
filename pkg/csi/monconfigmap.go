@@ -96,6 +96,7 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 			// If the clusterID belongs to the same cluster, update the entry.
 			if storageClientID == cc[i].StorageClientID || clusterKey == newClusterConfigEntry.ClusterID {
 				centry.Monitors = newClusterConfigEntry.Monitors
+				centry.StorageClientID = storageClientID
 				cc[i] = centry
 			}
 		}
@@ -108,6 +109,7 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 				found = true
 				break
 			}
+			centry.StorageClientID = storageClientID
 			centry.Monitors = newClusterConfigEntry.Monitors
 			if newClusterConfigEntry.CephFS != nil && (newClusterConfigEntry.CephFS.SubvolumeGroup != "") {
 				centry.CephFS = newClusterConfigEntry.CephFS
@@ -122,6 +124,7 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 		// will fail with a dangling pointer
 		if newClusterConfigEntry != nil && clusterKey != "" {
 			centry.ClusterID = clusterKey
+			centry.StorageClientID = storageClientID
 			centry.Monitors = newClusterConfigEntry.Monitors
 			// Add a condition not to fill with empty values
 			if newClusterConfigEntry.CephFS != nil && (newClusterConfigEntry.CephFS.SubvolumeGroup != "") {
