@@ -467,6 +467,10 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 												},
 											},
 										},
+										{
+											Name:  utils.OperatorNamespaceEnvVar,
+											Value: s.OperatorNamespace,
+										},
 									},
 								},
 							},

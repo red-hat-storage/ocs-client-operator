@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
@@ -61,6 +60,10 @@ func main() {
 		klog.Exitf("%s env var not set", utils.StorageClientNameEnvVar)
 	}
 
+	operatorNamespace, isSet := os.LookupEnv(utils.OperatorNamespaceEnvVar)
+	if !isSet {
+		klog.Exitf("%s env var not set", utils.OperatorNamespaceEnvVar)
+	}
 	storageClient := &v1alpha1.StorageClient{}
 	storageClient.Name = storageClientName
 	storageClient.Namespace = storageClientNamespace
@@ -97,7 +100,12 @@ func main() {
 			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
 		}
 	}
-	err = csi.UpdateMonConfigMap(ctx, cl, logr.FromContextOrDiscard(ctx), "", storageClient.Status.ConsumerID, csiClusterConfigEntry)
+	cc := csi.ClusterConfig{
+		Client:    cl,
+		Namespace: operatorNamespace,
+		Ctx:       ctx,
+	}
+	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
 	if err != nil {
 		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
