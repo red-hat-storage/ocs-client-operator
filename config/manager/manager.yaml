@@ -39,7 +39,7 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
         - name: STATUS_REPORTER_IMAGE
-          value: quay.io/ocs-dev/ocs-client-operator:latest
+          value: STATUS_REPORTER_IMAGE_VALUE
         securityContext:
           allowPrivilegeEscalation: false
         livenessProbe:
