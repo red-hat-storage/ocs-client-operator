@@ -28,6 +28,7 @@ import (
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -37,6 +38,10 @@ func main() {
 	scheme := runtime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		klog.Exitf("Failed to add v1alpha1 to scheme: %v", err)
+	}
+
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add client-go to scheme: %v", err)
 	}
 
 	config, err := config.GetConfig()
