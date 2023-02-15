@@ -64,8 +64,8 @@ type StorageClassClaimSpec struct {
 //+kubebuilder:resource:scope=Cluster
 //+kubebuilder:printcolumn:name="StorageType",type="string",JSONPath=".spec.type"
 //+kubebuilder:printcolumn:name="StorageProfile",type="string",JSONPath=".spec.storageProfile"
-//+kubebuilder:printcolumn:name="StorageClientName",type="string",JSONPath=".spec.StorageClient.Name"
-//+kubebuilder:printcolumn:name="StorageClientNamespace",type="string",JSONPath=".spec.StorageClient.Namespace"
+//+kubebuilder:printcolumn:name="StorageClientName",type="string",JSONPath=".spec.storageClient.name"
+//+kubebuilder:printcolumn:name="StorageClientNamespace",type="string",JSONPath=".spec.storageClient.namespace"
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 
 // StorageClassClaim is the Schema for the storageclassclaims API

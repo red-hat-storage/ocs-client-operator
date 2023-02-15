@@ -19,11 +19,12 @@ resources:
 
 # status reporter RBAC
 - status-reporter-sa.yaml
-- status-reporter-role.yaml
-- status-reporter-role_binding.yaml
+- status-reporter-clusterrole.yaml
+- status-reporter-clusterrole_binding.yaml
 # CSI RBAC
 - csi_cephfs_plugin_service_account.yaml
 - csi_cephfs_provisioner_clusterrole.yaml
+- csi_cephfs_provisioner_clusterrole_binding.yaml
 - csi_cephfs_provisioner_role.yaml
 - csi_cephfs_provisioner_role_binding.yaml
 - csi_cephfs_provisioner_service_account.yaml

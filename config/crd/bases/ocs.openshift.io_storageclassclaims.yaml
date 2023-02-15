@@ -23,10 +23,10 @@ spec:
     - jsonPath: .spec.storageProfile
       name: StorageProfile
       type: string
-    - jsonPath: .spec.StorageClient.Name
+    - jsonPath: .spec.storageClient.name
       name: StorageClientName
       type: string
-    - jsonPath: .spec.StorageClient.Namespace
+    - jsonPath: .spec.storageClient.namespace
       name: StorageClientNamespace
       type: string
     - jsonPath: .status.phase

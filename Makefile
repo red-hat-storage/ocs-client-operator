@@ -88,7 +88,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	cd config/default && $(KUSTOMIZE) edit set image rbac-proxy=$(RBAC_PROXY_IMG)
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	$(KUSTOMIZE) build config/default | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}' | kubectl apply -f -
 
 remove: ## Remove controller from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/default | kubectl delete -f -
@@ -108,7 +108,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	cd config/manifests/bases && $(KUSTOMIZE) edit add annotation --force 'olm.skipRange':"$(SKIP_RANGE)" && \
 		$(KUSTOMIZE) edit add patch --name ocs-client-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(KUSTOMIZE) build $(MANIFEST_PATH) | $(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts=ocs-client-operator-csi-cephfs-provisioner-sa,ocs-client-operator-csi-cephfs-plugin-sa,ocs-client-operator-csi-rbd-provisioner-sa,ocs-client-operator-csi-rbd-plugin-sa,ocs-client-operator-status-reporter
+	$(KUSTOMIZE) build $(MANIFEST_PATH) | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}'| $(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts=ocs-client-operator-csi-cephfs-provisioner-sa,ocs-client-operator-csi-cephfs-plugin-sa,ocs-client-operator-csi-rbd-provisioner-sa,ocs-client-operator-csi-rbd-plugin-sa,ocs-client-operator-status-reporter
 	sed -i "s|packageName:.*|packageName: ${CSI_ADDONS_PACKAGE_NAME}|g" "config/metadata/dependencies.yaml"
 	sed -i "s|version:.*|version: "${CSI_ADDONS_PACKAGE_VERSION}"|g" "config/metadata/dependencies.yaml"
 	cp config/metadata/* bundle/metadata/

@@ -198,6 +198,12 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 
 	addAnnotation(r.storageClassClaim, storageClientLabel, r.storageClient.Name)
 
+	cc := csi.ClusterConfig{
+		Client:    r.Client,
+		Namespace: r.OperatorNamespace,
+		Ctx:       r.ctx,
+	}
+
 	if r.storageClassClaim.GetDeletionTimestamp().IsZero() {
 
 		// TODO: Phases do not have checks at the moment, in order to make them more predictable and less error-prone, at the expense of increased computation cost.
@@ -341,7 +347,14 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 
 				if resource.Name == "cephfs" {
 					csiClusterConfigEntry.CephFS = new(csi.CephFSSpec)
-					csiClusterConfigEntry.CephFS.SubvolumeGroup = data["subvolumegroupname"]
+					subVolumeGroupName := data["subvolumegroupname"]
+					// In ODF 4.12 the subvolume group name is not passed in
+					// the GetStorageConfig RPC call, so we need to generate it
+					// here as this is expected to work with ODF 4.12
+					if subVolumeGroupName == "" {
+						subVolumeGroupName = fmt.Sprintf("cephfilesystemsubvolumegroup-storageconsumer-%s", r.storageClient.Status.ConsumerID)
+					}
+					csiClusterConfigEntry.CephFS.SubvolumeGroup = subVolumeGroupName
 					// delete groupname from data as its not required in storageclass
 					delete(data, "subvolumegroupname")
 					storageClass = r.getCephFSStorageClass(data)
@@ -373,7 +386,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		}
 
 		// update monitor configuration for cephcsi
-		err = csi.UpdateMonConfigMap(r.ctx, r.Client, r.log, r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
+		err = cc.UpdateMonConfigMap(r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
@@ -406,7 +419,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		}
 
 		// Delete configmap entry for cephcsi
-		err = csi.UpdateMonConfigMap(r.ctx, r.Client, r.log, r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, nil)
+		err = cc.UpdateMonConfigMap(r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, nil)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}

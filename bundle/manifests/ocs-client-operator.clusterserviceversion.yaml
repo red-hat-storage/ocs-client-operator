@@ -260,6 +260,107 @@ spec:
           verbs:
           - get
           - list
+          - watch
+          - create
+          - delete
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumeclaims
+          verbs:
+          - get
+          - list
+          - watch
+          - patch
+          - update
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - list
+          - watch
+          - create
+          - update
+          - patch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - volumeattachments
+          verbs:
+          - get
+          - list
+          - watch
+          - patch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - volumeattachments/status
+          verbs:
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumeclaims/status
+          verbs:
+          - patch
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshots
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotclasses
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotcontents
+          verbs:
+          - get
+          - list
+          - watch
+          - patch
+          - update
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotcontents/status
+          verbs:
+          - update
+          - patch
+        serviceAccountName: ocs-client-operator-csi-cephfs-provisioner-sa
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumes
+          verbs:
+          - get
+          - list
         - apiGroups:
           - storage.k8s.io
           resources:
@@ -444,6 +545,23 @@ spec:
           - list
           - watch
         serviceAccountName: ocs-client-operator-csi-rbd-provisioner-sa
+      - rules:
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclients
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - update
+        serviceAccountName: ocs-client-operator-status-reporter
       deployments:
       - label:
           control-plane: controller-manager
@@ -594,23 +712,6 @@ spec:
           verbs:
           - create
         serviceAccountName: ocs-client-operator-csi-rbd-provisioner-sa
-      - rules:
-        - apiGroups:
-          - ocs.openshift.io
-          resources:
-          - storageclients
-          verbs:
-          - get
-          - list
-        - apiGroups:
-          - ""
-          resources:
-          - configmaps
-          verbs:
-          - get
-          - list
-          - update
-        serviceAccountName: ocs-client-operator-status-reporter
     strategy: deployment
   installModes:
   - supported: true

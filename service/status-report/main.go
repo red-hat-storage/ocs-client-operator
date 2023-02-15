@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
@@ -29,6 +28,7 @@ import (
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -38,6 +38,10 @@ func main() {
 	scheme := runtime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		klog.Exitf("Failed to add v1alpha1 to scheme: %v", err)
+	}
+
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add client-go to scheme: %v", err)
 	}
 
 	config, err := config.GetConfig()
@@ -61,6 +65,10 @@ func main() {
 		klog.Exitf("%s env var not set", utils.StorageClientNameEnvVar)
 	}
 
+	operatorNamespace, isSet := os.LookupEnv(utils.OperatorNamespaceEnvVar)
+	if !isSet {
+		klog.Exitf("%s env var not set", utils.OperatorNamespaceEnvVar)
+	}
 	storageClient := &v1alpha1.StorageClient{}
 	storageClient.Name = storageClientName
 	storageClient.Namespace = storageClientNamespace
@@ -97,7 +105,12 @@ func main() {
 			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
 		}
 	}
-	err = csi.UpdateMonConfigMap(ctx, cl, logr.FromContextOrDiscard(ctx), "", storageClient.Status.ConsumerID, csiClusterConfigEntry)
+	cc := csi.ClusterConfig{
+		Client:    cl,
+		Namespace: operatorNamespace,
+		Ctx:       ctx,
+	}
+	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
 	if err != nil {
 		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}

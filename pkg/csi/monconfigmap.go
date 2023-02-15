@@ -26,12 +26,9 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var (
@@ -49,6 +46,12 @@ type ClusterConfigEntry struct {
 
 type CephFSSpec struct {
 	SubvolumeGroup string `json:"subvolumeGroup,omitempty"`
+}
+
+type ClusterConfig struct {
+	client.Client
+	Ctx       context.Context
+	Namespace string
 }
 
 type csiClusterConfig []ClusterConfigEntry
@@ -93,6 +96,7 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 			// If the clusterID belongs to the same cluster, update the entry.
 			if storageClientID == cc[i].StorageClientID || clusterKey == newClusterConfigEntry.ClusterID {
 				centry.Monitors = newClusterConfigEntry.Monitors
+				centry.StorageClientID = storageClientID
 				cc[i] = centry
 			}
 		}
@@ -105,6 +109,7 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 				found = true
 				break
 			}
+			centry.StorageClientID = storageClientID
 			centry.Monitors = newClusterConfigEntry.Monitors
 			if newClusterConfigEntry.CephFS != nil && (newClusterConfigEntry.CephFS.SubvolumeGroup != "") {
 				centry.CephFS = newClusterConfigEntry.CephFS
@@ -119,6 +124,7 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 		// will fail with a dangling pointer
 		if newClusterConfigEntry != nil && clusterKey != "" {
 			centry.ClusterID = clusterKey
+			centry.StorageClientID = storageClientID
 			centry.Monitors = newClusterConfigEntry.Monitors
 			// Add a condition not to fill with empty values
 			if newClusterConfigEntry.CephFS != nil && (newClusterConfigEntry.CephFS.SubvolumeGroup != "") {
@@ -131,30 +137,6 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 	return formatCsiClusterConfig(cc)
 }
 
-func CreateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger) error {
-	monConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: templates.MonConfigMapName,
-		},
-		Data: map[string]string{
-			"config.json": "[]",
-		},
-	}
-	err := controllerutil.SetControllerReference(OperatorDeployment, monConfigMap, c.Scheme())
-	if err != nil {
-		return err
-	}
-	err = c.Create(ctx, monConfigMap)
-	if err != nil && !k8serrors.IsAlreadyExists(err) {
-		log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
-		return err
-	}
-
-	log.Info("successfully created monitor configmap", "name", monConfigMap.Name)
-
-	return nil
-}
-
 // UpdateMonConfigMap updates the config map used to provide ceph-csi with
 // basic cluster configuration. The clusterID and storageClientID are
 // used to determine what "cluster" in the config map will be updated and
@@ -162,11 +144,12 @@ func CreateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger) e
 // value that is provided to ceph-csi uses in the storage class.
 // The locker configMutex is typically a mutex and is used to prevent the config
 // map from being updated for multiple clusters simultaneously.
-func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, clusterID, storageClientID string, newClusterConfigEntry *ClusterConfigEntry) error {
+func (c *ClusterConfig) UpdateMonConfigMap(clusterID, storageClientID string, newClusterConfigEntry *ClusterConfigEntry) error {
 	ConfigKey := "config.json"
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: templates.MonConfigMapName,
+			Name:      templates.MonConfigMapName,
+			Namespace: c.Namespace,
 		},
 		Data: map[string]string{
 			ConfigKey: "[]",
@@ -177,7 +160,7 @@ func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, c
 	defer configMutex.Unlock()
 
 	// fetch current ConfigMap contents
-	err := c.Get(ctx, types.NamespacedName{Name: configMap.Name, Namespace: configMap.Namespace}, configMap)
+	err := c.Get(c.Ctx, types.NamespacedName{Name: configMap.Name, Namespace: configMap.Namespace}, configMap)
 	if err != nil {
 		return errors.Wrap(err, "failed to fetch current csi config map")
 	}
@@ -190,13 +173,10 @@ func UpdateMonConfigMap(ctx context.Context, c client.Client, log klog.Logger, c
 	}
 	configMap.Data[ConfigKey] = newData
 
-	err = c.Update(ctx, configMap)
+	err = c.Update(c.Ctx, configMap)
 	if err != nil {
-		log.Error(err, "failed to update monitor configmap", "name", configMap.Name)
-		return err
+		return errors.Wrapf(err, "failed to update monitor configmap %q", configMap.Name)
 	}
-
-	log.Info("successfully updated monitor configmap", "name", configMap.Name)
 
 	return nil
 }

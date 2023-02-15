@@ -21,13 +21,7 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v2"
-	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/version"
-)
-
-var (
-	// fetch the operator deployment and store it.
-	OperatorDeployment = &appsv1.Deployment{}
 )
 
 const (
