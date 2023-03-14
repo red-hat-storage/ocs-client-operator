@@ -12,7 +12,18 @@ metadata:
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
-  customresourcedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: StorageClassClaim is the Schema for the storageclassclaims API
+      displayName: Storage Class Claim
+      kind: StorageClassClaim
+      name: storageclassclaims.ocs.openshift.io
+      version: v1alpha1
+    - description: StorageClient is the Schema for the storageclients API
+      displayName: Storage Client
+      kind: StorageClient
+      name: storageclients.ocs.openshift.io
+      version: v1alpha1
   description: foo
   displayName: OpenShift Data Foundation Client
   icon:
