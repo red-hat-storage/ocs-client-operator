@@ -299,10 +299,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	err = c.createOrUpdate(prometheusRule, func() error {
 		applyLabels(operatorConfig.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
-		if err := c.own(prometheusRule); err != nil {
-			return err
-		}
-		return nil
+		return c.own(prometheusRule)
 	})
 	if err != nil {
 		c.log.Error(err, "failed to create/update prometheus rules")

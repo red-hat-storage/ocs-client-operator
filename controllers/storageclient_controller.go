@@ -198,7 +198,7 @@ func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClie
 		return s.acknowledgeOnboarding(instance, externalClusterClient)
 	}
 
-	if res, err := s.reconcileClientStatusReporterJob(instance, externalClusterClient); err != nil {
+	if res, err := s.reconcileClientStatusReporterJob(instance); err != nil {
 		return res, err
 	}
 
@@ -428,7 +428,7 @@ func (s *StorageClientReconciler) delete(obj client.Object) error {
 	return nil
 }
 
-func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1alpha1.StorageClient, externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
+func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1alpha1.StorageClient) (reconcile.Result, error) {
 	// start the cronJob to ping the provider api server
 	cronJob := &batchv1.CronJob{}
 	cronJob.Name = getStatusReporterName(instance.Namespace, instance.Name)
