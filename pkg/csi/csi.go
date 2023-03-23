@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	sidecarsConfigPath = "/etc/ocs-client-operator/images.yaml"
+	sidecarsConfigPath = "/opt/config/csi-images.yaml"
 )
 
 type containerImages struct {

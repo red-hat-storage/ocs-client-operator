@@ -10,7 +10,7 @@ COPY go.mod go.sum ./
 COPY vendor/ vendor/
 
 # Copy the project source
-COPY main.go Makefile images.yaml ./
+COPY main.go Makefile ./
 COPY hack/ hack/
 COPY api/ api/
 COPY controllers/ controllers/
@@ -29,7 +29,6 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/status-reporter .
-COPY --from=builder /workspace/images.yaml /etc/ocs-client-operator/images.yaml
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]

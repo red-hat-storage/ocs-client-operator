@@ -33,6 +33,9 @@ spec:
         - --leader-elect
         image: controller:latest
         name: manager
+        volumeMounts:
+        - name: csi-images
+          mountPath: /opt/config
         env:
         - name: OPERATOR_NAMESPACE
           valueFrom:
@@ -63,5 +66,9 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+      volumes:
+      - name: csi-images
+        configMap:
+          name: csi-images
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
