@@ -645,10 +645,17 @@ spec:
                     memory: 64Mi
                 securityContext:
                   allowPrivilegeEscalation: false
+                volumeMounts:
+                - mountPath: /opt/config
+                  name: csi-images
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
               terminationGracePeriodSeconds: 10
+              volumes:
+              - configMap:
+                  name: ocs-client-operator-csi-images
+                name: csi-images
       permissions:
       - rules:
         - apiGroups:
