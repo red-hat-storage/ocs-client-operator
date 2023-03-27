@@ -1,3 +1,4 @@
+.EXPORT_ALL_VARIABLES:
 include hack/make-project-vars.mk
 include hack/make-tools.mk
 include hack/make-bundle-vars.mk
@@ -36,6 +37,9 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+csi-images-manifest: ## Generates the YAML manifest of CSI images for each supported environment.
+	./hack/gen-csi-images-manifest.sh
 
 fmt: ## Run go fmt against code.
 	go fmt ./...

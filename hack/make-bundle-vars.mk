@@ -94,3 +94,58 @@ endif
 # csi-addons dependencies
 CSI_ADDONS_PACKAGE_NAME ?= csi-addons
 CSI_ADDONS_PACKAGE_VERSION ?= "0.5.0"
+
+## CSI driver images
+# The following variables define the default CSI container images to deploy
+# and the supported versions of OpenShift.
+
+# The following variables are here as a convenience for developers so we don't have
+# to retype things, because we're lazy.
+IMAGE_LOCATION_SIG_STORAGE ?= registry.k8s.io/sig-storage
+IMAGE_LOCATION_CSI_ADDONS ?= quay.io/csiaddons
+IMAGE_LOCATION_CEPH_CSI ?= quay.io/cephcsi
+IMAGE_LOCATION_REDHAT_OCP ?= registry.redhat.io/openshift4
+IMAGE_LOCATION_REDHAT_ODF ?= registry.redhat.io/odf4
+
+DEFAULT_CSI_IMG_PROVISIONER_NAME ?= csi-provisioner
+DEFAULT_CSI_IMG_PROVISIONER_VERSION ?= v3.3.0
+DEFAULT_CSI_IMG_ATTACHER_NAME ?= csi-attacher
+DEFAULT_CSI_IMG_ATTACHER_VERSION ?= v4.0.0
+DEFAULT_CSI_IMG_RESIZER_NAME ?= csi-resizer
+DEFAULT_CSI_IMG_RESIZER_VERSION ?= v1.6.0
+DEFAULT_CSI_IMG_SNAPSHOTTER_NAME ?= csi-snapshotter
+DEFAULT_CSI_IMG_SNAPSHOTTER_VERSION ?= v6.1.0
+DEFAULT_CSI_IMG_REGISTRAR_NAME ?= csi-node-driver-registrar
+DEFAULT_CSI_IMG_REGISTRAR_VERSION ?= v2.5.1
+DEFAULT_CSI_IMG_ADDONS_NAME ?= k8s-sidecar
+DEFAULT_CSI_IMG_ADDONS_VERSION ?= v0.5.0
+DEFAULT_CSI_IMG_CEPH_CSI_NAME ?= cephcsi
+DEFAULT_CSI_IMG_CEPH_CSI_VERSION ?= v3.7.2
+
+CSI_IMG_PROVISIONER ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(DEFAULT_CSI_IMG_PROVISIONER_NAME):$(DEFAULT_CSI_IMG_PROVISIONER_VERSION)
+CSI_IMG_ATTACHER ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(DEFAULT_CSI_IMG_ATTACHER_NAME):$(DEFAULT_CSI_IMG_ATTACHER_VERSION)
+CSI_IMG_RESIZER ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(DEFAULT_CSI_IMG_RESIZER_NAME):$(DEFAULT_CSI_IMG_RESIZER_VERSION)
+CSI_IMG_SNAPSHOTTER ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(DEFAULT_CSI_IMG_SNAPSHOTTER_NAME):$(DEFAULT_CSI_IMG_SNAPSHOTTER_VERSION)
+CSI_IMG_REGISTRAR ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(DEFAULT_CSI_IMG_REGISTRAR_NAME):$(DEFAULT_CSI_IMG_REGISTRAR_VERSION)
+CSI_IMG_ADDONS ?= $(IMAGE_LOCATION_CSI_ADDONS)/$(DEFAULT_CSI_IMG_ADDONS_NAME):$(DEFAULT_CSI_IMG_ADDONS_VERSION)
+CSI_IMG_CEPH_CSI ?= $(IMAGE_LOCATION_CEPH_CSI)/$(DEFAULT_CSI_IMG_CEPH_CSI_NAME):$(DEFAULT_CSI_IMG_CEPH_CSI_VERSION)
+
+# CSI_OCP_VERSIONS is a space-delimited list of supported OpenShift
+# versions. For each version, the default behavior is to use the image
+# variables defined above. You can override any image for each VERSION by
+# specifying a variable of the format: CSI_IMG_<CONTAINER>_<VERSION>, where
+# VERSION has "." replaced with "_". These values can be any valid container
+# image name or URL, and the use of the above convenience variables is entirely
+# optional.
+#
+# Example:
+#   CSI_OCP_VERSIONS ?= v4.x
+#   CSI_IMG_PROVISIONER_v4_x ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(CSI_IMG_PROVISIONER_NAME):v1
+#   CSI_IMG_ATTACHER_v4_x ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(CSI_IMG_ATTACHER_NAME):v1
+#   CSI_IMG_RESIZER_v4_x ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(CSI_IMG_RESIZER_NAME_NAME):v1
+#   CSI_IMG_SNAPSHOTTER_v4_x ?= $(IMAGE_LOCATION_SIG_STORAGE)/$(CSI_IMG_SNAPSHOTTER_NAME):v1
+#   CSI_IMG_REGISTRAR_v4_x ?= $(CSI_IMG_REGISTRAR)
+#   CSI_IMG_ADDONS_v4_x ?= quay.io/csiaddons/k8s-sidecar:v3
+#   CSI_IMG_CEPH_CSI_v4_x ?= cephcsi:v0.1
+
+CSI_OCP_VERSIONS ?= v4.11 v4.12
