@@ -1,0 +1,29 @@
+---
+name: verify-generated
+
+on:
+  push:
+    branches: ['*']
+    paths:
+      - hack/**
+      - Makefile
+      - config/manager/csi-images.yaml
+  pull_request:
+    branches: ['*']
+    paths:
+      - hack/**
+      - Makefile
+      - config/manager/csi-images.yaml
+
+jobs:
+  csi-images-manifest:
+    name: verify-csi-images-manifest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Verify changes to CSI images manifest
+        run: make verify-csi-images-manifest
