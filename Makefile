@@ -1,3 +1,4 @@
+.EXPORT_ALL_VARIABLES:
 include hack/make-project-vars.mk
 include hack/make-tools.mk
 include hack/make-bundle-vars.mk
