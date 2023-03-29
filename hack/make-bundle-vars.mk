@@ -98,6 +98,7 @@ CSI_ADDONS_PACKAGE_VERSION ?= "0.5.0"
 ## CSI driver images
 # The following variables define the default CSI container images to deploy
 # and the supported versions of OpenShift.
+CSI_IMAGES_MANIFEST ?= config/manager/csi-images.yaml
 
 # The following variables are here as a convenience for developers so we don't have
 # to retype things, because we're lazy.
