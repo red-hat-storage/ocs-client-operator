@@ -140,7 +140,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	operatorDeployment, err := utils.GetOperatorDeployment(context.TODO(), apiClient, utils.GetOperatorNamespace())
+	operatorDeployment, err := utils.GetOperatorDeployment(context.TODO(), apiClient)
 	if err != nil {
 		setupLog.Error(err, "unable to get operator deployment")
 		os.Exit(1)
