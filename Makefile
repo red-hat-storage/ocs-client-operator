@@ -113,6 +113,7 @@ remove-with-olm: ## Remove controller from the K8s cluster
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
+	rm -rf ./bundle
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/default && \
