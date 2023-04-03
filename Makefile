@@ -112,7 +112,7 @@ remove-with-olm: ## Remove controller from the K8s cluster
 	$(KUSTOMIZE) build config/install | kubectl delete -f -
 
 .PHONY: bundle
-bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/default && \
@@ -124,7 +124,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 		$(KUSTOMIZE) edit add patch --name ocs-client-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
 	$(KUSTOMIZE) build $(MANIFEST_PATH) | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}'| \
-		$(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts=ocs-client-operator-csi-cephfs-provisioner-sa,ocs-client-operator-csi-cephfs-plugin-sa,ocs-client-operator-csi-rbd-provisioner-sa,ocs-client-operator-csi-rbd-plugin-sa,ocs-client-operator-status-reporter
+		$(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts="$$($(KUSTOMIZE) build $(MANIFEST_PATH) | $(YQ) 'select(.kind == "ServiceAccount") | .metadata.name' -N | paste -sd "," -)"
 	sed -i "s|packageName:.*|packageName: ${CSI_ADDONS_PACKAGE_NAME}|g" "config/metadata/dependencies.yaml"
 	sed -i "s|version:.*|version: "${CSI_ADDONS_PACKAGE_VERSION}"|g" "config/metadata/dependencies.yaml"
 	cp config/metadata/* bundle/metadata/

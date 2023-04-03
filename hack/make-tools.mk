@@ -20,6 +20,10 @@ GINKGO = $(BIN_DIR)/ginkgo
 ginkgo: ## Download ginkgo locally if necessary.
 	$(call go-get-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo@latest)
 
+YQ = $(BIN_DIR)/yq
+yq: ## Download yq locally if necessary.
+	$(call go-get-tool,$(YQ),github.com/mikefarah/yq/v4@v4.33.2)
+
 OPERATOR_SDK = $(BIN_DIR)/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
 	@./hack/get-tool.sh $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.20.0/operator-sdk_$(GOOS)_$(GOARCH)
