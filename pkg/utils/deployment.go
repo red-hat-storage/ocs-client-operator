@@ -18,6 +18,8 @@ package utils
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,9 +27,11 @@ import (
 )
 
 // GetOperatorDeployment returns the operator deployment object
-func GetOperatorDeployment(ctx context.Context, c client.Client, namespace string) (*appsv1.Deployment, error) {
+func GetOperatorDeployment(ctx context.Context, c client.Client) (*appsv1.Deployment, error) {
 	deployment := &appsv1.Deployment{}
-	err := c.Get(ctx, types.NamespacedName{Name: "ocs-client-operator-controller-manager", Namespace: namespace}, deployment)
+	podNameStrings := strings.Split(os.Getenv(OperatorPodNameEnvVar), "-")
+	deploymentName := strings.Join(podNameStrings[:len(podNameStrings)-2], "-")
+	err := c.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: GetOperatorNamespace()}, deployment)
 	if err != nil {
 		return nil, err
 	}

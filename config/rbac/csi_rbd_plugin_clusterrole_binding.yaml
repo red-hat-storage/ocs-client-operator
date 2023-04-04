@@ -4,8 +4,9 @@ metadata:
   name: csi-rbd-plugin-crb
 subjects:
   - kind: ServiceAccount
-    name: ocs-client-operator-csi-rbd-plugin-sa
+    name: csi-rbd-plugin-sa
+    namespace: system
 roleRef:
   kind: ClusterRole
-  name: ocs-client-operator-csi-rbd-plugin-cr
+  name: csi-rbd-plugin-cr
   apiGroup: rbac.authorization.k8s.io

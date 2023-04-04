@@ -25,6 +25,9 @@ import (
 // which is the namespace where operator pod is deployed.
 const OperatorNamespaceEnvVar = "OPERATOR_NAMESPACE"
 
+// OperatorPodNameEnvVar is the constant for env variable OPERATOR_POD_NAME
+const OperatorPodNameEnvVar = "OPERATOR_POD_NAME"
+
 // StorageClientNameEnvVar is the constant for env variable STORAGE_CLIENT_NAME
 const StorageClientNameEnvVar = "STORAGE_CLIENT_NAME"
 

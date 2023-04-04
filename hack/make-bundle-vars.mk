@@ -77,7 +77,8 @@ FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
 # manager env variables
-OPERATOR_NAMESPACE ?= ocs-client-operator-system
+OPERATOR_NAMEPREFIX ?= ocs-client-operator-
+OPERATOR_NAMESPACE ?= $(OPERATOR_NAMEPREFIX)system
 OPERATOR_CATALOGSOURCE ?= oco-catalogsource
 
 # kube rbac proxy image variables

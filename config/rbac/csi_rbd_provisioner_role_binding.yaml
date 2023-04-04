@@ -4,8 +4,9 @@ metadata:
   name: csi-rbd-provisioner-rb
 subjects:
   - kind: ServiceAccount
-    name: ocs-client-operator-csi-rbd-provisioner-sa
+    name: csi-rbd-provisioner-sa
+    namespace: system
 roleRef:
   kind: Role
-  name: ocs-client-operator-csi-rbd-provisioner-role
+  name: csi-rbd-provisioner-role
   apiGroup: rbac.authorization.k8s.io
