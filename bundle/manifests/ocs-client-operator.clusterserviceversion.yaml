@@ -260,6 +260,14 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - nodes
+          verbs:
+          - get
+        serviceAccountName: ocs-client-operator-csi-cephfs-plugin-sa
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
           - secrets
           verbs:
           - get
