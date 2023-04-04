@@ -68,7 +68,7 @@ func InitializeSidecars(ver string) error {
 		}
 	}
 	if sidecarImages.Version == "" {
-		return fmt.Errorf("failed to find container details for %v version in %v", ver, sidecarImages)
+		return fmt.Errorf("failed to find container details for %v version in %v", sv.String(), sidecarImages)
 	}
 
 	return nil
