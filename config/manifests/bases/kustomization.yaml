@@ -4,7 +4,7 @@ resources:
 - ocs-client-operator.clusterserviceversion.yaml
 commonAnnotations:
   olm.skipRange: ""
-  operators.operatorframework.io/operator-type: standalone
+  operators.operatorframework.io/operator-type: non-standalone
 patches:
 - patch: '[{"op": "replace", "path": "/spec/replaces", "value": ""}]'
   target:
