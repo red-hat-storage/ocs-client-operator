@@ -270,7 +270,7 @@ func (s *StorageClientReconciler) onboardConsumer(instance *v1alpha1.StorageClie
 	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
 	// TODO: remove hardcoding of the capacity
 	response, err := externalClusterClient.OnboardConsumer(
-		s.ctx, instance.Spec.OnboardingTicket, name, "1T")
+		s.ctx, instance.Spec.OnboardingTicket, name, "1024T")
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			s.logGrpcErrorAndReportEvent(instance, OnboardConsumer, err, st.Code())
