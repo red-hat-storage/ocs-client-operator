@@ -21,6 +21,7 @@ import (
 	// The embed package is required for the prometheus rule files
 	_ "embed"
 
+	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 
@@ -62,15 +63,17 @@ type ClusterVersionReconciler struct {
 	client.Client
 	OperatorDeployment *appsv1.Deployment
 	OperatorNamespace  string
+	ConsolePort        int32
 	Scheme             *runtime.Scheme
 
-	log              logr.Logger
-	ctx              context.Context
-	cephFSDeployment *appsv1.Deployment
-	cephFSDaemonSet  *appsv1.DaemonSet
-	rbdDeployment    *appsv1.Deployment
-	rbdDaemonSet     *appsv1.DaemonSet
-	scc              *secv1.SecurityContextConstraints
+	log               logr.Logger
+	ctx               context.Context
+	consoleDeployment *appsv1.Deployment
+	cephFSDeployment  *appsv1.Deployment
+	cephFSDaemonSet   *appsv1.DaemonSet
+	rbdDeployment     *appsv1.Deployment
+	rbdDaemonSet      *appsv1.DaemonSet
+	scc               *secv1.SecurityContextConstraints
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -116,6 +119,8 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -124,6 +129,11 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	c.ctx = ctx
 	c.log = log.FromContext(ctx, "ClusterVersion", req)
 	c.log.Info("Reconciling ClusterVersion")
+
+	if err := c.ensureConsolePlugin(); err != nil {
+		c.log.Error(err, "unable to deploy client console")
+		return ctrl.Result{}, err
+	}
 
 	instance := configv1.ClusterVersion{}
 	if err = c.Client.Get(context.TODO(), req.NamespacedName, &instance); err != nil {
@@ -355,4 +365,72 @@ func (c *ClusterVersionReconciler) getOperatorConfig() (*corev1.ConfigMap, error
 		return nil, err
 	}
 	return cm, nil
+}
+
+func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
+	c.consoleDeployment = &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      console.DeploymentName,
+			Namespace: c.OperatorNamespace,
+		},
+	}
+
+	err := c.Client.Get(c.ctx, types.NamespacedName{
+		Name:      console.DeploymentName,
+		Namespace: c.OperatorNamespace,
+	}, c.consoleDeployment)
+	if err != nil {
+		c.log.Error(err, "failed to get the deployment for the console")
+		return err
+	}
+
+	nginxConf := console.GetNginxConf()
+	nginxConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      console.NginxConfigMapName,
+			Namespace: c.OperatorNamespace,
+		},
+		Data: map[string]string{
+			"nginx.conf": nginxConf,
+		},
+	}
+	err = c.createOrUpdate(nginxConfigMap, func() error {
+		if consoleConfigMapData := nginxConfigMap.Data["nginx.conf"]; consoleConfigMapData != nginxConf {
+			nginxConfigMap.Data["nginx.conf"] = nginxConf
+		}
+		return controllerutil.SetControllerReference(c.consoleDeployment, nginxConfigMap, c.Scheme)
+	})
+
+	if err != nil {
+		c.log.Error(err, "failed to create nginx config map")
+		return err
+	}
+
+	consoleService := console.GetService(c.ConsolePort, c.OperatorNamespace)
+
+	err = c.createOrUpdate(consoleService, func() error {
+		if err := controllerutil.SetControllerReference(c.consoleDeployment, consoleService, c.Scheme); err != nil {
+			return err
+		}
+		console.GetService(c.ConsolePort, c.OperatorNamespace).DeepCopyInto(consoleService)
+		return nil
+	})
+
+	if err != nil {
+		c.log.Error(err, "failed to create/update service for console")
+		return err
+	}
+
+	consolePlugin := console.GetConsolePlugin(c.ConsolePort, c.OperatorNamespace)
+	err = c.createOrUpdate(consolePlugin, func() error {
+		console.GetConsolePlugin(c.ConsolePort, c.OperatorNamespace).DeepCopyInto(consolePlugin)
+		return nil
+	})
+
+	if err != nil {
+		c.log.Error(err, "failed to create/update consoleplugin")
+		return err
+	}
+
+	return nil
 }

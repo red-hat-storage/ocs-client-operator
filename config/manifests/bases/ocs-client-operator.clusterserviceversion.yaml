@@ -4,6 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
+    console.openshift.io/plugins: '["odf-client-console"]'
   name: ocs-client-operator.v0.0.0
   namespace: placeholder
 spec:
