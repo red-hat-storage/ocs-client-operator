@@ -28,7 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/client"
+	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
