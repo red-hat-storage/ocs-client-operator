@@ -25,7 +25,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
-	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/client"
+	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
