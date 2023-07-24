@@ -29,7 +29,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
-	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/client"
+	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
@@ -268,9 +268,8 @@ func (s *StorageClientReconciler) onboardConsumer(instance *v1alpha1.StorageClie
 	}
 
 	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
-	// TODO: remove hardcoding of the capacity
 	response, err := externalClusterClient.OnboardConsumer(
-		s.ctx, instance.Spec.OnboardingTicket, name, "1T")
+		s.ctx, instance.Spec.OnboardingTicket, name)
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			s.logGrpcErrorAndReportEvent(instance, OnboardConsumer, err, st.Code())
