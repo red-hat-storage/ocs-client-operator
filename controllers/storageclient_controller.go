@@ -46,7 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -88,7 +87,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return res
 	})
 	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
-		func(obj client.Object) []reconcile.Request {
+		func(_ context.Context, obj client.Object) []reconcile.Request {
 			annotations := obj.GetAnnotations()
 			if _, found := annotations[storageClassClaimAnnotation]; found {
 				return []reconcile.Request{{
@@ -102,7 +101,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	s.recorder = utils.NewEventReporter(mgr.GetEventRecorderFor("controller_storageclient"))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
-		Watches(&source.Kind{Type: &v1alpha1.StorageClassClaim{}}, enqueueStorageClientRequest).
+		Watches(&v1alpha1.StorageClassClaim{}, enqueueStorageClientRequest).
 		Complete(s)
 }
 

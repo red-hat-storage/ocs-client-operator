@@ -45,7 +45,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 //go:embed pvc-rules.yaml
@@ -93,7 +92,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	)
 	// Reconcile the ClusterVersion object when the operator config map is updated
 	enqueueClusterVersionRequest := handler.EnqueueRequestsFromMapFunc(
-		func(client client.Object) []reconcile.Request {
+		func(_ context.Context, client client.Object) []reconcile.Request {
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
 					Name: clusterVersionName,
@@ -104,7 +103,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, enqueueClusterVersionRequest, configMapPredicates).
+		Watches(&corev1.ConfigMap{}, enqueueClusterVersionRequest, configMapPredicates).
 		Complete(c)
 }
 

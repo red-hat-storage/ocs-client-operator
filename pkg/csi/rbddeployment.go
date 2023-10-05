@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var rbdDeploymentLabels = map[string]string{
@@ -67,7 +67,7 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 			Labels:    rbdDeploymentLabels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32(2),
+			Replicas: ptr.To(int32(2)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: rbdDeploymentLabels,
 			},
@@ -238,7 +238,7 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 										{
 											ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 												Path:              "oidc-token",
-												ExpirationSeconds: pointer.Int64(3600),
+												ExpirationSeconds: ptr.To(int64(3600)),
 												Audience:          "ceph-csi-kms",
 											},
 										},
