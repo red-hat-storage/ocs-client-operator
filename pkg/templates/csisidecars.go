@@ -21,7 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var ProvisionerContainer = &corev1.Container{
@@ -147,8 +147,8 @@ var DriverRegistrar = &corev1.Container{
 	Name:            "csi-driver-registrar",
 	ImagePullPolicy: corev1.PullIfNotPresent,
 	SecurityContext: &corev1.SecurityContext{
-		Privileged:               pointer.Bool(true),
-		AllowPrivilegeEscalation: pointer.Bool(true),
+		Privileged:               ptr.To(true),
+		AllowPrivilegeEscalation: ptr.To(true),
 	},
 	Args: []string{
 		fmt.Sprintf("--csi-address=%s", DefaultPluginSocketPath),
