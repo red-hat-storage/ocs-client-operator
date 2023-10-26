@@ -422,7 +422,10 @@ func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
 
 	consolePlugin := console.GetConsolePlugin(c.ConsolePort, c.OperatorNamespace)
 	err = c.createOrUpdate(consolePlugin, func() error {
+		// preserve the resourceVersion of the consolePlugin
+		resourceVersion := consolePlugin.ResourceVersion
 		console.GetConsolePlugin(c.ConsolePort, c.OperatorNamespace).DeepCopyInto(consolePlugin)
+		consolePlugin.ResourceVersion = resourceVersion
 		return nil
 	})
 
