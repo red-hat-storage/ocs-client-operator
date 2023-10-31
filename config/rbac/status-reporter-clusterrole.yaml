@@ -18,3 +18,11 @@ rules:
       - get
       - list
       - update
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - clusterversions
+    verbs:
+      - get
+      - list
+      - watch
