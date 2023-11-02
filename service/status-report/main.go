@@ -51,6 +51,14 @@ func main() {
 		klog.Exitf("Failed to add client-go to scheme: %v", err)
 	}
 
+	if err := opv1a1.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add opv1a1 to scheme: %v", err)
+	}
+
+	if err := configv1.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add configv1 to scheme: %v", err)
+	}
+
 	config, err := config.GetConfig()
 	if err != nil {
 		klog.Exitf("Failed to get config: %v", err)
