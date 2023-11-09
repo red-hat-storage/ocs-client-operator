@@ -433,14 +433,24 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 	cronJob.Namespace = s.OperatorNamespace
 	addLabel(cronJob, storageClientNameLabel, instance.Name)
 	addLabel(cronJob, storageClientNamespaceLabel, instance.Namespace)
+	var podDeadLineSeconds int64 = 120
+	jobDeadLineSeconds := podDeadLineSeconds + 35
+	var keepJobResourceSeconds int32 = 600
+	var reducedKeptSuccecsful int32 = 1 
+
 
 	_, err := controllerutil.CreateOrUpdate(s.ctx, s.Client, cronJob, func() error {
 		cronJob.Spec = batchv1.CronJobSpec{
 			Schedule: "* * * * *",
+			ConcurrencyPolicy: batchv1.ForbidConcurrent,
+			SuccessfulJobsHistoryLimit: &reducedKeptSuccecsful,
 			JobTemplate: batchv1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
+					ActiveDeadlineSeconds: &jobDeadLineSeconds,
+					TTLSecondsAfterFinished: &keepJobResourceSeconds,
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
+							ActiveDeadlineSeconds: &podDeadLineSeconds,
 							Containers: []corev1.Container{
 								{
 									Name:  "heartbeat",
