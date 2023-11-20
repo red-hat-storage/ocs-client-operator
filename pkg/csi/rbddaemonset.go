@@ -36,6 +36,7 @@ import (
 	"fmt"
 
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -389,6 +390,9 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 								},
 							},
 						},
+					},
+					Tolerations: []corev1.Toleration{
+						utils.GetTolerationForCSIPods(),
 					},
 				},
 			},
