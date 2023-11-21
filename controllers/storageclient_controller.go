@@ -46,7 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -88,7 +87,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return res
 	})
 	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
-		func(obj client.Object) []reconcile.Request {
+		func(_ context.Context, obj client.Object) []reconcile.Request {
 			annotations := obj.GetAnnotations()
 			if _, found := annotations[storageClassClaimAnnotation]; found {
 				return []reconcile.Request{{
@@ -102,7 +101,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	s.recorder = utils.NewEventReporter(mgr.GetEventRecorderFor("controller_storageclient"))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
-		Watches(&source.Kind{Type: &v1alpha1.StorageClassClaim{}}, enqueueStorageClientRequest).
+		Watches(&v1alpha1.StorageClassClaim{}, enqueueStorageClientRequest).
 		Complete(s)
 }
 
@@ -434,14 +433,24 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 	cronJob.Namespace = s.OperatorNamespace
 	addLabel(cronJob, storageClientNameLabel, instance.Name)
 	addLabel(cronJob, storageClientNamespaceLabel, instance.Namespace)
+	var podDeadLineSeconds int64 = 120
+	jobDeadLineSeconds := podDeadLineSeconds + 35
+	var keepJobResourceSeconds int32 = 600
+	var reducedKeptSuccecsful int32 = 1 
+
 
 	_, err := controllerutil.CreateOrUpdate(s.ctx, s.Client, cronJob, func() error {
 		cronJob.Spec = batchv1.CronJobSpec{
 			Schedule: "* * * * *",
+			ConcurrencyPolicy: batchv1.ForbidConcurrent,
+			SuccessfulJobsHistoryLimit: &reducedKeptSuccecsful,
 			JobTemplate: batchv1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
+					ActiveDeadlineSeconds: &jobDeadLineSeconds,
+					TTLSecondsAfterFinished: &keepJobResourceSeconds,
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
+							ActiveDeadlineSeconds: &podDeadLineSeconds,
 							Containers: []corev1.Container{
 								{
 									Name:  "heartbeat",

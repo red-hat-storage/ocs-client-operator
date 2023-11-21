@@ -36,11 +36,12 @@ import (
 	"fmt"
 
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var (
@@ -90,8 +91,8 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 							Image:           sidecarImages.ContainerImages.CephCSIImageURL,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
-								Privileged:               pointer.Bool(true),
-								AllowPrivilegeEscalation: pointer.Bool(true),
+								Privileged:               ptr.To(true),
+								AllowPrivilegeEscalation: ptr.To(true),
 								Capabilities: &corev1.Capabilities{
 									Add: []corev1.Capability{
 										"SYS_ADMIN",
@@ -201,8 +202,8 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 							Image:           sidecarImages.ContainerImages.CSIADDONSImageURL,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
-								Privileged:               pointer.Bool(true),
-								AllowPrivilegeEscalation: pointer.Bool(true),
+								Privileged:               ptr.To(true),
+								AllowPrivilegeEscalation: ptr.To(true),
 							},
 							Args: []string{
 								"--node-id=$(NODE_ID)",
@@ -381,7 +382,7 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 										{
 											ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 												Path:              "oidc-token",
-												ExpirationSeconds: pointer.Int64(3600),
+												ExpirationSeconds: ptr.To(int64(3600)),
 												Audience:          "ceph-csi-kms",
 											},
 										},
@@ -389,6 +390,9 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 								},
 							},
 						},
+					},
+					Tolerations: []corev1.Toleration{
+						utils.GetTolerationForCSIPods(),
 					},
 				},
 			},
