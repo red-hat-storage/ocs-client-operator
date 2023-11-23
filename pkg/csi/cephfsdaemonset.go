@@ -20,11 +20,12 @@ import (
 	"fmt"
 
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -77,8 +78,8 @@ func GetCephFSDaemonSet(namespace string) *appsv1.DaemonSet {
 							Image:           sidecarImages.ContainerImages.CephCSIImageURL,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
-								Privileged:               pointer.Bool(true),
-								AllowPrivilegeEscalation: pointer.Bool(true),
+								Privileged:               ptr.To(true),
+								AllowPrivilegeEscalation: ptr.To(true),
 								Capabilities: &corev1.Capabilities{
 									Add: []corev1.Capability{
 										"SYS_ADMIN",
@@ -261,6 +262,9 @@ func GetCephFSDaemonSet(namespace string) *appsv1.DaemonSet {
 								},
 							},
 						},
+					},
+					Tolerations: []corev1.Toleration{
+						utils.GetTolerationForCSIPods(),
 					},
 				},
 			},

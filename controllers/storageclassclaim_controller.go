@@ -45,7 +45,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -69,7 +68,7 @@ type StorageClassClaimReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClassClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	enqueueStorageConsumerRequest := handler.EnqueueRequestsFromMapFunc(
-		func(obj client.Object) []reconcile.Request {
+		func(_ context.Context, obj client.Object) []reconcile.Request {
 			annotations := obj.GetAnnotations()
 			if _, found := annotations[storageClassClaimAnnotation]; found {
 				return []reconcile.Request{{
@@ -84,8 +83,8 @@ func (r *StorageClassClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClassClaim{}, builder.WithPredicates(
 			predicate.GenerationChangedPredicate{},
 		)).
-		Watches(&source.Kind{Type: &storagev1.StorageClass{}}, enqueueStorageConsumerRequest).
-		Watches(&source.Kind{Type: &snapapi.VolumeSnapshotClass{}}, enqueueStorageConsumerRequest).
+		Watches(&storagev1.StorageClass{}, enqueueStorageConsumerRequest).
+		Watches(&snapapi.VolumeSnapshotClass{}, enqueueStorageConsumerRequest).
 		Complete(r)
 }
 

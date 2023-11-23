@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -68,7 +68,7 @@ func GetCephFSDeployment(namespace string) *appsv1.Deployment {
 			Labels:    cephfsDeploymentLabels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32(2),
+			Replicas: ptr.To(int32(2)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: cephfsDeploymentLabels,
 			},
