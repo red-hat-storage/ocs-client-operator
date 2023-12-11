@@ -190,6 +190,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - operators.coreos.com
+  resources:
+  - clusterserviceversions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - security.openshift.io
   resources:
   - securitycontextconstraints

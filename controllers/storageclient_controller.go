@@ -23,12 +23,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -59,6 +61,8 @@ const (
 	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
 	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
 	storageClientFinalizer      = "storageclient.ocs.openshift.io"
+
+	csvPrefix = "ocs-client-operator"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -110,6 +114,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/finalizers,verbs=update
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 
 func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -266,9 +271,24 @@ func (s *StorageClientReconciler) onboardConsumer(instance *v1alpha1.StorageClie
 		return reconcile.Result{}, fmt.Errorf("failed to get the clusterVersion version of the OCP cluster: %v", err)
 	}
 
+	// TODO Have a version file corresponding to the release
+	var oprVersion string
+	csvList := opv1a1.ClusterServiceVersionList{}
+	if err = s.Client.List(s.ctx, &csvList, client.InNamespace(s.OperatorNamespace)); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to list csv resources in ns: %v, err: %v", s.OperatorNamespace, err)
+	}
+	item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
+		return strings.HasPrefix(csv.Name, csvPrefix)
+	})
+	if item != nil {
+		oprVersion = item.Spec.Version.String()
+	}
+	if oprVersion == "" {
+		return reconcile.Result{}, fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
+	}
 	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
 	response, err := externalClusterClient.OnboardConsumer(
-		s.ctx, instance.Spec.OnboardingTicket, name)
+		s.ctx, instance.Spec.OnboardingTicket, name, oprVersion)
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			s.logGrpcErrorAndReportEvent(instance, OnboardConsumer, err, st.Code())
