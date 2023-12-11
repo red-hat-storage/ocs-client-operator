@@ -23,12 +23,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -59,6 +61,8 @@ const (
 	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
 	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
 	storageClientFinalizer      = "storageclient.ocs.openshift.io"
+
+	csvPrefix = "ocs-client-operator"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -110,6 +114,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/finalizers,verbs=update
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 
 func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -266,9 +271,23 @@ func (s *StorageClientReconciler) onboardConsumer(instance *v1alpha1.StorageClie
 		return reconcile.Result{}, fmt.Errorf("failed to get the clusterVersion version of the OCP cluster: %v", err)
 	}
 
+	// TODO Have a version file corresponding to the release
+	csvList := opv1a1.ClusterServiceVersionList{}
+	if err = s.list(&csvList, client.InNamespace(s.OperatorNamespace)); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to list csv resources in ns: %v, err: %v", s.OperatorNamespace, err)
+	}
+	csv := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
+		return strings.HasPrefix(csv.Name, csvPrefix)
+	})
+	if csv == nil {
+		return reconcile.Result{}, fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
+	}
 	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
-	response, err := externalClusterClient.OnboardConsumer(
-		s.ctx, instance.Spec.OnboardingTicket, name)
+	onboardRequest := providerClient.NewOnboardConsumerRequest().
+		SetConsumerName(name).
+		SetOnboardingTicket(instance.Spec.OnboardingTicket).
+		SetClientOperatorVersion(csv.Spec.Version.String())
+	response, err := externalClusterClient.OnboardConsumer(s.ctx, onboardRequest)
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			s.logGrpcErrorAndReportEvent(instance, OnboardConsumer, err, st.Code())
@@ -436,17 +455,16 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 	var podDeadLineSeconds int64 = 120
 	jobDeadLineSeconds := podDeadLineSeconds + 35
 	var keepJobResourceSeconds int32 = 600
-	var reducedKeptSuccecsful int32 = 1 
-
+	var reducedKeptSuccecsful int32 = 1
 
 	_, err := controllerutil.CreateOrUpdate(s.ctx, s.Client, cronJob, func() error {
 		cronJob.Spec = batchv1.CronJobSpec{
-			Schedule: "* * * * *",
-			ConcurrencyPolicy: batchv1.ForbidConcurrent,
+			Schedule:                   "* * * * *",
+			ConcurrencyPolicy:          batchv1.ForbidConcurrent,
 			SuccessfulJobsHistoryLimit: &reducedKeptSuccecsful,
 			JobTemplate: batchv1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
-					ActiveDeadlineSeconds: &jobDeadLineSeconds,
+					ActiveDeadlineSeconds:   &jobDeadLineSeconds,
 					TTLSecondsAfterFinished: &keepJobResourceSeconds,
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
@@ -487,4 +505,8 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
+}
+
+func (s *StorageClientReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
+	return s.Client.List(s.ctx, obj, listOptions...)
 }
