@@ -32,12 +32,16 @@ import (
 	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"github.com/operator-framework/operator-lib/conditions"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	apiclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -119,12 +123,38 @@ func main() {
 		os.Exit(1)
 	}
 
+	condition, err := utils.NewUpgradeable(mgr.GetClient())
+	if err != nil {
+		setupLog.Error(err, "Unable to get OperatorCondition")
+		os.Exit(1)
+	}
+
 	if err = (&controllers.StorageClientReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
+		OperatorCondition: condition,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
+		os.Exit(1)
+	}
+
+	condition, err = utils.NewUpgradeable(apiClient)
+	if err != nil {
+		setupLog.Error(err, "Unable to get OperatorCondition")
+		os.Exit(1)
+	}
+
+	// retry for sometime till OperatorCondition CR is available
+	err = wait.ExponentialBackoff(retry.DefaultRetry, func() (bool, error) {
+		// default to not upgradeable until we are onboardeded and performs version compatibility checks
+		err = condition.Set(context.TODO(), metav1.ConditionFalse,
+			conditions.WithMessage("Operator Version check isn't performed"), conditions.WithReason("OperatorVersion"))
+		return err == nil, err
+	})
+
+	if err != nil {
+		setupLog.Error(err, "Unable to update OperatorCondition")
 		os.Exit(1)
 	}
 
