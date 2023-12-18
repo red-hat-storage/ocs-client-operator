@@ -109,6 +109,8 @@ github.com/openshift/api v0.0.0-20231204192004-bfea29e5e6c4 h1:5RyeLvTSZEn/fDQA6
 github.com/openshift/api v0.0.0-20231204192004-bfea29e5e6c4/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
 github.com/operator-framework/api v0.17.7-0.20230626210316-aa3e49803e7b h1:prJEMyFQde4yxxaTuvqx1A/ukuCg/EZ2MbfdZiJwlls=
 github.com/operator-framework/api v0.17.7-0.20230626210316-aa3e49803e7b/go.mod h1:lnurXgadLnoZ7pufKMHkErr2BVOIZSpHtvEkHBcKvdk=
+github.com/operator-framework/operator-lib v0.11.1-0.20230717184314-6efbe3a22f6f h1:CQkdjRsbPtDd3YvENaPMZzw1eHPfujiZTrCzzSCPCsw=
+github.com/operator-framework/operator-lib v0.11.1-0.20230717184314-6efbe3a22f6f/go.mod h1:fmVTfDgR/OMPg7eJvXWlyBVzCXUfHAOxIXO8W51HvKY=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=

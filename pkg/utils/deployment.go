@@ -21,6 +21,8 @@ import (
 	"os"
 	"strings"
 
+	apiv2 "github.com/operator-framework/api/pkg/operators/v2"
+	"github.com/operator-framework/operator-lib/conditions"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,4 +39,9 @@ func GetOperatorDeployment(ctx context.Context, c client.Client) (*appsv1.Deploy
 	}
 
 	return deployment, nil
+}
+
+// NewUpgradeable returns a Conditions interface to Get or Set OperatorConditions
+func NewUpgradeable(cl client.Client) (conditions.Condition, error) {
+	return conditions.InClusterFactory{Client: cl}.NewCondition(apiv2.ConditionType(apiv2.Upgradeable))
 }

@@ -21,6 +21,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -28,15 +29,16 @@ import (
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	"github.com/red-hat-storage/ocs-client-operator/version"
 
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"github.com/operator-framework/operator-lib/conditions"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -74,6 +76,7 @@ type StorageClientReconciler struct {
 	recorder *utils.EventReporter
 
 	OperatorNamespace string
+	OperatorCondition conditions.Condition
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -153,7 +156,9 @@ func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	} else if statusErr != nil {
 		err = statusErr
 	}
-	return result, err
+
+	condErr := s.setOperatorCondition(instance)
+	return result, errors.Join(err, condErr)
 }
 
 func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClient) (ctrl.Result, error) {
@@ -440,7 +445,7 @@ func addLabel(obj metav1.Object, key string, value string) {
 }
 
 func (s *StorageClientReconciler) delete(obj client.Object) error {
-	if err := s.Client.Delete(s.ctx, obj); err != nil && !errors.IsNotFound(err) {
+	if err := s.Client.Delete(s.ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	return nil
@@ -506,4 +511,18 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
+}
+
+func (s *StorageClientReconciler) setOperatorCondition(instance *v1alpha1.StorageClient) error {
+	if !instance.GetDeletionTimestamp().IsZero() && instance.Spec.OperatorVersion == version.Version {
+		return s.OperatorCondition.Set(s.ctx, metav1.ConditionFalse,
+			conditions.WithMessage("ODF Provider and Client operators versions should be same"), conditions.WithReason("OperatorVersion"))
+	}
+	// TODO(lgangava):
+	// 	1. Try to match the provider operator version rather than providing free rein to OLM for upgrades
+	// 	2. If not matched properly, OLM may perform upgrades beyond provider operator versions (mostly patch version) and that might
+	// interfere with gRPC communications among others
+	// 	3. Design considerations to deal with StorageClients connected to multiple provider clusters
+	return s.OperatorCondition.Set(s.ctx, metav1.ConditionTrue,
+		conditions.WithMessage("ODF Provider and Client operators versions should be matched"), conditions.WithReason("OperatorVersion"))
 }
