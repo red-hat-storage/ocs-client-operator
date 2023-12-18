@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver/v4"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"github.com/red-hat-storage/ocs-client-operator/version"
@@ -64,7 +65,8 @@ const (
 	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
 	storageClientFinalizer      = "storageclient.ocs.openshift.io"
 
-	csvPrefix = "ocs-client-operator"
+	csvPrefix           = "ocs-client-operator"
+	storageClientSubPkg = csvPrefix
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -118,6 +120,7 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;patch
 
 func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -209,6 +212,10 @@ func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClie
 
 	if res, err := s.reconcileClientStatusReporterJob(instance); err != nil {
 		return res, err
+	}
+
+	if err := s.reconcileSubscriptionChannel(instance); err != nil {
+		return reconcile.Result{}, err
 	}
 
 	return reconcile.Result{}, nil
@@ -511,6 +518,73 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
+}
+
+func (s *StorageClientReconciler) reconcileSubscriptionChannel(instance *v1alpha1.StorageClient) error {
+	oprVersion, err := semver.Make(instance.Spec.OperatorVersion)
+	if err != nil {
+		return fmt.Errorf("Failed to parse OperatorVersion: %v", err)
+	}
+
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err = s.Client.Get(s.ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
+		return fmt.Errorf("Failed to get clusterVersion: %v", err)
+	}
+	record := utils.Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
+		return record.State == configv1.CompletedUpdate
+	})
+	if record == nil {
+		return errors.New("unable to find platform version with completed update")
+	}
+	clsVersion, err := semver.Make(record.Version)
+	if err != nil {
+		return fmt.Errorf("Failed to parse PlatformVersion: %v", err)
+	}
+
+	if clsVersion.Major <= oprVersion.Major && clsVersion.Minor <= oprVersion.Minor {
+		// not specifically an error, provider operator wants client operator to be at a specific version
+		// however we can choose not to depending on our current condition and just stay inside support
+		// matrix
+		s.Log.Info("Not changing channel name as operator version may become unsupported to the platform version")
+		return nil
+	}
+
+	subList := &opv1a1.SubscriptionList{}
+	if err := s.Client.List(s.ctx, subList, client.InNamespace(s.OperatorNamespace)); err != nil {
+		return fmt.Errorf("Failed to list Subscriptions: %v", err)
+	}
+	sub := utils.Find(subList.Items, func(sub *opv1a1.Subscription) bool {
+		return sub.Spec.Package == storageClientSubPkg
+	})
+	if sub == nil {
+		// highly unlikely and if not found a programmatic error might have occurred
+		return fmt.Errorf("Unable to find subscription with package name %q", storageClientSubPkg)
+	}
+
+	// TODO(lgangava): have details in the configmap that's generatable during build time
+	channel := fmt.Sprintf("stable-%d.%d", oprVersion.Major, oprVersion.Minor)
+
+	if sub.Spec.Channel != channel {
+		channelPatch := []struct {
+			Op    string      `json:"Op"`
+			Path  string      `json:"Path"`
+			Value interface{} `json:"Value"`
+		}{
+			{
+				Op:    "replace",
+				Path:  "/spec/channel",
+				Value: channel,
+			},
+		}
+		jsonPatch, _ := json.Marshal(channelPatch)
+		patch := client.RawPatch(types.JSONPatchType, jsonPatch)
+		if err := s.Client.Patch(s.ctx, sub, patch); err != nil {
+			return fmt.Errorf("Unable to patch subscription channel name to %q: %v", channel, err)
+		}
+	}
+
+	return nil
 }
 
 func (s *StorageClientReconciler) setOperatorCondition(instance *v1alpha1.StorageClient) error {
