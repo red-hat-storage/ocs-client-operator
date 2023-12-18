@@ -44,6 +44,8 @@ type StorageClientSpec struct {
 
 	// OnboardingTicket holds an identity information required for consumer to onboard.
 	OnboardingTicket string `json:"onboardingTicket"`
+	// Operator Version of provider that client should match
+	OperatorVersion string `json:"operatorVersion,omitempty"`
 }
 
 // StorageClientStatus defines the observed state of StorageClient

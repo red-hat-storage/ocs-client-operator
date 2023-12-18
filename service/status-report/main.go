@@ -138,8 +138,16 @@ func main() {
 	status := providerclient.NewStorageClientStatus().
 		SetPlatformVersion(pltVersion).
 		SetOperatorVersion(oprVersion)
-	if _, err = providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status); err != nil {
+	stResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
+	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
+
+	if storageClient.Spec.OperatorVersion != stResponse.ProviderOperatorVersion {
+		storageClient.Spec.OperatorVersion = stResponse.ProviderOperatorVersion
+		if err = cl.Update(ctx, storageClient); err != nil {
+			klog.Warningf("Failed to update Storage Client: %v", err)
+		}
 	}
 
 	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)

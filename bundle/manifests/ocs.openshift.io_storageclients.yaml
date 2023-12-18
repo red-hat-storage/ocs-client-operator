@@ -45,6 +45,9 @@ spec:
                 description: OnboardingTicket holds an identity information required
                   for consumer to onboard.
                 type: string
+              operatorVersion:
+                description: Operator Version of provider that client should match
+                type: string
               storageProviderEndpoint:
                 description: StorageProviderEndpoint holds info to establish connection
                   with the storage providing cluster.
