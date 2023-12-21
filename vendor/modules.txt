@@ -182,10 +182,10 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20231220130936-5e04cc22fcf6
+# github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20231221111740-6704e7366b4d
 ## explicit; go 1.20
 github.com/red-hat-storage/ocs-operator/v4/services/provider/client
-github.com/red-hat-storage/ocs-operator/v4/services/provider/clientstatus
+github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces
 github.com/red-hat-storage/ocs-operator/v4/services/provider/pb
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
