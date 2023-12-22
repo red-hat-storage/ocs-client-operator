@@ -599,6 +599,14 @@ spec:
           - get
           - list
           - update
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - clusterversions
+          verbs:
+          - get
+          - list
+          - watch
         serviceAccountName: ocs-client-operator-status-reporter
       deployments:
       - label:
@@ -886,6 +894,16 @@ spec:
           verbs:
           - create
         serviceAccountName: ocs-client-operator-csi-rbd-provisioner-sa
+      - rules:
+        - apiGroups:
+          - operators.coreos.com
+          resources:
+          - clusterserviceversions
+          verbs:
+          - get
+          - list
+          - watch
+        serviceAccountName: ocs-client-operator-status-reporter
     strategy: deployment
   installModes:
   - supported: true

@@ -18,7 +18,7 @@ package templates
 
 import (
 	v1k8scsi "k8s.io/api/storage/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var (
@@ -27,16 +27,16 @@ var (
 
 var CephFSCSIDriver = &v1k8scsi.CSIDriver{
 	Spec: v1k8scsi.CSIDriverSpec{
-		AttachRequired: pointer.Bool(true),
-		PodInfoOnMount: pointer.Bool(false),
+		AttachRequired: ptr.To(true),
+		PodInfoOnMount: ptr.To(false),
 		FSGroupPolicy:  &fileFSGroupPolicy,
 	},
 }
 
 var RbdCSIDriver = &v1k8scsi.CSIDriver{
 	Spec: v1k8scsi.CSIDriverSpec{
-		AttachRequired: pointer.Bool(true),
-		PodInfoOnMount: pointer.Bool(false),
+		AttachRequired: ptr.To(true),
+		PodInfoOnMount: ptr.To(false),
 		FSGroupPolicy:  &fileFSGroupPolicy,
 	},
 }
