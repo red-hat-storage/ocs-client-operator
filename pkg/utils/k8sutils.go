@@ -38,6 +38,9 @@ const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
 
 const runCSIDaemonsetOnMaster = "RUN_CSI_DAEMONSET_ON_MASTER"
 
+// Current version of the platform that Operator is running on
+const PlatformVersionEnvVar = "PLATFORM_VERSION"
+
 // GetOperatorNamespace returns the namespace where the operator is deployed.
 func GetOperatorNamespace() string {
 	return os.Getenv(OperatorNamespaceEnvVar)
