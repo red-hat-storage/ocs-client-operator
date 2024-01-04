@@ -153,6 +153,11 @@ github.com/openshift/api/security/v1
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1alpha1
+github.com/operator-framework/api/pkg/operators/v2
+# github.com/operator-framework/operator-lib v0.11.1-0.20231020142438-152ee1fb7f83
+## explicit; go 1.20
+github.com/operator-framework/operator-lib/conditions
+github.com/operator-framework/operator-lib/internal/utils
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
