@@ -61,8 +61,6 @@ const (
 	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
 	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
 	storageClientFinalizer      = "storageclient.ocs.openshift.io"
-
-	csvPrefix = "ocs-client-operator"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
