@@ -21,8 +21,6 @@ resources:
 - status-reporter-sa.yaml
 - status-reporter-clusterrole.yaml
 - status-reporter-clusterrole_binding.yaml
-- status-reporter-role.yaml
-- status-reporter-role_binding.yaml
 # CSI RBAC
 - csi_cephfs_plugin_clusterrole.yaml
 - csi_cephfs_plugin_clusterrole_binding.yaml

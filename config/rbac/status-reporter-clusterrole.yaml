@@ -19,10 +19,8 @@ rules:
       - list
       - update
   - apiGroups:
-      - config.openshift.io
+      - ocs.openshift.io
     resources:
-      - clusterversions
+      - storageclients/status
     verbs:
-      - get
-      - list
-      - watch
+      - patch
