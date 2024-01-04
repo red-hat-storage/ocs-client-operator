@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"time"
@@ -41,6 +42,7 @@ const (
 	csvPrefix = "ocs-client-operator"
 )
 
+// TODO: refactor main as the responsibilities grew significantly
 func main() {
 	scheme := runtime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
@@ -138,8 +140,19 @@ func main() {
 	status := providerclient.NewStorageClientStatus().
 		SetPlatformVersion(pltVersion).
 		SetOperatorVersion(oprVersion)
-	if _, err = providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status); err != nil {
+	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
+	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
+
+	storageClient.Status = v1alpha1.StorageClientStatus{
+		Operator: v1alpha1.OperatorVersion{
+			DesiredVersion: statusResponse.ClientDesiredVersion,
+		},
+	}
+	jsonPatch, _ := json.Marshal(storageClient)
+	if err = cl.Status().Patch(ctx, storageClient, client.RawPatch(types.MergePatchType, jsonPatch)); err != nil {
+		klog.Warningf("Failed to patch storageclient %q desired operator version: %v", storageClient.Name, statusResponse.ClientDesiredVersion)
 	}
 
 	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
