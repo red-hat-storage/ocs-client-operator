@@ -23,14 +23,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
+	"github.com/blang/semver/v4"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
-	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -72,6 +71,11 @@ type StorageClientReconciler struct {
 	recorder *utils.EventReporter
 
 	OperatorNamespace string
+	OperatorVersion   string
+
+	// this can be part of reconciler as after a plaform update
+	// operator will get restarted and fetches latest version
+	PlatformVersion string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -200,6 +204,10 @@ func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClie
 		return s.acknowledgeOnboarding(instance, externalClusterClient)
 	}
 
+	if res, err := s.reconcileClientStatus(instance); err != nil {
+		return res, err
+	}
+
 	if res, err := s.reconcileClientStatusReporterJob(instance); err != nil {
 		return res, err
 	}
@@ -269,22 +277,11 @@ func (s *StorageClientReconciler) onboardConsumer(instance *v1alpha1.StorageClie
 		return reconcile.Result{}, fmt.Errorf("failed to get the clusterVersion version of the OCP cluster: %v", err)
 	}
 
-	// TODO Have a version file corresponding to the release
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err = s.list(&csvList, client.InNamespace(s.OperatorNamespace)); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to list csv resources in ns: %v, err: %v", s.OperatorNamespace, err)
-	}
-	csv := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
-		return strings.HasPrefix(csv.Name, csvPrefix)
-	})
-	if csv == nil {
-		return reconcile.Result{}, fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
-	}
 	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
 	onboardRequest := providerClient.NewOnboardConsumerRequest().
 		SetConsumerName(name).
 		SetOnboardingTicket(instance.Spec.OnboardingTicket).
-		SetClientOperatorVersion(csv.Spec.Version.String())
+		SetClientOperatorVersion(s.OperatorVersion)
 	response, err := externalClusterClient.OnboardConsumer(s.ctx, onboardRequest)
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
@@ -443,6 +440,26 @@ func (s *StorageClientReconciler) delete(obj client.Object) error {
 	return nil
 }
 
+func (s *StorageClientReconciler) reconcileClientStatus(instance *v1alpha1.StorageClient) (reconcile.Result, error) {
+	currentVersion := instance.Status.Operator.CurrentVersion
+	operatorVersion, _ := semver.Make(s.OperatorVersion)
+	if currentVersion == "" {
+		// TODO(lgangava): should we set Major.Minor.Patch or Major.Minor only
+		instance.Status.Operator.CurrentVersion = fmt.Sprintf("%d.%d", operatorVersion.Major, operatorVersion.Minor)
+		return reconcile.Result{}, nil
+	}
+
+	instanceVersion, _ := semver.Make(currentVersion)
+	// operator can be backward compatible to it's operand but it couldn't reconcile the object
+	// which was initially reconciled by higher versioned operator
+	if operatorVersion.Major < instanceVersion.Major || operatorVersion.Minor < instanceVersion.Minor {
+		return reconcile.Result{}, fmt.Errorf("backing off from reconciling StorageClient at higher version %q", currentVersion)
+	}
+
+	instance.Status.Operator.CurrentVersion = fmt.Sprintf("%d.%d", operatorVersion.Major, operatorVersion.Minor)
+	return reconcile.Result{}, nil
+}
+
 func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1alpha1.StorageClient) (reconcile.Result, error) {
 	// start the cronJob to ping the provider api server
 	cronJob := &batchv1.CronJob{}
@@ -503,8 +520,4 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
-}
-
-func (s *StorageClientReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
-	return s.Client.List(s.ctx, obj, listOptions...)
 }

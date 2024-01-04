@@ -119,10 +119,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	operatorVersion, err := controllers.GetOperatorVersion(context.TODO(), apiClient, utils.GetOperatorNamespace())
+	if err != nil {
+		setupLog.Error(err, "unable to find operator version")
+		os.Exit(1)
+	}
+
+	platformVersion, err := controllers.GetPlatformVersion(context.TODO(), apiClient)
+	if err != nil {
+		setupLog.Error(err, "unable to find platform verison")
+		os.Exit(1)
+	}
+
 	if err = (&controllers.StorageClientReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
+		OperatorVersion:   operatorVersion,
+		PlatformVersion:   platformVersion,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
 		os.Exit(1)
