@@ -32,6 +32,8 @@ import (
 	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	opv2 "github.com/operator-framework/api/pkg/operators/v2"
+	"github.com/operator-framework/operator-lib/conditions"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -61,6 +63,7 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(consolev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(opv1a1.AddToScheme(scheme))
+	utilruntime.Must(opv2.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -174,6 +177,24 @@ func main() {
 		ConsolePort:        int32(consolePort),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterVersionReconciler")
+		os.Exit(1)
+	}
+
+	condition, err := conditions.
+		InClusterFactory{Client: mgr.GetClient()}.
+		NewCondition(opv2.ConditionType(opv2.Upgradeable))
+	if err != nil {
+		setupLog.Error(err, "unable to create new upgradeable operator condition")
+		os.Exit(1)
+	}
+	if err = (&controllers.UpgradeReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		OperatorNamespace: utils.GetOperatorNamespace(),
+		OperatorCondition: condition,
+		PlatformVersion:   platformVersion,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UpgradeController")
 		os.Exit(1)
 	}
 
