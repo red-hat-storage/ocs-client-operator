@@ -14,8 +14,9 @@ var (
 	pluginBasePath = "/"
 
 	NginxConfigMapName = fmt.Sprintf("%s-nginx-conf", DeploymentName)
+	pluginName         = "0df-client-console"
 
-	pluginDisplayName = "OCS Client Console"
+	pluginDisplayName = "ODF Client Console"
 
 	servicePortName         = "console-port"
 	serviceSecretAnnotation = "service.alpha.openshift.io/serving-cert-secret-name"
@@ -53,7 +54,7 @@ func GetService(port int32, namespace string) *apiv1.Service {
 func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1alpha1.ConsolePlugin {
 	return &consolev1alpha1.ConsolePlugin{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: DeploymentName,
+			Name: pluginName,
 		},
 		Spec: consolev1alpha1.ConsolePluginSpec{
 			DisplayName: pluginDisplayName,
