@@ -62,6 +62,14 @@ spec:
                 description: ConsumerID will hold the identity of this cluster inside
                   the attached provider cluster
                 type: string
+              operator:
+                description: OperatorVersion holds current and desired version
+                properties:
+                  currentVersion:
+                    type: string
+                  desiredVersion:
+                    type: string
+                type: object
               phase:
                 type: string
             type: object

@@ -46,12 +46,20 @@ type StorageClientSpec struct {
 	OnboardingTicket string `json:"onboardingTicket"`
 }
 
+// OperatorVersion holds current and desired version
+type OperatorVersion struct {
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	DesiredVersion string `json:"desiredVersion,omitempty"`
+}
+
 // StorageClientStatus defines the observed state of StorageClient
 type StorageClientStatus struct {
 	Phase storageClientPhase `json:"phase,omitempty"`
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
+
+	Operator OperatorVersion `json:"operator,omitempty"`
 }
 
 //+kubebuilder:object:root=true
