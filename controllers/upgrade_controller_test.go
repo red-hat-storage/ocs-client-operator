@@ -102,7 +102,7 @@ var _ = Describe("Upgrade Controller", func() {
 			})
 		})
 
-		When("a storageclient desired verison and subscription is same", func() {
+		When("a storageclient desired version and subscription is same", func() {
 			BeforeEach(func() {
 				createClient(client1)
 				setSubscriptionChannel(testCurrentVersion)

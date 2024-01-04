@@ -168,7 +168,7 @@ var _ = BeforeSuite(func() {
 			Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 		}()
 
-		// create auxillary resources
+		// create auxiliary resources
 		operatorNS := &corev1.Namespace{}
 		operatorNS.Name = testOperatorNamespace
 		Expect(k8sClient.Create(ctx, operatorNS)).Should(Succeed())

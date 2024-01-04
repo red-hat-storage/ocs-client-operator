@@ -73,7 +73,7 @@ type StorageClientReconciler struct {
 	OperatorNamespace string
 	OperatorVersion   string
 
-	// this can be part of reconciler as after a plaform update
+	// this can be part of reconciler as after a platform update
 	// operator will get restarted and fetches latest version
 	PlatformVersion string
 }

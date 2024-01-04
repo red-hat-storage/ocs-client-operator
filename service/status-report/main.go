@@ -35,10 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
-const (
-	csvPrefix = "ocs-client-operator"
-)
-
 // TODO: refactor main as the responsibilities grew significantly
 func main() {
 	scheme := runtime.NewScheme()

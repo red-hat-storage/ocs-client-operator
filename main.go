@@ -130,7 +130,7 @@ func main() {
 
 	platformVersion, err := controllers.GetPlatformVersion(context.TODO(), apiClient)
 	if err != nil {
-		setupLog.Error(err, "unable to find platform verison")
+		setupLog.Error(err, "unable to find platform version")
 		os.Exit(1)
 	}
 

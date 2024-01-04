@@ -44,7 +44,7 @@ import (
 
 const (
 	ocsClientOperatorSubscriptionPackageName = "ocs-client-operator"
-	// TODO(lgangava): there can be "eus" or "fast" or "canditate" supported channels
+	// TODO(lgangava): there can be "eus" or "fast" or "candidate" supported channels
 	// 	and custom channels also might exist, either get this data as part of a configmap
 	// 	or cut the name by '-'
 	subscriptionChannelNamePrefix = "stable-"
@@ -125,7 +125,7 @@ func (r *UpgradeReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		// differentiate between reconciler errors and not upgradeable errors
 		conditionStatus = metav1.ConditionFalse
 		conditionMessage = fmt.Sprintf("Operator could not be upgraded due to: %v", err)
-		r.log.Error(err, "an error occured during reconcilePhases")
+		r.log.Error(err, "an error occurred during reconcilePhases")
 	}
 	err = errors.Join(err, r.setOperatorCondition(conditionStatus, conditionMessage))
 
@@ -154,7 +154,7 @@ func (r *UpgradeReconciler) reconcileSubscriptionChannel() error {
 	desiredVersions := make([]string, 0, len(storageClientList.Items))
 	for idx := range storageClientList.Items {
 		desiredVersion := storageClientList.Items[idx].Status.Operator.DesiredVersion
-		// usually these versions will not have patch version, so we are adding an arbitrary num for semver comparision
+		// usually these versions will not have patch version, so we are adding an arbitrary num for semver comparison
 		desiredVersion += dummyPatchVersion
 		desiredVersions = append(desiredVersions, desiredVersion)
 	}
@@ -219,7 +219,7 @@ func (r *UpgradeReconciler) reconcileSubscriptionChannel() error {
 	if platformVersion.Major < channelVersion.Major || platformVersion.Minor < channelVersion.Minor {
 		return fmt.Errorf("subscription channel name is changed outside of operator (subscription is ahead of platform)")
 	}
-	// TODO (lgangava): as of now there's no way to distingush desiredVersion vs stale desiredVersion
+	// TODO (lgangava): as of now there's no way to distinguish desiredVersion vs stale desiredVersion
 	// 	and we aren't checking dependents for updating operatorcondition
 
 	return nil

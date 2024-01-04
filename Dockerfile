@@ -9,6 +9,9 @@ COPY go.mod go.sum ./
 # and so that source changes don't invalidate our built layer
 COPY vendor/ vendor/
 
+# CRD shims for go-test
+COPY shim/ shim/
+
 # Copy the project source
 COPY main.go Makefile ./
 COPY hack/ hack/
