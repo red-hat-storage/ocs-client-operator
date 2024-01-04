@@ -2,6 +2,8 @@ module github.com/red-hat-storage/ocs-client-operator
 
 go 1.20
 
+replace github.com/red-hat-storage/ocs-operator/v4 => github.com/leelavg/ocs-operator/v4 v4.0.0-20240104061414-a7dba992c66a
+
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
