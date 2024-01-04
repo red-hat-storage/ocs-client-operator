@@ -22,8 +22,8 @@ import (
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 
-	. "github.com/onsi/ginkgo" //nolint:revive // ginkgo initialization
-	. "github.com/onsi/gomega" //nolint:revive // gomega initialization
+	. "github.com/onsi/ginkgo/v2" //nolint:revive // ginkgo initialization
+	. "github.com/onsi/gomega"    //nolint:revive // gomega initialization
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
