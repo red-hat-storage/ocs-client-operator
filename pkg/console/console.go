@@ -14,7 +14,7 @@ var (
 	pluginBasePath = "/"
 
 	NginxConfigMapName = fmt.Sprintf("%s-nginx-conf", DeploymentName)
-	pluginName         = "0df-client-console"
+	pluginName         = "odf-client-console"
 
 	pluginDisplayName = "ODF Client Console"
 
