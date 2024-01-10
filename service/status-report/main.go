@@ -18,8 +18,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -35,10 +36,6 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
-)
-
-const (
-	csvPrefix = "ocs-client-operator"
 )
 
 func main() {
@@ -92,39 +89,18 @@ func main() {
 		klog.Exitf("Failed to get storageClient %q/%q: %v", storageClient.Namespace, storageClient.Name, err)
 	}
 
-	var oprVersion string
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err = cl.List(ctx, &csvList, client.InNamespace(storageClientNamespace)); err != nil {
-		klog.Warningf("Failed to list csv resources: %v", err)
+	var operatorVersion string
+	csv, err := utils.GetCSVByPrefix(ctx, cl, "ocs-client-operator", operatorNamespace)
+	if err != nil {
+		klog.Errorf("Failed to get clusterserviceversion: %v", err)
 	} else {
-		item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
-			return strings.HasPrefix(csv.Name, csvPrefix)
-		})
-		if item != nil {
-			oprVersion = item.Spec.Version.String()
-		}
-	}
-	if oprVersion == "" {
-		klog.Warningf("Unable to find csv with prefix %q", csvPrefix)
+		operatorVersion = csv.Spec.Version.String()
 	}
 
-	var pltVersion string
-	clusterVersion := &configv1.ClusterVersion{}
-	clusterVersion.Name = "version"
-	if err = cl.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
-		klog.Warningf("Failed to get clusterVersion: %v", err)
-	} else {
-		item := utils.Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
-			return record.State == configv1.CompletedUpdate
-		})
-		if item != nil {
-			pltVersion = item.Version
-		}
+	platformVersion, err := utils.GetPlatformVersion(ctx, cl)
+	if err != nil {
+		klog.Errorf("Failed to get platform version: %v", err)
 	}
-	if pltVersion == "" {
-		klog.Warningf("Unable to find ocp version with completed update")
-	}
-
 	providerClient, err := providerclient.NewProviderClient(
 		ctx,
 		storageClient.Spec.StorageProviderEndpoint,
@@ -136,10 +112,27 @@ func main() {
 	defer providerClient.Close()
 
 	status := providerclient.NewStorageClientStatus().
-		SetPlatformVersion(pltVersion).
-		SetOperatorVersion(oprVersion)
-	if _, err = providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status); err != nil {
+		SetPlatformVersion(platformVersion).
+		SetOperatorVersion(operatorVersion)
+	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
+	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
+
+	storageClient.Status = v1alpha1.StorageClientStatus{
+		DesiredOperatorVersion: statusResponse.DesiredClientOperatorVersion,
+	}
+	jsonPatch, err := json.Marshal(storageClient)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal storageclient cr: %v", err))
+	}
+
+	// patch is being used over update as other fields in status maybe set by storageclient controller in parallel.
+	// mergepatch is being used over jsonpatch as status.desiredOperatorVersion is initially not present and
+	//	jsonpatch would've required a branch for "add" or "replace" op.
+	// marshal of status above only encodes desiredVersion as other fields are set to "omitempty" and so mergepatch doesn't overwrite other fields
+	if err = cl.Status().Patch(ctx, storageClient, client.RawPatch(types.MergePatchType, jsonPatch)); err != nil {
+		klog.Errorf("Failed to patch storageclient %q desired operator version: %v", storageClient.Name, err)
 	}
 
 	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)

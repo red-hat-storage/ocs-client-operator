@@ -17,8 +17,15 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
+
+	configv1 "github.com/openshift/api/config/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -59,4 +66,31 @@ func ValidateStausReporterImage() error {
 	}
 
 	return nil
+}
+
+// return csv matching the prefix or else error
+func GetCSVByPrefix(ctx context.Context, c client.Client, prefix, namespace string) (*opv1a1.ClusterServiceVersion, error) {
+	csvList := &opv1a1.ClusterServiceVersionList{}
+	if err := c.List(ctx, csvList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list csv resources in namespace: %q, err: %v", namespace, err)
+	}
+	csv := Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
+		return strings.HasPrefix(csv.Name, prefix) && csv.Status.Phase != opv1a1.CSVPhasePending
+	})
+	if csv == nil {
+		return nil, fmt.Errorf("unable to find csv with prefix %q", prefix)
+	}
+	return csv, nil
+}
+
+func GetPlatformVersion(ctx context.Context, c client.Client) (string, error) {
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err := c.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
+		return "", fmt.Errorf("failed to get clusterVersion: %v", err)
+	}
+	updated := Find(clusterVersion.Status.History, func(history *configv1.UpdateHistory) bool {
+		return history.State == configv1.CompletedUpdate
+	})
+	return updated.Version, nil
 }

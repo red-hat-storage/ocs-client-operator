@@ -106,6 +106,8 @@ github.com/openshift/api v0.0.0-20231212225112-7cca8a108d7b h1:H7Iu44OPp8/6mp2jS
 github.com/openshift/api v0.0.0-20231212225112-7cca8a108d7b/go.mod h1:qNtV0315F+f8ld52TLtPvrfivZpdimOzTi3kn9IVbtU=
 github.com/operator-framework/api v0.20.0 h1:A2YCRhr+6s0k3pRJacnwjh1Ue8BqjIGuQ2jvPg9XCB4=
 github.com/operator-framework/api v0.20.0/go.mod h1:rXPOhrQ6mMeXqCmpDgt1ALoar9ZlHL+Iy5qut9R99a4=
+github.com/operator-framework/operator-lib v0.11.1-0.20231020142438-152ee1fb7f83 h1:TDT89KCBWC5H6oP0w+NL8sQnqR3cXJpr256GnEY/1SA=
+github.com/operator-framework/operator-lib v0.11.1-0.20231020142438-152ee1fb7f83/go.mod h1:rLCcQA2GOYpZQg8NbygwQupnuAPLJRetMGG76qvy6so=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
@@ -121,8 +123,8 @@ github.com/prometheus/common v0.45.0 h1:2BGz0eBc2hdMDLnO/8n0jeB3oPrt2D08CekT0lne
 github.com/prometheus/common v0.45.0/go.mod h1:YJmSTw9BoKxJplESWWxlbyttQR4uaEcGyv9MZjVOJsY=
 github.com/prometheus/procfs v0.12.0 h1:jluTpSng7V9hY0O2R9DzzJHYb2xULk9VTR1V1R/k6Bo=
 github.com/prometheus/procfs v0.12.0/go.mod h1:pcuDEFsWDnvcgNzo4EEweacyhjeA9Zk3cnaOZAZEfOo=
-github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20231221111740-6704e7366b4d h1:7StPE9Z3vli+Cc6rTEy1abIc6IzCIeTcjBjepjWxDqo=
-github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20231221111740-6704e7366b4d/go.mod h1:vO4tyV9JHtbaUJXnCzl3Mv7JIUtFunswDad+H96qIUE=
+github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240110075530-2dc030ce7dbb h1:sxmgBiQ1O4ZFWSi17DGO2dFFTcGCX9jNta5rInH6Jsc=
+github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240110075530-2dc030ce7dbb/go.mod h1:jFgBE83FVUvjvI+TanT/2BybgR+oh9Us+YK4+99QX4k=
 github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjRBZyWFQ=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=

@@ -48,10 +48,13 @@ type StorageClientSpec struct {
 
 // StorageClientStatus defines the observed state of StorageClient
 type StorageClientStatus struct {
+	// NOTE: Do not remove "omitempty" from the tags as that'll make mergepatch incompatible
+
 	Phase storageClientPhase `json:"phase,omitempty"`
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
-	ConsumerID string `json:"id,omitempty"`
+	ConsumerID             string `json:"id,omitempty"`
+	DesiredOperatorVersion string `json:"desiredOperatorVersion,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -23,14 +23,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
-	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -61,8 +59,6 @@ const (
 	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
 	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
 	storageClientFinalizer      = "storageclient.ocs.openshift.io"
-
-	csvPrefix = "ocs-client-operator"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -271,16 +267,10 @@ func (s *StorageClientReconciler) onboardConsumer(instance *v1alpha1.StorageClie
 		return reconcile.Result{}, fmt.Errorf("failed to get the clusterVersion version of the OCP cluster: %v", err)
 	}
 
-	// TODO Have a version file corresponding to the release
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err = s.list(&csvList, client.InNamespace(s.OperatorNamespace)); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to list csv resources in ns: %v, err: %v", s.OperatorNamespace, err)
-	}
-	csv := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
-		return strings.HasPrefix(csv.Name, csvPrefix)
-	})
-	if csv == nil {
-		return reconcile.Result{}, fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
+	csv, err := utils.GetCSVByPrefix(s.ctx, s.Client, "ocs-client-operator", s.OperatorNamespace)
+	if err != nil {
+		s.Log.Error(err, "failed to get clusterserviceverison of ocs client operator")
+		return reconcile.Result{}, fmt.Errorf("failed to get clusterserviceversion of ocs client operator: %v", err)
 	}
 	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
 	onboardRequest := providerClient.NewOnboardConsumerRequest().
@@ -505,8 +495,4 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
-}
-
-func (s *StorageClientReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
-	return s.Client.List(s.ctx, obj, listOptions...)
 }

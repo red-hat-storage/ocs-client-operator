@@ -11,6 +11,12 @@ rules:
       - get
       - list
   - apiGroups:
+      - ocs.openshift.io
+    resources:
+      - storageclients/status
+    verbs:
+      - patch
+  - apiGroups:
       - ""
     resources:
       - configmaps
