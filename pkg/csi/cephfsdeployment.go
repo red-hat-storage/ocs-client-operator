@@ -96,7 +96,7 @@ func GetCephFSDeployment(namespace string) *appsv1.Deployment {
 								"--pidlimit=-1",
 								"--type=cephfs",
 								"--controllerserver=true",
-								fmt.Sprintf("--drivername=%s", GetCephFSDriverName(namespace)),
+								fmt.Sprintf("--drivername=%s", GetCephFSDriverName()),
 							},
 							Resources: templates.CephFSPluginResourceRequirements,
 							Env: []corev1.EnvVar{
