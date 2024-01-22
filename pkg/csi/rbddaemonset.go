@@ -61,7 +61,7 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 		driverRegistrar.Args,
 		fmt.Sprintf("--kubelet-registration-path=%s/plugins/%s/csi.sock",
 			templates.DefaultKubeletDirPath,
-			GetRBDDriverName(namespace)),
+			GetRBDDriverName()),
 	)
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -106,7 +106,7 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 								"--pidlimit=-1",
 								"--type=rbd",
 								"--nodeserver=true",
-								fmt.Sprintf("--drivername=%s", GetRBDDriverName(namespace)),
+								fmt.Sprintf("--drivername=%s", GetRBDDriverName()),
 								fmt.Sprintf("--stagingpath=%s/plugins/kubernetes.io/csi/", templates.DefaultKubeletDirPath),
 								"--csi-addons-endpoint=$(CSIADDONS_ENDPOINT)",
 							},
@@ -327,7 +327,7 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 							Name: "plugin-dir",
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
-									Path: fmt.Sprintf("%s/plugins/%s", templates.DefaultKubeletDirPath, GetRBDDriverName(namespace)),
+									Path: fmt.Sprintf("%s/plugins/%s", templates.DefaultKubeletDirPath, GetRBDDriverName()),
 									Type: &hostPathDirectoryorCreate,
 								},
 							},

@@ -75,11 +75,11 @@ func InitializeSidecars(ver string) error {
 }
 
 // GetCephFSDriverName returns the cephfs driver name
-func GetCephFSDriverName(namespace string) string {
-	return fmt.Sprintf("%s.cephfs.csi.ceph.com", namespace)
+func GetCephFSDriverName() string {
+	return "openshift-storage.cephfs.csi.ceph.com"
 }
 
 // GetRBDDriverName returns the rbd driver name
-func GetRBDDriverName(namespace string) string {
-	return fmt.Sprintf("%s.rbd.csi.ceph.com", namespace)
+func GetRBDDriverName() string {
+	return "openshift-storage.rbd.csi.ceph.com"
 }
