@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"flag"
 	"os"
 
@@ -124,12 +123,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// apiclient.New() returns a client without cache.
-	// cache is not initialized before mgr.Start()
-	// we need this because we need to interact with OperatorCondition
-	apiClient, err := client.New(mgr.GetConfig(), client.Options{
-		Scheme: mgr.GetScheme(),
-	})
 	if err != nil {
 		setupLog.Error(err, "Unable to get Client")
 		os.Exit(1)
@@ -195,20 +188,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	operatorDeployment, err := utils.GetOperatorDeployment(context.TODO(), apiClient)
-	if err != nil {
-		setupLog.Error(err, "unable to get operator deployment")
-		os.Exit(1)
-	}
-
-	if err = (&controllers.ClusterVersionReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		OperatorDeployment: operatorDeployment,
-		OperatorNamespace:  utils.GetOperatorNamespace(),
-		ConsolePort:        int32(consolePort),
+	if err = (&controllers.OperatorConfigMapReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		OperatorNamespace: utils.GetOperatorNamespace(),
+		ConsolePort:       int32(consolePort),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ClusterVersionReconciler")
+		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
 		os.Exit(1)
 	}
 
