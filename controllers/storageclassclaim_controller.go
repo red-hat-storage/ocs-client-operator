@@ -461,7 +461,7 @@ func (r *StorageClassClaimReconciler) getCephFSStorageClass(data map[string]stri
 		},
 		ReclaimPolicy:        &pvReclaimPolicy,
 		AllowVolumeExpansion: &allowVolumeExpansion,
-		Provisioner:          fmt.Sprintf("%s.cephfs.csi.ceph.com", r.OperatorNamespace),
+		Provisioner:          csi.GetCephFSDriverName(),
 		Parameters:           data,
 	}
 	return storageClass
@@ -479,7 +479,7 @@ func (r *StorageClassClaimReconciler) getCephRBDStorageClass(data map[string]str
 		},
 		ReclaimPolicy:        &pvReclaimPolicy,
 		AllowVolumeExpansion: &allowVolumeExpansion,
-		Provisioner:          fmt.Sprintf("%s.rbd.csi.ceph.com", r.OperatorNamespace),
+		Provisioner:          csi.GetRBDDriverName(),
 		Parameters:           data,
 	}
 	return storageClass
@@ -490,7 +490,7 @@ func (r *StorageClassClaimReconciler) getCephFSVolumeSnapshotClass(data map[stri
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.storageClassClaim.Name,
 		},
-		Driver:         fmt.Sprintf("%s.cephfs.csi.ceph.com", r.OperatorNamespace),
+		Driver:         csi.GetCephFSDriverName(),
 		DeletionPolicy: snapapi.VolumeSnapshotContentDelete,
 		Parameters:     data,
 	}
@@ -502,7 +502,7 @@ func (r *StorageClassClaimReconciler) getCephRBDVolumeSnapshotClass(data map[str
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.storageClassClaim.Name,
 		},
-		Driver:         fmt.Sprintf("%s.rbd.csi.ceph.com", r.OperatorNamespace),
+		Driver:         csi.GetRBDDriverName(),
 		DeletionPolicy: snapapi.VolumeSnapshotContentDelete,
 		Parameters:     data,
 	}

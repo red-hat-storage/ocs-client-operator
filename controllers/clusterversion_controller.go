@@ -278,7 +278,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Need to handle deletion of the csiDriver object, we cannot set
 	// ownerReference on it as its cluster scoped resource
 	cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
-	cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName(c.OperatorNamespace)
+	cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
 	err = csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver)
 	if err != nil {
 		c.log.Error(err, "unable to create cephfs CSIDriver")
@@ -286,7 +286,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
-	rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName(c.OperatorNamespace)
+	rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
 	err = csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver)
 	if err != nil {
 		c.log.Error(err, "unable to create rbd CSIDriver")

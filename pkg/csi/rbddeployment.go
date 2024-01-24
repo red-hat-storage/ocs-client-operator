@@ -95,7 +95,7 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 								"--pidlimit=-1",
 								"--type=rbd",
 								"--controllerserver=true",
-								fmt.Sprintf("--drivername=%s", GetRBDDriverName(namespace)),
+								fmt.Sprintf("--drivername=%s", GetRBDDriverName()),
 							},
 							Resources: templates.RBDPluginResourceRequirements,
 							Env: []corev1.EnvVar{
