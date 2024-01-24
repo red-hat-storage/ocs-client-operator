@@ -49,7 +49,7 @@ func GetCephFSDaemonSet(namespace string) *appsv1.DaemonSet {
 		driverRegistrar.Args,
 		fmt.Sprintf("--kubelet-registration-path=%s/plugins/%s/csi.sock",
 			templates.DefaultKubeletDirPath,
-			GetCephFSDriverName(namespace)),
+			GetCephFSDriverName()),
 	)
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -93,7 +93,7 @@ func GetCephFSDaemonSet(namespace string) *appsv1.DaemonSet {
 								"--pidlimit=-1",
 								"--type=cephfs",
 								"--nodeserver=true",
-								fmt.Sprintf("--drivername=%s", GetCephFSDriverName(namespace)),
+								fmt.Sprintf("--drivername=%s", GetCephFSDriverName()),
 							},
 							Resources: templates.CephFSPluginResourceRequirements,
 							Env: []corev1.EnvVar{
@@ -230,7 +230,7 @@ func GetCephFSDaemonSet(namespace string) *appsv1.DaemonSet {
 							Name: "plugin-dir",
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
-									Path: fmt.Sprintf("%s/plugins/%s", templates.DefaultKubeletDirPath, GetCephFSDriverName(namespace)),
+									Path: fmt.Sprintf("%s/plugins/%s", templates.DefaultKubeletDirPath, GetCephFSDriverName()),
 									Type: &hostPathDirectoryorCreate,
 								},
 							},
