@@ -7,7 +7,6 @@ metadata:
     console.openshift.io/plugins: '["odf-client-console"]'
     olm.skipRange: ""
     operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
-    operators.operatorframework.io/operator-type: non-standalone
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
   name: ocs-client-operator.v4.12.0
   namespace: placeholder
