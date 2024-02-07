@@ -139,7 +139,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if err := csi.InitializeSidecars(instance.Status.Desired.Version); err != nil {
+	if err := csi.InitializeSidecars(c.log, instance.Status.Desired.Version); err != nil {
 		c.log.Error(err, "unable to initialize sidecars")
 		return ctrl.Result{}, err
 	}
