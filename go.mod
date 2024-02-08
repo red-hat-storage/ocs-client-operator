@@ -18,7 +18,7 @@ require (
 	github.com/operator-framework/api v0.17.7-0.20230626210316-aa3e49803e7b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.67.1
-	github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20231031112628-5ea7bff99378
+	github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240208112023-4f8a8f86e11a
 	github.com/stretchr/testify v1.8.4
 	google.golang.org/grpc v1.56.2
 	gopkg.in/yaml.v2 v2.4.0

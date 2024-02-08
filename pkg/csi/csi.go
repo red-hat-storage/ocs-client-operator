@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/util/version"
 )
@@ -43,9 +44,9 @@ type SidecarImages struct {
 	ContainerImages containerImages `yaml:"containerImages"`
 }
 
-var sidecarImages = new(SidecarImages)
+var sidecarImages *SidecarImages
 
-func InitializeSidecars(ver string) error {
+func InitializeSidecars(log logr.Logger, ver string) error {
 	// ready yaml files and yaml unmarshal to SidecarImages
 	// and set to csiSidecarImages
 	si := []SidecarImages{}
@@ -58,28 +59,43 @@ func InitializeSidecars(ver string) error {
 		return err
 	}
 
-	sv := version.MustParseGeneric(ver)
+	pltVersion := version.MustParseGeneric(ver)
 
-	for _, image := range si {
-		v := version.MustParseGeneric(image.Version)
-		if sv.Major() == v.Major() && sv.Minor() == v.Minor() {
-			sidecarImages = &image
-			break
+	closestMinor := int64(-1)
+	for idx := range si {
+		siVersion := version.MustParseGeneric(si[idx].Version)
+		log.Info("searching for the most compatible CSI image version", "CSI", siVersion, "Platform", pltVersion)
+
+		// only check sidecar image versions that are not higher than platform
+		if siVersion.Major() == pltVersion.Major() && siVersion.Minor() <= pltVersion.Minor() {
+			// filter sidecar closest to platform version
+			if int64(siVersion.Minor()) > closestMinor {
+				sidecarImages = &si[idx]
+				closestMinor = int64(siVersion.Minor())
+			}
+			if closestMinor == int64(pltVersion.Minor()) { // exact match and early exit
+				break
+			}
+		} else {
+			log.Info("skipping sidecar images: version greater than platform version")
 		}
 	}
-	if sidecarImages.Version == "" {
-		return fmt.Errorf("failed to find container details for %v version in %v", sv.String(), sidecarImages)
+	if sidecarImages == nil {
+		// happens only if all sidecars image versions are greater than platform
+		return fmt.Errorf("failed to find container details suitable for %v platform version", pltVersion)
 	}
+
+	log.Info("selected sidecar images", "version", sidecarImages.Version)
 
 	return nil
 }
 
 // GetCephFSDriverName returns the cephfs driver name
-func GetCephFSDriverName(namespace string) string {
-	return fmt.Sprintf("%s.cephfs.csi.ceph.com", namespace)
+func GetCephFSDriverName() string {
+	return "openshift-storage.cephfs.csi.ceph.com"
 }
 
 // GetRBDDriverName returns the rbd driver name
-func GetRBDDriverName(namespace string) string {
-	return fmt.Sprintf("%s.rbd.csi.ceph.com", namespace)
+func GetRBDDriverName() string {
+	return "openshift-storage.rbd.csi.ceph.com"
 }
