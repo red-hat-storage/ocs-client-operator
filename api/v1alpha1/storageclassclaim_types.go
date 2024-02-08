@@ -73,7 +73,9 @@ type StorageClassClaim struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   StorageClassClaimSpec   `json:"spec,omitempty"`
+	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:XValidation:rule="oldSelf == self",message="spec is immutable"
+	Spec   StorageClassClaimSpec   `json:"spec"`
 	Status StorageClassClaimStatus `json:"status,omitempty"`
 }
 
