@@ -92,7 +92,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	)
 	// Reconcile the ClusterVersion object when the operator config map is updated
 	enqueueClusterVersionRequest := handler.EnqueueRequestsFromMapFunc(
-		func(_ context.Context, client client.Object) []reconcile.Request {
+		func(_ context.Context, _ client.Object) []reconcile.Request {
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
 					Name: clusterVersionName,
