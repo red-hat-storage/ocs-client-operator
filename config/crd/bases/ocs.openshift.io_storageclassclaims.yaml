@@ -74,6 +74,9 @@ spec:
             - storageClient
             - type
             type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: oldSelf == self
           status:
             description: StorageClassClaimStatus defines the observed state of StorageClassClaim
             properties:
@@ -84,6 +87,8 @@ spec:
                   type: string
                 type: array
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true
