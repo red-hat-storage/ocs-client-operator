@@ -70,7 +70,7 @@ CSI_ADDONS_BUNDLE_IMG ?= $(CSI_ADDONS_IMAGE_REGISTRY)/$(CSI_ADDONS_REGISTRY_NAME
 CATALOG_IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(CATALOG_IMAGE_NAME):$(IMAGE_TAG)
 
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
+CRD_OPTIONS ?= "crd:generateEmbeddedObjectMeta=true"
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
