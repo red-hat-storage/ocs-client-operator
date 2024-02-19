@@ -194,7 +194,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			"config.json": "[]",
 		},
 	}
-	if err := c.own(monConfigMap); err != nil {
+	if err := c.own(encConfigMap); err != nil {
 		return ctrl.Result{}, err
 	}
 	err = c.create(encConfigMap)
@@ -210,10 +210,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.cephFSDeployment, func() error {
+		csi.GetCephFSDeployment(c.OperatorNamespace).DeepCopyInto(c.cephFSDeployment)
 		if err := c.own(c.cephFSDeployment); err != nil {
 			return err
 		}
-		csi.GetCephFSDeployment(c.OperatorNamespace).DeepCopyInto(c.cephFSDeployment)
 		return nil
 	})
 	if err != nil {
@@ -228,10 +228,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
+		csi.GetCephFSDaemonSet(c.OperatorNamespace).DeepCopyInto(c.cephFSDaemonSet)
 		if err := c.own(c.cephFSDaemonSet); err != nil {
 			return err
 		}
-		csi.GetCephFSDaemonSet(c.OperatorNamespace).DeepCopyInto(c.cephFSDaemonSet)
 		return nil
 	})
 	if err != nil {
@@ -246,10 +246,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.rbdDeployment, func() error {
+		csi.GetRBDDeployment(c.OperatorNamespace).DeepCopyInto(c.rbdDeployment)
 		if err := c.own(c.rbdDeployment); err != nil {
 			return err
 		}
-		csi.GetRBDDeployment(c.OperatorNamespace).DeepCopyInto(c.rbdDeployment)
 		return nil
 	})
 	if err != nil {
@@ -264,10 +264,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.rbdDaemonSet, func() error {
+		csi.GetRBDDaemonSet(c.OperatorNamespace).DeepCopyInto(c.rbdDaemonSet)
 		if err := c.own(c.rbdDaemonSet); err != nil {
 			return err
 		}
-		csi.GetRBDDaemonSet(c.OperatorNamespace).DeepCopyInto(c.rbdDaemonSet)
 		return nil
 	})
 	if err != nil {
