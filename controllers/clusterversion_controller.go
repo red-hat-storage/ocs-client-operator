@@ -16,7 +16,9 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	// The embed package is required for the prometheus rule files
 	_ "embed"
@@ -31,6 +33,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -348,6 +351,15 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 func (c *ClusterVersionReconciler) deletionPhase() (reconcile.Result, error) {
+	ocsPvsPresent, err := c.hasOCSVolumes()
+	if err != nil {
+		c.log.Error(err, "unable to verify PVs presence prior deletion of ceph resources")
+		return ctrl.Result{}, err
+	}
+	if ocsPvsPresent {
+		c.log.Info("unable to delete ceph resources, PVs consuming client resources are present")
+		return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+	}
 	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetCephFSDriverName()); err != nil && !k8serrors.IsNotFound(err) {
 		c.log.Error(err, "unable to delete cephfs CSIDriver")
 		return ctrl.Result{}, err
@@ -361,6 +373,38 @@ func (c *ClusterVersionReconciler) deletionPhase() (reconcile.Result, error) {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+func (c *ClusterVersionReconciler) hasOCSVolumes() (bool, error) {
+	// get all the storage class
+	storageClassList := storagev1.StorageClassList{}
+	if err := c.Client.List(c.ctx, &storageClassList); err != nil {
+		return false, fmt.Errorf("unable to list storage classes: %v", err)
+	}
+
+	// create a set of storage class names who are using the client's provisioners
+	ocsStorageClass := make(map[string]bool)
+	for i := range storageClassList.Items {
+		storageClass := &storageClassList.Items[i]
+		if storageClassList.Items[i].Provisioner == csi.GetCephFSDriverName() || storageClassList.Items[i].Provisioner == csi.GetRBDDriverName() {
+			ocsStorageClass[storageClass.Name] = true
+		}
+	}
+
+	// get all the PVs
+	pvList := &corev1.PersistentVolumeList{}
+	if err := c.Client.List(c.ctx, pvList); err != nil {
+		return false, fmt.Errorf("unable to list persistent volumes: %v", err)
+	}
+
+	// check if there are any PVs using client's storage classes
+	for i := range pvList.Items {
+		scName := pvList.Items[i].Spec.StorageClassName
+		if ocsStorageClass[scName] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c *ClusterVersionReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
