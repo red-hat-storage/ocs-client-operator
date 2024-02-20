@@ -143,6 +143,67 @@ var SnapshotterContainer = &corev1.Container{
 	},
 }
 
+var CSIAddonsContainer = &corev1.Container{
+	Name: "csi-addons",
+	Args: []string{
+		"--node-id=$(NODE_ID)",
+		"--v=5",
+		fmt.Sprintf("--csi-addons-address=%s", DefaultCSIAddonsSocketPath),
+		fmt.Sprintf("--controller-port=%v", DefaultCSIAddonsContainerPort),
+		"--pod=$(POD_NAME)",
+		"--namespace=$(POD_NAMESPACE)",
+		"--pod-uid=$(POD_UID)",
+		fmt.Sprintf("--stagingpath=%s", DefaultStagingPath),
+	},
+	Ports: []corev1.ContainerPort{
+		{
+			ContainerPort: DefaultCSIAddonsContainerPort,
+		},
+	},
+	EnvFrom: nil,
+	Env: []corev1.EnvVar{
+		{
+			Name: "NODE_ID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "spec.nodeName",
+				},
+			},
+		},
+		{
+			Name: "POD_UID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.uid",
+				},
+			},
+		},
+		{
+			Name: "POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "POD_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+	},
+	VolumeMounts: []corev1.VolumeMount{
+		{
+			Name:      "socket-dir",
+			MountPath: DefaultSocketDir,
+		},
+	},
+	ImagePullPolicy: corev1.PullIfNotPresent,
+}
+
 var DriverRegistrar = &corev1.Container{
 	Name:            "csi-driver-registrar",
 	ImagePullPolicy: corev1.PullIfNotPresent,

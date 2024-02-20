@@ -21,9 +21,14 @@ const (
 	DefaultKubeletDirPath        = "/var/lib/kubelet"
 	DefaultProvisionerSocketPath = "unix:///csi/csi-provisioner.sock"
 	DefaultPluginSocketPath      = "unix:///csi/csi.sock"
+	DefaultCSIAddonsSocketPath   = "unix:///csi/csi-addons.sock"
 	DefaultSocketDir             = "/csi"
+	DefaultStagingPath           = "/var/lib/kubelet/plugins/kubernetes.io/csi/"
 
 	// configmap names
 	MonConfigMapName        = "ceph-csi-configs"
 	EncryptionConfigMapName = "ceph-csi-kms-config"
+
+	// default port numbers
+	DefaultCSIAddonsContainerPort = int32(9070)
 )
