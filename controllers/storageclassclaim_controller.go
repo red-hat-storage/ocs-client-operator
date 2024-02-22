@@ -195,8 +195,6 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 	// Close client-side connections.
 	defer providerClient.Close()
 
-	addAnnotation(r.storageClassClaim, storageClientLabel, r.storageClient.Name)
-
 	cc := csi.ClusterConfig{
 		Client:    r.Client,
 		Namespace: r.OperatorNamespace,
@@ -241,13 +239,20 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		// Configuration phase.
 		r.storageClassClaim.Status.Phase = v1alpha1.StorageClassClaimConfiguring
 
+		updateStorageClassClaim := false
 		// Check if finalizers are present, if not, add them.
 		if !contains(r.storageClassClaim.GetFinalizers(), storageClassClaimFinalizer) {
-			storageClassClaimRef := klog.KRef(r.storageClassClaim.Name, r.storageClassClaim.Namespace)
-			r.log.Info("Finalizer not found for StorageClassClaim. Adding finalizer.", "StorageClassClaim", storageClassClaimRef)
+			r.log.Info("Finalizer not found for StorageClassClaim. Adding finalizer.", "StorageClassClaim", r.storageClassClaim.Name)
 			r.storageClassClaim.SetFinalizers(append(r.storageClassClaim.GetFinalizers(), storageClassClaimFinalizer))
+			updateStorageClassClaim = true
+		}
+		if addAnnotation(r.storageClassClaim, storageClientAnnotationKey, client.ObjectKeyFromObject(r.storageClient).String()) {
+			updateStorageClassClaim = true
+		}
+
+		if updateStorageClassClaim {
 			if err := r.update(r.storageClassClaim); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to update StorageClassClaim [%v] with finalizer: %s", storageClassClaimRef, err)
+				return reconcile.Result{}, fmt.Errorf("failed to update StorageClassClaim %q: %v", r.storageClassClaim.Name, err)
 			}
 		}
 
@@ -572,14 +577,18 @@ func (r *StorageClassClaimReconciler) own(resource metav1.Object) error {
 	return controllerutil.SetOwnerReference(r.storageClassClaim, resource, r.Scheme)
 }
 
-// addAnnotation add a annotation to a resource metadata
-func addAnnotation(obj metav1.Object, key string, value string) {
+// addAnnotation adds an annotation to a resource metadata, returns true if added else false
+func addAnnotation(obj metav1.Object, key string, value string) bool {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
 		annotations = map[string]string{}
 		obj.SetAnnotations(annotations)
 	}
-	annotations[key] = value
+	if oldValue, exist := annotations[key]; !exist || oldValue != value {
+		annotations[key] = value
+		return true
+	}
+	return false
 }
 
 func (r *StorageClassClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapshotClass *snapapi.VolumeSnapshotClass) error {

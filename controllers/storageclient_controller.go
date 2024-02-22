@@ -57,10 +57,14 @@ const (
 	GetStorageConfig      = "GetStorageConfig"
 	AcknowledgeOnboarding = "AcknowledgeOnboarding"
 
-	storageClientLabel          = "ocs.openshift.io/storageclient"
+	storageClientAnnotationKey  = "ocs.openshift.io/storageclient"
 	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
 	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
 	storageClientFinalizer      = "storageclient.ocs.openshift.io"
+
+	// indexes for caching
+	storageProviderEndpointIndexName = "index:storageProviderEndpoint"
+	storageClientAnnotationIndexName = "index:storageClientAnnotation"
 
 	csvPrefix = "ocs-client-operator"
 )
@@ -78,18 +82,26 @@ type StorageClientReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctx := context.Background()
 	// Index should be registered before cache start.
 	// IndexField is used to filter out the objects that already exists with
 	// status.phase != failed This will help in blocking
 	// the new storageclient creation if there is already with one with same
 	// provider endpoint with status.phase != failed
-	_ = mgr.GetCache().IndexField(context.TODO(), &v1alpha1.StorageClient{}, "spec.storageProviderEndpoint", func(o client.Object) []string {
+	_ = mgr.GetCache().IndexField(ctx, &v1alpha1.StorageClient{}, storageProviderEndpointIndexName, func(o client.Object) []string {
 		res := []string{}
 		if o.(*v1alpha1.StorageClient).Status.Phase != v1alpha1.StorageClientFailed {
 			res = append(res, o.(*v1alpha1.StorageClient).Spec.StorageProviderEndpoint)
 		}
 		return res
 	})
+
+	if err := mgr.GetCache().IndexField(ctx, &v1alpha1.StorageClassClaim{}, storageClientAnnotationIndexName, func(obj client.Object) []string {
+		return []string{obj.GetAnnotations()[storageClientAnnotationKey]}
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for storageclient annotation: %v", err)
+	}
+
 	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
 		func(_ context.Context, obj client.Object) []reconcile.Request {
 			annotations := obj.GetAnnotations()
@@ -158,7 +170,7 @@ func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClient) (ctrl.Result, error) {
 	storageClientListOption := []client.ListOption{
-		client.MatchingFields{"spec.storageProviderEndpoint": instance.Spec.StorageProviderEndpoint},
+		client.MatchingFields{storageProviderEndpointIndexName: instance.Spec.StorageProviderEndpoint},
 	}
 
 	storageClientList := &v1alpha1.StorageClientList{}
@@ -341,21 +353,21 @@ func (s *StorageClientReconciler) offboardConsumer(instance *v1alpha1.StorageCli
 func (s *StorageClientReconciler) verifyNoStorageClassClaimsExist(instance *v1alpha1.StorageClient) error {
 
 	storageClassClaims := &v1alpha1.StorageClassClaimList{}
-	err := s.Client.List(s.ctx, storageClassClaims)
+	err := s.Client.List(s.ctx,
+		storageClassClaims,
+		client.MatchingFields{storageClientAnnotationIndexName: client.ObjectKeyFromObject(instance).String()},
+		client.Limit(1),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to list storageClassClaims: %v", err)
 	}
 
-	for i := range storageClassClaims.Items {
-		storageClassClaim := &storageClassClaims.Items[i]
-		sc := storageClassClaim.Labels[storageClientLabel]
-		if sc == instance.Name {
-			err = fmt.Errorf("Failed to cleanup resources. storageClassClaims are present." +
-				"Delete all storageClassClaims for the cleanup to proceed")
-			s.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, "Cleanup", err.Error())
-			s.Log.Error(err, "Waiting for all storageClassClaims to be deleted.")
-			return err
-		}
+	if len(storageClassClaims.Items) != 0 {
+		err = fmt.Errorf("Failed to cleanup resources. storageClassClaims are present."+
+			"Delete all storageClassClaims corresponding to storageclient %q for the cleanup to proceed", client.ObjectKeyFromObject(instance))
+		s.recorder.ReportIfNotPresent(instance, corev1.EventTypeWarning, "Cleanup", err.Error())
+		s.Log.Error(err, "Waiting for all storageClassClaims to be deleted.")
+		return err
 	}
 
 	return nil
