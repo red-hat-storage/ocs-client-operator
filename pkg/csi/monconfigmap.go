@@ -38,10 +38,15 @@ var (
 )
 
 type ClusterConfigEntry struct {
-	ClusterID       string      `json:"clusterID"`
-	StorageClientID string      `json:"storageClientID"`
-	Monitors        []string    `json:"monitors"`
-	CephFS          *CephFSSpec `json:"cephFS,omitempty"`
+	ClusterID       string       `json:"clusterID"`
+	StorageClientID string       `json:"storageClientID"`
+	Monitors        []string     `json:"monitors"`
+	CephFS          *CephFSSpec  `json:"cephFS,omitempty"`
+	CephRBD         *CephRBDSpec `json:"rbd,omitempty"`
+}
+
+type CephRBDSpec struct {
+	RadosNamespace string `json:"radosNamespace,omitempty"`
 }
 
 type CephFSSpec struct {
@@ -114,6 +119,9 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 			if newClusterConfigEntry.CephFS != nil && (newClusterConfigEntry.CephFS.SubvolumeGroup != "") {
 				centry.CephFS = newClusterConfigEntry.CephFS
 			}
+			if newClusterConfigEntry.CephRBD != nil && (newClusterConfigEntry.CephRBD.RadosNamespace != "") {
+				centry.CephRBD = newClusterConfigEntry.CephRBD
+			}
 			found = true
 			cc[i] = centry
 			break
@@ -129,6 +137,9 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 			// Add a condition not to fill with empty values
 			if newClusterConfigEntry.CephFS != nil && (newClusterConfigEntry.CephFS.SubvolumeGroup != "") {
 				centry.CephFS = newClusterConfigEntry.CephFS
+			}
+			if newClusterConfigEntry.CephRBD != nil && (newClusterConfigEntry.CephRBD.RadosNamespace != "") {
+				centry.CephRBD = newClusterConfigEntry.CephRBD
 			}
 			cc = append(cc, centry)
 		}
