@@ -52,6 +52,9 @@ type StorageClientStatus struct {
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
+
+	// Name of the subscription channel that this client wants the operator to be at.
+	DesiredOperatorSubscriptionChannel string `json:"subscriptionChannel,omitempty"`
 }
 
 //+kubebuilder:object:root=true

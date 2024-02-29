@@ -63,6 +63,10 @@ spec:
                 type: string
               phase:
                 type: string
+              subscriptionChannel:
+                description: Name of the subscription channel that this client wants
+                  the operator to be at.
+                type: string
             type: object
         type: object
     served: true
