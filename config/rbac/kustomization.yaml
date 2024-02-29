@@ -42,3 +42,6 @@ resources:
 - csi_rbd_provisioner_role.yaml
 - csi_rbd_provisioner_role_binding.yaml
 - csi_rbd_provisioner_service_account.yaml
+
+# Webhook RBAC
+- webhook.yaml

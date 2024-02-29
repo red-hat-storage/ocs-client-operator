@@ -615,6 +615,15 @@ spec:
           - list
           - watch
         serviceAccountName: ocs-client-operator-status-reporter
+      - rules:
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclients
+          verbs:
+          - get
+          - list
+        serviceAccountName: ocs-client-operator-webhook
       deployments:
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
@@ -765,6 +774,47 @@ spec:
               - configMap:
                   name: ocs-client-operator-csi-images
                 name: csi-images
+      - name: ocs-client-operator-webhook-server
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: webhook-server
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                app: webhook-server
+            spec:
+              containers:
+              - command:
+                - /webhook-server
+                image: quay.io/ocs-dev/ocs-client-operator:latest
+                imagePullPolicy: IfNotPresent
+                name: webhook-server
+                ports:
+                - containerPort: 8080
+                resources:
+                  limits:
+                    cpu: 100m
+                    memory: 128Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+                  readOnlyRootFilesystem: true
+                  seccompProfile:
+                    type: RuntimeDefault
+                volumeMounts:
+                - mountPath: /etc/tls/private
+                  name: webhook-cert-secret
+              securityContext:
+                runAsNonRoot: true
+              volumes:
+              - name: webhook-cert-secret
+                secret:
+                  secretName: webhook-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
         name: console
