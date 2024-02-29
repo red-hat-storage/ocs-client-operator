@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -138,20 +140,40 @@ func main() {
 	status := providerclient.NewStorageClientStatus().
 		SetPlatformVersion(pltVersion).
 		SetOperatorVersion(oprVersion)
-	if _, err = providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status); err != nil {
+	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
+	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
 
-	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
-	scResponse, err := providerClient.GetStorageConfig(ctx, storageClient.Status.ConsumerID)
+	// we need consumerID in the status field and take a copy as failed status updates clears that field subsequently
+	consumerID := storageClient.Status.ConsumerID
+
+	storageClient.Status = v1alpha1.StorageClientStatus{
+		DesiredOperatorSubscriptionChannel: statusResponse.GetDesiredClientOperatorChannel(),
+	}
+	jsonPatch, err := json.Marshal(storageClient)
 	if err != nil {
-		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+		panic(fmt.Sprintf("failed to marshal storageclient cr: %v", err))
+	}
+
+	// patch is being used over update as other fields in status maybe set by storageclient controller in parallel.
+	// mergepatch is being used over jsonpatch as status.desiredOperatorSubscriptionChannel is initially not present and
+	//	jsonpatch would've required a branch for "add" or "replace" op.
+	// marshal of status above only encodes desiredOperatorSubscriptionChannel as other fields are set to "omitempty" and so mergepatch doesn't overwrite other fields
+	if err = cl.Status().Patch(ctx, storageClient, client.RawPatch(types.MergePatchType, jsonPatch)); err != nil {
+		klog.Errorf("Failed to patch storageclient %q desired operator subscription channel: %v", storageClient.Name, err)
+	}
+
+	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
+	scResponse, err := providerClient.GetStorageConfig(ctx, consumerID)
+	if err != nil {
+		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", consumerID, err)
 	}
 	for _, eResource := range scResponse.ExternalResource {
 		if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
 			monitorIps, err := csi.ExtractMonitor(eResource.Data)
 			if err != nil {
-				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", consumerID, err)
 			}
 			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
 		}
@@ -161,8 +183,8 @@ func main() {
 		Namespace: operatorNamespace,
 		Ctx:       ctx,
 	}
-	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
+	err = cc.UpdateMonConfigMap("", consumerID, csiClusterConfigEntry)
 	if err != nil {
-		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", consumerID, err)
 	}
 }
