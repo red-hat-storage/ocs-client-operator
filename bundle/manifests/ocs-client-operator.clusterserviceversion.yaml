@@ -68,6 +68,14 @@ spec:
           - update
           - watch
         - apiGroups:
+          - admissionregistration.k8s.io
+          resources:
+          - validatingwebhookconfigurations
+          verbs:
+          - get
+          - list
+          - update
+        - apiGroups:
           - apps
           resources:
           - daemonsets
@@ -223,6 +231,15 @@ spec:
           verbs:
           - get
           - list
+          - watch
+        - apiGroups:
+          - operators.coreos.com
+          resources:
+          - subscriptions
+          verbs:
+          - get
+          - list
+          - update
           - watch
         - apiGroups:
           - security.openshift.io
