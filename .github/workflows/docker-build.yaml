@@ -11,16 +11,12 @@ jobs:
   container-build:
     name: operator-build
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ["1.20", "1.21"]
     steps:
-      - uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go }}
+      - uses: actions/checkout@v4
 
-      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v5
+        with:
+            go-version-file: go.mod
 
       - name: Build operator container image
         run: make build
@@ -28,16 +24,12 @@ jobs:
   bundle-build:
     name: bundle-build
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ["1.20", "1.21"]
     steps:
-      - uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go }}
+      - uses: actions/checkout@v4
 
-      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v5
+        with:
+            go-version-file: go.mod
 
       - name: Build operator bundle container image
         run: make bundle-build
@@ -45,16 +37,12 @@ jobs:
   catalog-build:
     name: catalog-build
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ["1.20", "1.21"]
     steps:
-      - uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go }}
+      - uses: actions/checkout@v4
 
-      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v5
+        with:
+            go-version-file: go.mod
 
       - name: Build catalog container image
         env:
