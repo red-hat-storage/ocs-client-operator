@@ -16,6 +16,7 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	// The embed package is required for the prometheus rule files
@@ -24,11 +25,14 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -55,6 +59,9 @@ const (
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
 	clusterVersionName = "version"
+
+	subscriptionLabelKey   = "managed-by"
+	subscriptionLabelValue = "webhook/subscription.ocs.openshift.io"
 )
 
 // ClusterVersionReconciler reconciles a ClusterVersion object
@@ -101,9 +108,18 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	)
 
+	subscriptionPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				return c.OperatorNamespace == client.GetNamespace()
+			},
+		),
+		predicate.GenerationChangedPredicate{},
+	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
 		Watches(&corev1.ConfigMap{}, enqueueClusterVersionRequest, configMapPredicates).
+		Watches(&opv1a1.Subscription{}, enqueueClusterVersionRequest, subscriptionPredicates).
 		Complete(c)
 }
 
@@ -120,6 +136,8 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -131,6 +149,16 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if err := c.ensureConsolePlugin(); err != nil {
 		c.log.Error(err, "unable to deploy client console")
+		return ctrl.Result{}, err
+	}
+
+	if err := c.registerWebhook(); err != nil {
+		c.log.Error(err, "unable to register subscription validating webhook")
+		return ctrl.Result{}, err
+	}
+
+	if err := labelClientOperatorSubscription(c); err != nil {
+		c.log.Error(err, "unable to label ocs client operator subscription")
 		return ctrl.Result{}, err
 	}
 
@@ -434,5 +462,82 @@ func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
 		return err
 	}
 
+	return nil
+}
+
+func (c *ClusterVersionReconciler) registerWebhook() error {
+	whConfig := &admrv1.ValidatingWebhookConfiguration{}
+	whConfig.Name = "subscription.ocs.openshift.io"
+
+	err := c.createOrUpdate(whConfig, func() error {
+
+		// openshift fills in the ca on finding this annotation
+		whConfig.Annotations = map[string]string{
+			"service.beta.openshift.io/inject-cabundle": "true",
+		}
+
+		// take a copy of the template
+		wh := *templates.SubscriptionValidatingWebhook.DeepCopy()
+		if len(whConfig.Webhooks) != 0 {
+			// do not mutate CA bundle that was injected by openshift
+			wh.ClientConfig.CABundle = whConfig.Webhooks[0].ClientConfig.CABundle
+		}
+
+		// only send requests received from own namespace
+		wh.NamespaceSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"kubernetes.io/metadata.name": c.OperatorNamespace,
+			},
+		}
+
+		// only send resources matching the label
+		wh.ObjectSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				subscriptionLabelKey: subscriptionLabelValue,
+			},
+		}
+
+		// send request to the service running in own namespace
+		wh.ClientConfig.Service.Namespace = c.OperatorNamespace
+
+		// set the webhook
+		whConfig.Webhooks = []admrv1.ValidatingWebhook{wh}
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	c.log.Info("successfully registered validating webhook")
+	return nil
+}
+
+func labelClientOperatorSubscription(c *ClusterVersionReconciler) error {
+	subscriptionList := &opv1a1.SubscriptionList{}
+	err := c.List(c.ctx, subscriptionList, client.InNamespace(c.OperatorNamespace))
+	if err != nil {
+		return fmt.Errorf("failed to list subscriptions")
+	}
+
+	sub := utils.Find(subscriptionList.Items, func(sub *opv1a1.Subscription) bool {
+		return sub.Spec.Package == "ocs-client-operator"
+	})
+
+	if sub == nil {
+		return fmt.Errorf("failed to find subscription with ocs-client-operator package")
+	}
+
+	if sub.GetLabels() == nil {
+		sub.Labels = map[string]string{}
+	}
+	sub.Labels[subscriptionLabelKey] = subscriptionLabelValue
+	err = c.Update(c.ctx, sub)
+	if err != nil {
+		return err
+	}
+
+	c.log.Info("successfully labelled ocs-client-operator subscription")
 	return nil
 }
