@@ -105,7 +105,6 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 								fmt.Sprintf("--csi-addons-endpoint=%s", templates.DefaultCSIAddonsSocketPath),
 								fmt.Sprintf("--drivername=%s", GetRBDDriverName()),
 							},
-							Resources: templates.RBDPluginResourceRequirements,
 							Env: []corev1.EnvVar{
 								{
 									Name: "POD_IP",
