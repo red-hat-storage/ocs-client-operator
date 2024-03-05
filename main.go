@@ -24,6 +24,7 @@ import (
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/controllers"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -43,6 +44,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -69,8 +72,10 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var consolePort int
+	var webhookPort int
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.IntVar(&webhookPort, "webhook-port", webhook.DefaultPort, "The port the webhook sever binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -89,9 +94,13 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "7cb6f2e5.ocs.openshift.io",
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: "/etc/tls/private",
+		}),
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable to create manager")
 		os.Exit(1)
 	}
 
@@ -162,6 +171,16 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterVersionReconciler")
 		os.Exit(1)
 	}
+	setupLog.Info("setting up webhook server")
+	hookServer := mgr.GetWebhookServer()
+
+	setupLog.Info("registering Subscription Channel validating webhook endpoint")
+	hookServer.Register("/validate-subscription", &webhook.Admission{
+		Handler: &admwebhook.SubscriptionValidator{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+		}},
+	)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
