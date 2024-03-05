@@ -1,0 +1,14 @@
+---
+name: Setup Go Environment
+description: Fetch Go version from the go.mod file and use it to setup Go environment
+
+runs:
+  using: composite
+  steps:
+    - name: Read Go version from go.mod file
+      shell: bash
+      run: echo "GO_VERSION=$(grep -m 1 -r '^go' go.mod | awk '{print $2}')" >> $GITHUB_ENV
+    - name: set up go env
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
