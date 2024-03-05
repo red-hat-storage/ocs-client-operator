@@ -685,6 +685,7 @@ spec:
           replicas: 1
           selector:
             matchLabels:
+              app: ocs-client-operator
               control-plane: controller-manager
           strategy: {}
           template:
@@ -692,6 +693,7 @@ spec:
               annotations:
                 kubectl.kubernetes.io/default-container: manager
               labels:
+                app: ocs-client-operator
                 control-plane: controller-manager
             spec:
               containers:
@@ -757,6 +759,8 @@ spec:
                 volumeMounts:
                 - mountPath: /opt/config
                   name: csi-images
+                - mountPath: /etc/tls/private
+                  name: webhook-cert-secret
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
@@ -765,6 +769,9 @@ spec:
               - configMap:
                   name: ocs-client-operator-csi-images
                 name: csi-images
+              - name: webhook-cert-secret
+                secret:
+                  secretName: webhook-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
         name: console

@@ -3,8 +3,8 @@ kind: Service
 metadata:
   annotations:
     service.beta.openshift.io/serving-cert-secret-name: webhook-cert-secret
-  name: webhook-server
-  namespace: system
+  creationTimestamp: null
+  name: ocs-client-operator-webhook-server
 spec:
   ports:
   - name: server
@@ -14,3 +14,5 @@ spec:
   selector:
     app: ocs-client-operator
   type: ClusterIP
+status:
+  loadBalancer: {}
