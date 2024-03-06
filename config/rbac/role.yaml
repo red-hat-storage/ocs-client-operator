@@ -139,7 +139,7 @@ rules:
 - apiGroups:
   - ocs.openshift.io
   resources:
-  - storageclassclaims
+  - storageclaims
   verbs:
   - create
   - delete
@@ -151,13 +151,13 @@ rules:
 - apiGroups:
   - ocs.openshift.io
   resources:
-  - storageclassclaims/finalizers
+  - storageclaims/finalizers
   verbs:
   - update
 - apiGroups:
   - ocs.openshift.io
   resources:
-  - storageclassclaims/status
+  - storageclaims/status
   verbs:
   - get
   - patch
