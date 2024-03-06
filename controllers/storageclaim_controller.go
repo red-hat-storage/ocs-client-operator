@@ -50,6 +50,9 @@ import (
 const (
 	storageClaimFinalizer  = "storageclaim.ocs.openshift.io"
 	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
+
+	// for migration of storageclassclaims to storageclaims
+	storageClassClaimFinalizer = "storageclassclaim.ocs.openshift.io"
 )
 
 // StorageClaimReconciler reconciles a StorageClaim object
@@ -79,18 +82,31 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}
 			return []reconcile.Request{}
 		})
+	enqueueStorageClassClaimRequest := handler.EnqueueRequestsFromMapFunc(
+		func(_ context.Context, obj client.Object) []reconcile.Request {
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Name: obj.GetName(),
+				},
+			}}
+		},
+	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(
 			predicate.GenerationChangedPredicate{},
 		)).
 		Watches(&storagev1.StorageClass{}, enqueueStorageConsumerRequest).
 		Watches(&snapapi.VolumeSnapshotClass{}, enqueueStorageConsumerRequest).
+		Watches(&v1alpha1.StorageClassClaim{}, enqueueStorageClassClaimRequest, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims/finalizers,verbs=update
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclassclaims,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclassclaims/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclassclaims/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete
@@ -110,6 +126,12 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.log = ctrllog.FromContext(ctx, "StorageClaim", req)
 	r.ctx = ctrllog.IntoContext(ctx, r.log)
 	r.log.Info("Reconciling StorageClaim.")
+
+	// perform a migration of all existing storageclassclaims to storageclaims and have reconciler bring the
+	// resources for newly created storageclaims to the desired state
+	if err := r.migrateStorageClassClaims(); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to migrate storageclassclaims")
+	}
 
 	// Fetch the StorageClaim instance
 	r.storageClaim = &v1alpha1.StorageClaim{}
@@ -624,5 +646,47 @@ func (r *StorageClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapsh
 	if err := r.Client.Create(r.ctx, volumeSnapshotClass); err != nil {
 		return fmt.Errorf("failed to create VolumeSnapshotClass: %v", err)
 	}
+	return nil
+}
+
+func (r *StorageClaimReconciler) migrateStorageClassClaims() error {
+	storageClassClaimsList := &v1alpha1.StorageClassClaimList{}
+	if err := r.list(storageClassClaimsList); err != nil {
+		return fmt.Errorf("failed to list storageclassclaims")
+	}
+
+	for idx := range storageClassClaimsList.Items {
+		storageClassClaim := &storageClassClaimsList.Items[idx]
+		storageClaim := &v1alpha1.StorageClaim{}
+		storageClaim.Name = storageClassClaim.Name
+
+		// migrate storageclassclaim to storageclaim
+		_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, storageClaim, func() error {
+			storageClaim.Spec.Type = storageClassClaim.Spec.Type
+			storageClaim.Spec.EncryptionMethod = storageClassClaim.Spec.EncryptionMethod
+			storageClaim.Spec.StorageProfile = storageClassClaim.Spec.StorageProfile
+			storageClaim.Spec.StorageClient = storageClassClaim.Spec.StorageClient.DeepCopy()
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to copy spec from storageclassclaims to storageclaims: %v", err)
+		}
+
+		// remove finalizer on existing storageclassclaim
+		finalizerUpdated := controllerutil.RemoveFinalizer(storageClassClaim, storageClassClaimFinalizer)
+		if finalizerUpdated {
+			if err := r.update(storageClassClaim); err != nil {
+				return fmt.Errorf("failed to remove finalizer on storageclassclaim %q: %v", storageClassClaim.Name, err)
+			}
+		}
+
+		// migration is successful delete the storageclassclaim
+		if err := r.delete(storageClassClaim); err != nil {
+			return fmt.Errorf("failed to delete storageclassclaim %q: %v", storageClassClaim.Name, err)
+		}
+
+		r.log.Info(fmt.Sprintf("Successfully migrated storageclassclaim %q to storageclass %q", storageClassClaim.Name, storageClaim.Name))
+	}
+
 	return nil
 }
