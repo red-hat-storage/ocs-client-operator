@@ -30,6 +30,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    deprecated: true
+    deprecationWarning: StorageClassClaim API is deprecated and will be removed in
+      future version, please use StorageClaim API instead.
     name: v1alpha1
     schema:
       openAPIV3Schema:
