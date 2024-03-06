@@ -162,6 +162,36 @@ var CSIAddonsContainer = corev1.Container{
 	ImagePullPolicy: corev1.PullIfNotPresent,
 }
 
+var OMAPGeneratorContainer = corev1.Container{
+	Name:            "csi-omap-generator",
+	ImagePullPolicy: corev1.PullIfNotPresent,
+	Args: []string{
+		"--type=controller",
+		"--drivernamespace=$(DRIVER_NAMESPACE)",
+		"--v=5",
+	},
+	Env: []corev1.EnvVar{
+		{
+			Name: "DRIVER_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+	},
+	VolumeMounts: []corev1.VolumeMount{
+		{
+			Name:      "ceph-csi-configs",
+			MountPath: DefaultCephCSIConfigPath,
+		},
+		{
+			Name:      "keys-tmp-dir",
+			MountPath: DefaultTmpDir,
+		},
+	},
+}
+
 var DriverRegistrar = corev1.Container{
 	Name:            "csi-driver-registrar",
 	ImagePullPolicy: corev1.PullIfNotPresent,

@@ -58,7 +58,10 @@ import (
 var pvcPrometheusRules string
 
 const (
-	operatorConfigMapName = "ocs-client-operator-config"
+	operatorConfigMapName   = "ocs-client-operator-config"
+	csiSidecarConfigMapName = "ceph-csi-sidecar-config"
+	csiOMAPGeneratorKey     = "CSI_ENABLE_OMAP_GENERATOR"
+
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
 	clusterVersionName     = "version"
@@ -98,7 +101,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			func(client client.Object) bool {
 				namespace := client.GetNamespace()
 				name := client.GetName()
-				return ((namespace == c.OperatorNamespace) && (name == operatorConfigMapName))
+				return namespace == c.OperatorNamespace && (name == operatorConfigMapName || name == csiSidecarConfigMapName)
 			},
 		),
 	)
@@ -291,6 +294,25 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				return ctrl.Result{}, err
 			}
 
+			sideCarConfig := &corev1.ConfigMap{}
+			sideCarConfig.Name = csiSidecarConfigMapName
+			sideCarConfig.Namespace = c.OperatorNamespace
+
+			err = c.get(sideCarConfig)
+			if err != nil && !kerrors.IsNotFound(err) {
+				c.log.Error(err, "failed to get csi side car configmap", "name", sideCarConfig)
+				return ctrl.Result{}, err
+			}
+
+			enableOMAPGenerator := false
+			if value, ok := sideCarConfig.Data[csiOMAPGeneratorKey]; ok {
+				enableOMAPGenerator, err = strconv.ParseBool(value)
+				if err != nil {
+					c.log.Error(err, "failed to parse configmap entry", "ConfigMap", sideCarConfig, csiOMAPGeneratorKey, value)
+					return ctrl.Result{}, err
+				}
+			}
+
 			c.cephFSDeployment = &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      csi.CephFSDeploymentName,
@@ -337,7 +359,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				if err := c.own(c.rbdDeployment); err != nil {
 					return err
 				}
-				csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
+				csi.SetRBDDeploymentDesiredState(c.rbdDeployment, enableOMAPGenerator)
 				return nil
 			})
 			if err != nil {

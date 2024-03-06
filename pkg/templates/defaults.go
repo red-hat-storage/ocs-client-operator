@@ -24,7 +24,8 @@ const (
 	DefaultCSIAddonsSocketPath   = "unix:///csi/csi-addons.sock"
 	DefaultSocketDir             = "/csi"
 	DefaultStagingPath           = "/var/lib/kubelet/plugins/kubernetes.io/csi/"
-
+	DefaultCephCSIConfigPath     = "/etc/ceph-csi-config"
+	DefaultTmpDir                = "/tmp/csi/keys"
 	// configmap names
 	MonConfigMapName        = "ceph-csi-configs"
 	EncryptionConfigMapName = "ceph-csi-kms-config"
