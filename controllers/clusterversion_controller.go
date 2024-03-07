@@ -152,7 +152,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err = c.createOrUpdate(c.scc, func() error {
 		// TODO: this is a hack to preserve the resourceVersion of the SCC
 		resourceVersion := c.scc.ResourceVersion
-		csi.GetSecurityContextConstraints(c.OperatorNamespace).DeepCopyInto(c.scc)
+		csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
 		c.scc.ResourceVersion = resourceVersion
 		return nil
 	})
@@ -210,10 +210,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.cephFSDeployment, func() error {
-		csi.GetCephFSDeployment(c.OperatorNamespace).DeepCopyInto(c.cephFSDeployment)
 		if err := c.own(c.cephFSDeployment); err != nil {
 			return err
 		}
+		csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
 		return nil
 	})
 	if err != nil {
@@ -223,15 +223,15 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	c.cephFSDaemonSet = &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.CephFSDamonSetName,
+			Name:      csi.CephFSDaemonSetName,
 			Namespace: c.OperatorNamespace,
 		},
 	}
 	err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
-		csi.GetCephFSDaemonSet(c.OperatorNamespace).DeepCopyInto(c.cephFSDaemonSet)
 		if err := c.own(c.cephFSDaemonSet); err != nil {
 			return err
 		}
+		csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
 		return nil
 	})
 	if err != nil {
@@ -246,10 +246,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.rbdDeployment, func() error {
-		csi.GetRBDDeployment(c.OperatorNamespace).DeepCopyInto(c.rbdDeployment)
 		if err := c.own(c.rbdDeployment); err != nil {
 			return err
 		}
+		csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
 		return nil
 	})
 	if err != nil {
@@ -264,10 +264,10 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	}
 	err = c.createOrUpdate(c.rbdDaemonSet, func() error {
-		csi.GetRBDDaemonSet(c.OperatorNamespace).DeepCopyInto(c.rbdDaemonSet)
 		if err := c.own(c.rbdDaemonSet); err != nil {
 			return err
 		}
+		csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
 		return nil
 	})
 	if err != nil {

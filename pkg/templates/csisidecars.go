@@ -23,7 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-var ProvisionerContainer = &corev1.Container{
+var ProvisionerContainer = corev1.Container{
 	Name:            "csi-provisioner",
 	ImagePullPolicy: corev1.PullIfNotPresent,
 	Args: []string{
@@ -44,7 +44,7 @@ var ProvisionerContainer = &corev1.Container{
 	},
 }
 
-var ResizerContainer = &corev1.Container{
+var ResizerContainer = corev1.Container{
 	Name:            "csi-resizer",
 	ImagePullPolicy: corev1.PullIfNotPresent,
 	Args: []string{
@@ -63,7 +63,7 @@ var ResizerContainer = &corev1.Container{
 	},
 }
 
-var AttacherContainer = &corev1.Container{
+var AttacherContainer = corev1.Container{
 	Name:            "csi-attacher",
 	ImagePullPolicy: corev1.PullIfNotPresent,
 	Args: []string{
@@ -82,7 +82,7 @@ var AttacherContainer = &corev1.Container{
 	},
 }
 
-var SnapshotterContainer = &corev1.Container{
+var SnapshotterContainer = corev1.Container{
 	Name:            "csi-snapshotter",
 	ImagePullPolicy: corev1.PullIfNotPresent,
 	Args: []string{
@@ -101,7 +101,7 @@ var SnapshotterContainer = &corev1.Container{
 	},
 }
 
-var CSIAddonsContainer = &corev1.Container{
+var CSIAddonsContainer = corev1.Container{
 	Name: "csi-addons",
 	Args: []string{
 		"--node-id=$(NODE_ID)",
@@ -162,7 +162,7 @@ var CSIAddonsContainer = &corev1.Container{
 	ImagePullPolicy: corev1.PullIfNotPresent,
 }
 
-var DriverRegistrar = &corev1.Container{
+var DriverRegistrar = corev1.Container{
 	Name:            "csi-driver-registrar",
 	ImagePullPolicy: corev1.PullIfNotPresent,
 	SecurityContext: &corev1.SecurityContext{
