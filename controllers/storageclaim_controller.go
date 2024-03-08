@@ -465,6 +465,25 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			}
 		}
 
+		var annotationKey string
+		if r.storageClaim.Spec.Type == claimTypeBlockPool {
+			annotationKey = defaultStorageClaimBlockPoolAnnotationKey
+		} else if r.storageClaim.Spec.Type == claimTypeSharedFs {
+			annotationKey = defaultStorageClaimSharedFsAnnotationKey
+		}
+
+		// default storageclaim created programmatically
+		if r.storageClaim.GetAnnotations()[annotationKey] == "created" {
+			storageClient := &v1alpha1.StorageClient{}
+			r.storageClient.DeepCopyInto(storageClient)
+			if addAnnotation(r.storageClient, annotationKey, "deleted") {
+				// using patch as we are concerned only about metadata and doesn't need to be on latest resourceVersion
+				if err := r.patch(r.storageClient, client.MergeFrom(storageClient)); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update annotation %q on storageclient %q: %v", annotationKey, client.ObjectKeyFromObject(r.storageClient), err)
+				}
+			}
+		}
+
 		if contains(r.storageClaim.GetFinalizers(), storageClaimFinalizer) {
 			r.storageClaim.Finalizers = remove(r.storageClaim.Finalizers, storageClaimFinalizer)
 			if err := r.update(r.storageClaim); err != nil {
@@ -592,6 +611,10 @@ func (r *StorageClaimReconciler) delete(obj client.Object) error {
 		return err
 	}
 	return nil
+}
+
+func (r *StorageClaimReconciler) patch(obj client.Object, patch client.Patch, patchOptions ...client.PatchOption) error {
+	return r.Client.Patch(r.ctx, obj, patch, patchOptions...)
 }
 
 func (r *StorageClaimReconciler) own(resource metav1.Object) error {

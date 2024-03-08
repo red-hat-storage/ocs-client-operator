@@ -67,6 +67,13 @@ const (
 	storageClientAnnotationIndexName = "index:storageClientAnnotation"
 
 	csvPrefix = "ocs-client-operator"
+
+	defaultStorageClaimBlockPoolName          = "ocs-storageluster-ceph-rbd"
+	defaultStorageClaimBlockPoolAnnotationKey = "ocs.openshift.io/storageclaim.blockpool"
+	defaultStorageClaimSharedFsName           = "ocs-storageluster-cephfs"
+	defaultStorageClaimSharedFsAnnotationKey  = "ocs.openshift.io/storageclaim.sharedfs"
+	claimTypeBlockPool                        = "blockpool"
+	claimTypeSharedFs                         = "sharedfilesystem"
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -218,6 +225,14 @@ func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClie
 		return res, err
 	}
 
+	if err := s.reconcileDefaultStorageClaim(instance, claimTypeBlockPool); err != nil {
+		return reconcile.Result{}, nil
+	}
+
+	if err := s.reconcileDefaultStorageClaim(instance, claimTypeSharedFs); err != nil {
+		return reconcile.Result{}, nil
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -226,11 +241,17 @@ func (s *StorageClientReconciler) deletionPhase(instance *v1alpha1.StorageClient
 	// storageClient and also the default SCC created for this storageClient
 	if contains(instance.GetFinalizers(), storageClientFinalizer) {
 		instance.Status.Phase = v1alpha1.StorageClientOffboarding
+
+		if err := s.deleteDefaultStorageClaim(instance); err != nil {
+			return reconcile.Result{}, err
+		}
+
 		err := s.verifyNoStorageClaimsExist(instance)
 		if err != nil {
 			s.Log.Error(err, "still storageclaims exist for this storageclient")
 			return reconcile.Result{}, fmt.Errorf("still storageclaims exist for this storageclient: %v", err)
 		}
+
 		if res, err := s.offboardConsumer(instance, externalClusterClient); err != nil {
 			s.Log.Error(err, "Offboarding in progress.")
 		} else if !res.IsZero() {
@@ -372,6 +393,39 @@ func (s *StorageClientReconciler) verifyNoStorageClaimsExist(instance *v1alpha1.
 
 	return nil
 }
+
+// initiate deletion of default storageclaim created referring to supplied storageclient if exists
+func (s *StorageClientReconciler) deleteDefaultStorageClaim(instance *v1alpha1.StorageClient) error {
+	storageClaims := &v1alpha1.StorageClaimList{}
+	if err := s.Client.List(s.ctx,
+		storageClaims,
+		client.MatchingFields{storageClientAnnotationIndexName: client.ObjectKeyFromObject(instance).String()},
+	); err != nil {
+		return fmt.Errorf("failed to list storageClaims: %v", err)
+	}
+
+	for idx := range storageClaims.Items {
+		storageClaim := &storageClaims.Items[idx]
+		var deleteStorageClaim bool
+		if storageClaim.GetAnnotations()[defaultStorageClaimBlockPoolAnnotationKey] == "created" {
+			deleteStorageClaim = true
+		} else if storageClaim.GetAnnotations()[defaultStorageClaimSharedFsAnnotationKey] == "created" {
+			deleteStorageClaim = true
+		}
+
+		if deleteStorageClaim {
+			if err := s.delete(storageClaim); err != nil {
+				return fmt.Errorf("failed to initiate deletion of storageclaim %q: %v", storageClaim.Name, err)
+			}
+			s.Log.Info("Successfully initiated deletion of storageclaim %q", storageClaim.Name)
+
+			// only one claim will be marked with the default annotation key
+			return nil
+		}
+	}
+	return nil
+}
+
 func (s *StorageClientReconciler) logGrpcErrorAndReportEvent(instance *v1alpha1.StorageClient, grpcCallName string, err error, errCode codes.Code) {
 
 	var msg, eventReason, eventType string
@@ -519,6 +573,66 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 	return reconcile.Result{}, nil
 }
 
+func (s *StorageClientReconciler) reconcileDefaultStorageClaim(instance *v1alpha1.StorageClient, claimType string) error {
+
+	var annotationKey string
+	storageclaim := &v1alpha1.StorageClaim{}
+	switch claimType {
+	case claimTypeBlockPool:
+		annotationKey = defaultStorageClaimBlockPoolAnnotationKey
+		storageclaim.Name = defaultStorageClaimBlockPoolName
+	case claimTypeSharedFs:
+		annotationKey = defaultStorageClaimSharedFsAnnotationKey
+		storageclaim.Name = defaultStorageClaimSharedFsName
+	default:
+		panic(fmt.Sprintf("either %q or %q claim type is supported but received %q", claimTypeBlockPool, claimTypeSharedFs, claimType))
+	}
+
+	if err := s.get(storageclaim); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get %q storageclaim: %v", storageclaim.Name, err)
+	} else if err == nil {
+		// default storageclaim already exists
+		return nil
+	}
+
+	// no default storageclaim exists and check if we created it for current storageclient and user deleted it
+	if instance.GetAnnotations()[annotationKey] == "deleted" {
+		// user deleted or initiated deletion of the default storageclaim, do not reconcile
+		return nil
+	}
+
+	// TODO: what about encryption field?
+	// create default storageclaim
+	storageclaim.Spec.Type = claimType
+	storageclaim.Spec.StorageClient = &v1alpha1.StorageClientNamespacedName{
+		Name:      instance.Name,
+		Namespace: instance.Namespace,
+	}
+
+	// used to track explicit storageclient to default storageclaim mapping
+	addAnnotation(storageclaim, storageClientAnnotationKey, client.ObjectKeyFromObject(instance).String())
+	addAnnotation(storageclaim, annotationKey, "created")
+
+	if err := s.create(storageclaim); errors.IsAlreadyExists(err) {
+		// maybe the create event didn't get stored into the cache yet, nothing to do
+		// this also avoids if any other storageclient created default storageclaim before we create one for current storageclient
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to create %q storageclaim referring to %q: %v", storageclaim.Name, client.ObjectKeyFromObject(instance), err)
+	}
+
+	s.Log.Info(fmt.Sprintf("Successfully created %q storageclaim referring to %q", storageclaim.Name, client.ObjectKeyFromObject(instance)))
+	return nil
+}
+
 func (s *StorageClientReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
 	return s.Client.List(s.ctx, obj, listOptions...)
+}
+
+func (s *StorageClientReconciler) get(obj client.Object, getOptions ...client.GetOption) error {
+	return s.Client.Get(s.ctx, client.ObjectKeyFromObject(obj), obj, getOptions...)
+}
+
+func (s *StorageClientReconciler) create(obj client.Object, createOptions ...client.CreateOption) error {
+	return s.Client.Create(s.ctx, obj, createOptions...)
 }
