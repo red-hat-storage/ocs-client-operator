@@ -60,6 +60,12 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 	)
 	snapshotter.Image = sidecarImages.ContainerImages.SnapshotterImageURL
 
+	csiAddons := templates.CSIAddonsContainer.DeepCopy()
+	csiAddons.Args = append(csiAddons.Args,
+		fmt.Sprintf("--leader-election-namespace=%s", namespace),
+	)
+	csiAddons.Image = sidecarImages.ContainerImages.CSIADDONSImageURL
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      RBDDeploymentName,
@@ -84,6 +90,7 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 						*attacher,
 						*resizer,
 						*snapshotter,
+						*csiAddons,
 						v1.Container{
 							Name:            "csi-rbdplugin",
 							Image:           sidecarImages.ContainerImages.CephCSIImageURL,
@@ -95,6 +102,7 @@ func GetRBDDeployment(namespace string) *appsv1.Deployment {
 								"--pidlimit=-1",
 								"--type=rbd",
 								"--controllerserver=true",
+								fmt.Sprintf("--csi-addons-endpoint=%s", templates.DefaultCSIAddonsSocketPath),
 								fmt.Sprintf("--drivername=%s", GetRBDDriverName()),
 							},
 							Resources: templates.RBDPluginResourceRequirements,
