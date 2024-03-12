@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -51,6 +52,9 @@ const (
 	storageClaimFinalizer  = "storageclaim.ocs.openshift.io"
 	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
 
+	pvClusterIDIndexName = "index:pvClusterID"
+	vscDriverIndexName   = "index:vscCSIDriver"
+
 	// for migration of storageclassclaims to storageclaims
 	storageClassClaimFinalizer = "storageclassclaim.ocs.openshift.io"
 )
@@ -70,6 +74,30 @@ type StorageClaimReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctx := context.Background()
+	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, pvClusterIDIndexName, func(o client.Object) []string {
+		pv := o.(*corev1.PersistentVolume)
+		if pv.Spec.CSI == nil {
+			return nil
+		}
+		if pv.Spec.CSI.Driver != csi.GetRBDDriverName() || pv.Spec.CSI.Driver != csi.GetCephFSDriverName() {
+			return nil
+		}
+		if len(pv.Spec.CSI.VolumeAttributes) == 0 {
+			return nil
+		}
+		return []string{pv.Spec.CSI.VolumeAttributes["clusterID"]}
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for PV cluster id: %v", err)
+	}
+
+	if err := mgr.GetCache().IndexField(ctx, &snapapi.VolumeSnapshotContent{}, vscDriverIndexName, func(o client.Object) []string {
+		vsc := o.(*snapapi.VolumeSnapshotContent)
+		return []string{vsc.Spec.Driver}
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
+	}
+
 	enqueueStorageConsumerRequest := handler.EnqueueRequestsFromMapFunc(
 		func(_ context.Context, obj client.Object) []reconcile.Request {
 			annotations := obj.GetAnnotations()
@@ -111,6 +139,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -419,22 +448,10 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		// Update the StorageClaim status.
 		r.storageClaim.Status.Phase = v1alpha1.StorageClaimDeleting
 
-		// Delete StorageClass.
-		// Make sure there are no StorageClass consumers left.
-		// Check if StorageClass is in use, if yes, then fail.
-		// Wait until all PVs using the StorageClass under deletion are removed.
-		// Check for any PVs using the StorageClass.
-		pvList := corev1.PersistentVolumeList{}
-		err := r.list(&pvList)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to list PersistentVolumes: %s", err)
-		}
-		for i := range pvList.Items {
-			pv := &pvList.Items[i]
-			if pv.Spec.StorageClassName == r.storageClaim.Name {
-				return reconcile.Result{}, fmt.Errorf("StorageClass %s is still in use by one or more PV(s)",
-					r.storageClaim.Name)
-			}
+		if exist, err := r.hasStorageClaimDependents(); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify storageclaim dependent resources: %v", err)
+		} else if exist {
+			return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 
 		// Delete configmap entry for cephcsi
@@ -689,4 +706,48 @@ func (r *StorageClaimReconciler) migrateStorageClassClaims() error {
 	}
 
 	return nil
+}
+
+func (r *StorageClaimReconciler) hasStorageClaimDependents() (bool, error) {
+
+	pvList := &corev1.PersistentVolumeList{}
+	if err := r.list(pvList, client.MatchingFields{pvClusterIDIndexName: r.storageClaim.Name}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list persistent volumes: %v", err)
+	}
+
+	// shortest path for verifying dependents overall
+	if len(pvList.Items) != 0 {
+		r.log.Info(fmt.Sprintf("PersistentVolumes referring storageclaim %q exists", r.storageClaim.Name))
+		return true, nil
+	}
+
+	var driverName string
+	switch r.storageClaim.Spec.Type {
+	case "blockpool":
+		driverName = csi.GetRBDDriverName()
+	case "sharedfilesystem":
+		driverName = csi.GetCephFSDriverName()
+	default:
+		panic(fmt.Sprintf("supplied unsupported type %q in storageclaim", r.storageClaim.Spec.Type))
+	}
+
+	vsContentList := &snapapi.VolumeSnapshotContentList{}
+	if err := r.list(vsContentList, client.MatchingFields{vscDriverIndexName: driverName}); err != nil {
+		return false, fmt.Errorf("failed to list volume snapshot content resources: %v", err)
+	}
+
+	for idx := range vsContentList.Items {
+		vsContent := vsContentList.Items[idx]
+		if vsContent.Status.SnapshotHandle == nil {
+			// indicates a snapshot creation is in progress or failed
+			return false, fmt.Errorf("failed to verify volume snapshot content snapshothandle %q", vsContent.Name)
+		}
+
+		if strings.Contains(*vsContent.Status.SnapshotHandle, r.storageClaim.Name) {
+			r.log.Info(fmt.Sprintf("VolumeSnapshotContent referring storageclaim %q exists", r.storageClaim.Name))
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
