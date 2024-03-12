@@ -25,6 +25,7 @@ import (
 
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	"github.com/go-logr/logr"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
@@ -246,7 +247,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 			r.storageClassClaim.SetFinalizers(append(r.storageClassClaim.GetFinalizers(), storageClassClaimFinalizer))
 			updateStorageClassClaim = true
 		}
-		if addAnnotation(r.storageClassClaim, storageClientAnnotationKey, client.ObjectKeyFromObject(r.storageClient).String()) {
+		if utils.AddAnnotation(r.storageClassClaim, storageClientAnnotationKey, client.ObjectKeyFromObject(r.storageClient).String()) {
 			updateStorageClassClaim = true
 		}
 
@@ -358,7 +359,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 				} else if resource.Name == "ceph-rbd" {
 					storageClass = r.getCephRBDStorageClass(data)
 				}
-				addAnnotation(storageClass, storageClassClaimAnnotation, r.storageClassClaim.Name)
+				utils.AddAnnotation(storageClass, storageClassClaimAnnotation, r.storageClassClaim.Name)
 				err = r.createOrReplaceStorageClass(storageClass)
 				if err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update StorageClass: %s", err)
@@ -375,7 +376,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 				} else if resource.Name == "ceph-rbd" {
 					volumeSnapshotClass = r.getCephRBDVolumeSnapshotClass(data)
 				}
-				addAnnotation(volumeSnapshotClass, storageClassClaimAnnotation, r.storageClassClaim.Name)
+				utils.AddAnnotation(volumeSnapshotClass, storageClassClaimAnnotation, r.storageClassClaim.Name)
 				if err := r.createOrReplaceVolumeSnapshotClass(volumeSnapshotClass); err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
 				}
@@ -575,20 +576,6 @@ func (r *StorageClassClaimReconciler) delete(obj client.Object) error {
 func (r *StorageClassClaimReconciler) own(resource metav1.Object) error {
 	// Ensure StorageClassClaim ownership on a resource
 	return controllerutil.SetOwnerReference(r.storageClassClaim, resource, r.Scheme)
-}
-
-// addAnnotation adds an annotation to a resource metadata, returns true if added else false
-func addAnnotation(obj metav1.Object, key string, value string) bool {
-	annotations := obj.GetAnnotations()
-	if annotations == nil {
-		annotations = map[string]string{}
-		obj.SetAnnotations(annotations)
-	}
-	if oldValue, exist := annotations[key]; !exist || oldValue != value {
-		annotations[key] = value
-		return true
-	}
-	return false
 }
 
 func (r *StorageClassClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapshotClass *snapapi.VolumeSnapshotClass) error {

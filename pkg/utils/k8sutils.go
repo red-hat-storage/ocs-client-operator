@@ -19,6 +19,8 @@ package utils
 import (
 	"fmt"
 	"os"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -59,4 +61,18 @@ func ValidateStausReporterImage() error {
 	}
 
 	return nil
+}
+
+// AddAnnotation adds an annotation to a resource metadata, returns true if added else false
+func AddAnnotation(obj metav1.Object, key string, value string) bool {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+		obj.SetAnnotations(annotations)
+	}
+	if oldValue, exist := annotations[key]; !exist || oldValue != value {
+		annotations[key] = value
+		return true
+	}
+	return false
 }
