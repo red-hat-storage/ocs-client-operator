@@ -99,7 +99,7 @@ endif
 
 # csi-addons dependencies
 CSI_ADDONS_PACKAGE_NAME ?= csi-addons
-CSI_ADDONS_PACKAGE_VERSION ?= "0.5.0"
+CSI_ADDONS_PACKAGE_VERSION ?= 0.5.0
 
 ## CSI driver images
 # The following variables define the default CSI container images to deploy
