@@ -3,7 +3,6 @@ include hack/make-project-vars.mk
 include hack/make-tools.mk
 include hack/make-bundle-vars.mk
 
-
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -55,7 +54,7 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 lint: ## Run golangci-lint against code.
-	docker run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
+	$(IMAGE_BUILD_CMD) run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
 godeps-update:  ## Run go mod tidy & vendor
 	go mod tidy && go mod vendor
@@ -83,10 +82,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 container-build: test-setup ## Build container image with the manager.
-	docker build -t ${IMG} .
+	$(IMAGE_BUILD_CMD) build -t ${IMG} .
 
 container-push: ## Push container image with the manager.
-	docker push ${IMG}
+	$(IMAGE_BUILD_CMD) push ${IMG}
 
 ##@ Deployment
 
@@ -135,20 +134,20 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 
 .PHONY: bundle-build
 bundle-build: bundle ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(IMAGE_BUILD_CMD) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
-	docker push $(BUNDLE_IMG)
+	$(IMAGE_BUILD_CMD) push $(BUNDLE_IMG)
 
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: catalog-build
 catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --permissive --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+	$(OPM) index add --permissive --container-tool $(IMAGE_BUILD_CMD) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
-	docker push $(CATALOG_IMG)
+	$(IMAGE_BUILD_CMD) push $(CATALOG_IMG)
