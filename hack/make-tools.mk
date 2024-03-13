@@ -2,7 +2,7 @@
 define go-get-tool
 @[ -f $(1) ] || { \
 echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
+$(shell GOBIN=$(PROJECT_DIR)/bin go install $(2)) \
 }
 endef
 
