@@ -4,8 +4,8 @@ ENVTEST_ASSETS_DIR := $(PROJECT_DIR)/testbin
 
 GOROOT ?= $(shell go env GOROOT)
 GOBIN ?= $(BIN_DIR)
-GOOS ?= linux
-GOARCH ?= amd64
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
 
 GO_LINT_IMG_LOCATION ?= golangci/golangci-lint
 GO_LINT_IMG_TAG ?= v1.56.2
