@@ -74,6 +74,9 @@ tags
 # Local History for Visual Studio Code
 .history/
 
+### IntelliJ ###
+.idea
+
 # Built Visual Studio Code Extensions
 *.vsix
 
