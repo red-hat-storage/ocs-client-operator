@@ -31,4 +31,4 @@ operator-sdk: ## Download operator-sdk locally if necessary.
 .PHONY: opm
 OPM = $(BIN_DIR)/opm
 opm: ## Download opm locally if necessary.
-	@./hack/get-tool.sh $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.15.1/$(GOOS)-$(GOARCH)-opm
+	@./hack/get-tool.sh $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.20.0/$(GOOS)-$(GOARCH)-opm
