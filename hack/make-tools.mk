@@ -32,3 +32,7 @@ operator-sdk: ## Download operator-sdk locally if necessary.
 OPM = $(BIN_DIR)/opm
 opm: ## Download opm locally if necessary.
 	@./hack/get-tool.sh $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.20.0/$(GOOS)-$(GOARCH)-opm
+
+ENVTEST ?= $(BIN_DIR)/setup-envtest
+envtest: ## Download envtest-setup locally if necessary.
+	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)

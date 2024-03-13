@@ -59,10 +59,10 @@ lint: ## Run golangci-lint against code.
 godeps-update:  ## Run go mod tidy & vendor
 	go mod tidy && go mod vendor
 
-test-setup: godeps-update generate fmt vet ## Run setup targets for tests
+test-setup: godeps-update generate fmt vet envtest ## Run setup targets for tests
 
 go-test: ## Run go test against code.
-	./hack/go-test.sh
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(BIN_DIR) -p path)" go test -coverprofile cover.out `go list ./... | grep -v "e2e"`
 
 test: test-setup go-test ## Run go unit tests.
 
@@ -81,7 +81,7 @@ go-build: ## Run go build against code.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
-container-build: test-setup go-test ## Build container image with the manager.
+container-build: test ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
 
 container-push: ## Push container image with the manager.
