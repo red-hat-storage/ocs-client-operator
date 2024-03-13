@@ -81,7 +81,7 @@ go-build: ## Run go build against code.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
-container-build: test-setup ## Build container image with the manager.
+container-build: test-setup go-test ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build -t ${IMG} .
 
 container-push: ## Push container image with the manager.
