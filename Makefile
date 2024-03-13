@@ -82,7 +82,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 container-build: test-setup go-test ## Build container image with the manager.
-	$(IMAGE_BUILD_CMD) build -t ${IMG} .
+	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
 
 container-push: ## Push container image with the manager.
 	$(IMAGE_BUILD_CMD) push ${IMG}
@@ -134,7 +134,7 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 
 .PHONY: bundle-build
 bundle-build: bundle ## Build the bundle image.
-	$(IMAGE_BUILD_CMD) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
