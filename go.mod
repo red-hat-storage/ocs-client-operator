@@ -18,7 +18,7 @@ require (
 	github.com/operator-framework/api v0.20.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.70.0
-	github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20231221111740-6704e7366b4d
+	github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240313134224-73ae0f2516f9
 	github.com/stretchr/testify v1.8.4
 	google.golang.org/grpc v1.60.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -77,7 +77,7 @@ require (
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231002182017-d307bd883b97 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
