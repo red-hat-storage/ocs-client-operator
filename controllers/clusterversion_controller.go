@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
 	secv1 "github.com/openshift/api/security/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -44,7 +45,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 //go:embed pvc-rules.yaml
@@ -67,12 +67,9 @@ type ClusterVersionReconciler struct {
 
 	log               logr.Logger
 	ctx               context.Context
-	consoleDeployment *appsv1.Deployment
-	cephFSDeployment  *appsv1.Deployment
-	cephFSDaemonSet   *appsv1.DaemonSet
-	rbdDeployment     *appsv1.Deployment
-	rbdDaemonSet      *appsv1.DaemonSet
-	scc               *secv1.SecurityContextConstraints
+	clusterVersion    configv1.ClusterVersion
+	consoleDeployment appsv1.Deployment
+	operatorConfigMap corev1.ConfigMap
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -92,8 +89,8 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	)
 	// Reconcile the ClusterVersion object when the operator config map is updated
 	enqueueClusterVersionRequest := handler.EnqueueRequestsFromMapFunc(
-		func(_ context.Context, _ client.Object) []reconcile.Request {
-			return []reconcile.Request{{
+		func(_ context.Context, _ client.Object) []ctrl.Request {
+			return []ctrl.Request{{
 				NamespacedName: types.NamespacedName{
 					Name: clusterVersionName,
 				},
@@ -124,47 +121,179 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
 func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var err error
 	c.ctx = ctx
 	c.log = log.FromContext(ctx, "ClusterVersion", req)
-	c.log.Info("Reconciling ClusterVersion")
 
-	if err := c.ensureConsolePlugin(); err != nil {
-		c.log.Error(err, "unable to deploy client console")
+	c.log.Info("Loading input resources")
+
+	// Load the cluster version
+	c.clusterVersion.Name = req.Name
+	if err := c.get(&c.clusterVersion); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	instance := configv1.ClusterVersion{}
-	if err = c.Client.Get(context.TODO(), req.NamespacedName, &instance); err != nil {
+	// Load the console plugin
+	c.consoleDeployment.Name = console.DeploymentName
+	c.consoleDeployment.Namespace = c.OperatorNamespace
+	if err := c.get(&c.consoleDeployment); err != nil {
+		c.log.Error(err, "failed to get the deployment for the console")
 		return ctrl.Result{}, err
 	}
 
-	if err := csi.InitializeSidecars(c.log, instance.Status.Desired.Version); err != nil {
-		c.log.Error(err, "unable to initialize sidecars")
+	// Load the operator configmap
+	c.operatorConfigMap.Name = operatorConfigMapName
+	c.operatorConfigMap.Namespace = c.OperatorNamespace
+	if err := c.get(&c.operatorConfigMap); err != nil && !k8serrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
 
-	c.scc = &secv1.SecurityContextConstraints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: csi.SCCName,
-		},
+	c.log.Info("Starting reconciliation")
+	result, err := c.reconcilPhases()
+	if err != nil {
+		c.log.Error(err, "An error was encountered during reconciliation")
+		return ctrl.Result{}, err
 	}
-	err = c.createOrUpdate(c.scc, func() error {
-		// TODO: this is a hack to preserve the resourceVersion of the SCC
-		resourceVersion := c.scc.ResourceVersion
-		csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
-		c.scc.ResourceVersion = resourceVersion
+
+	c.log.Info("Reconciliation completed successfully")
+	return result, nil
+}
+
+func (c *ClusterVersionReconciler) reconcilPhases() (ctrl.Result, error) {
+
+	// Reconcile console related resources
+	if err := c.reconcileNginxConfigMap(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileConsoleService(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileConsolePlugin(); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile CSI related resources
+	if err := csi.InitializeSidecars(c.log, c.clusterVersion.Status.Desired.Version); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileSecurityContextConstraints(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileMonConfigMap(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileEncConfigMap(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileCephFSDeployment(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileCephFSDaemonSet(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileRBDDeployment(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileRBDDaemonSet(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileCephFSCSIDrivers(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcileRBDCSIDriver(); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := c.reconcilePrometheusRule(); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (c *ClusterVersionReconciler) reconcileNginxConfigMap() error {
+	c.log.Info("Reconciling NginxConfigMap")
+
+	nginxConfigMap := corev1.ConfigMap{}
+	nginxConfigMap.Name = console.NginxConfigMapName
+	nginxConfigMap.Namespace = c.OperatorNamespace
+
+	err := c.createOrUpdate(&nginxConfigMap, func() error {
+		if err := c.own(&nginxConfigMap); err != nil {
+			return err
+		}
+
+		console.SetNgnixConfigMapDesiredState(&nginxConfigMap)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create nginx config map")
+		return err
+	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileConsoleService() error {
+	c.log.Info("Reconciling ConsoleService")
+
+	consoleService := corev1.Service{}
+	consoleService.Name = console.DeploymentName
+	consoleService.Namespace = c.OperatorNamespace
+
+	err := c.createOrUpdate(&consoleService, func() error {
+		if err := c.own(&consoleService); err != nil {
+			return err
+		}
+
+		console.SetConsoleServiceDesiredState(&consoleService, c.ConsolePort)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update service for console")
+		return err
+	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileConsolePlugin() error {
+	c.log.Info("Reconciling ConsolePlugin")
+
+	consolePlugin := consolev1alpha1.ConsolePlugin{}
+	consolePlugin.Name = console.PluginName
+
+	err := c.createOrUpdate(&consolePlugin, func() error {
+		console.SetConsolePluginDesiredState(&consolePlugin, c.ConsolePort, c.OperatorNamespace)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update consoleplugin")
+		return err
+	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileSecurityContextConstraints() error {
+	c.log.Info("Reconciling SecurityContextConstraints")
+
+	scc := secv1.SecurityContextConstraints{}
+	scc.Name = csi.SCCName
+
+	err := c.createOrUpdate(&scc, func() error {
+		csi.SetSecurityContextConstraintsDesiredState(&scc, c.OperatorNamespace)
 		return nil
 	})
 	if err != nil {
 		c.log.Error(err, "unable to create/update SCC")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileMonConfigMap() error {
+	c.log.Info("Reconciling MonConfigMap")
 
 	// create the monitor configmap for the csi drivers but never updates it.
 	// This is because the monitor configurations are added to the configmap
 	// when user creates storageclassclaims.
-	monConfigMap := &corev1.ConfigMap{
+	monConfigMap := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      templates.MonConfigMapName,
 			Namespace: c.OperatorNamespace,
@@ -173,19 +302,23 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			"config.json": "[]",
 		},
 	}
-	if err := c.own(monConfigMap); err != nil {
-		return ctrl.Result{}, err
+	if err := c.own(&monConfigMap); err != nil {
+		return err
 	}
-	err = c.create(monConfigMap)
-	if err != nil && !k8serrors.IsAlreadyExists(err) {
+	if err := c.create(&monConfigMap); err != nil && !k8serrors.IsAlreadyExists(err) {
 		c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileEncConfigMap() error {
+	c.log.Info("Reconciling EncConfigMap")
 
 	// create the encryption configmap for the csi driver but never updates it.
 	// This is because the encryption configuration are added to the configmap
 	// by the users before they create the encryption storageclassclaims.
-	encConfigMap := &corev1.ConfigMap{
+	encConfigMap := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      templates.EncryptionConfigMapName,
 			Namespace: c.OperatorNamespace,
@@ -194,130 +327,160 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			"config.json": "[]",
 		},
 	}
-	if err := c.own(encConfigMap); err != nil {
-		return ctrl.Result{}, err
+	if err := c.own(&encConfigMap); err != nil {
+		return err
 	}
-	err = c.create(encConfigMap)
-	if err != nil && !k8serrors.IsAlreadyExists(err) {
+	if err := c.create(&encConfigMap); err != nil && !k8serrors.IsAlreadyExists(err) {
 		c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
 
-	c.cephFSDeployment = &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.CephFSDeploymentName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.cephFSDeployment, func() error {
-		if err := c.own(c.cephFSDeployment); err != nil {
+func (c *ClusterVersionReconciler) reconcileCephFSDeployment() error {
+	c.log.Info("Reconciling CephFSDeployment")
+
+	cephFSDeployment := appsv1.Deployment{}
+	cephFSDeployment.Name = csi.CephFSDeploymentName
+	cephFSDeployment.Namespace = c.OperatorNamespace
+
+	err := c.createOrUpdate(&cephFSDeployment, func() error {
+		if err := c.own(&cephFSDeployment); err != nil {
 			return err
 		}
-		csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
+		csi.SetCephFSDeploymentDesiredState(&cephFSDeployment)
 		return nil
 	})
 	if err != nil {
 		c.log.Error(err, "failed to create/update cephfs deployment")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
 
-	c.cephFSDaemonSet = &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.CephFSDaemonSetName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
-		if err := c.own(c.cephFSDaemonSet); err != nil {
+func (c *ClusterVersionReconciler) reconcileCephFSDaemonSet() error {
+	c.log.Info("Reconciling CephFSDaemonSet")
+
+	cephFSDaemonSet := appsv1.DaemonSet{}
+	cephFSDaemonSet.Name = csi.CephFSDaemonSetName
+	cephFSDaemonSet.Namespace = c.OperatorNamespace
+
+	err := c.createOrUpdate(&cephFSDaemonSet, func() error {
+		if err := c.own(&cephFSDaemonSet); err != nil {
 			return err
 		}
-		csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
+		csi.SetCephFSDaemonSetDesiredState(&cephFSDaemonSet)
 		return nil
 	})
 	if err != nil {
 		c.log.Error(err, "failed to create/update cephfs daemonset")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
 
-	c.rbdDeployment = &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.RBDDeploymentName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.rbdDeployment, func() error {
-		if err := c.own(c.rbdDeployment); err != nil {
+func (c *ClusterVersionReconciler) reconcileRBDDeployment() error {
+	c.log.Info("Reconciling RBDDeployment")
+
+	rbdDeployment := appsv1.Deployment{}
+	rbdDeployment.Name = csi.RBDDeploymentName
+	rbdDeployment.Namespace = c.OperatorNamespace
+
+	err := c.createOrUpdate(&rbdDeployment, func() error {
+		if err := c.own(&rbdDeployment); err != nil {
 			return err
 		}
-		csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
+		csi.SetRBDDeploymentDesiredState(&rbdDeployment)
 		return nil
 	})
 	if err != nil {
 		c.log.Error(err, "failed to create/update rbd deployment")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
 
-	c.rbdDaemonSet = &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.RBDDaemonSetName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.rbdDaemonSet, func() error {
-		if err := c.own(c.rbdDaemonSet); err != nil {
+func (c *ClusterVersionReconciler) reconcileRBDDaemonSet() error {
+	c.log.Info("Reconciling RBDDaemonSet")
+
+	rbdDaemonSet := appsv1.DaemonSet{}
+	rbdDaemonSet.Name = csi.RBDDaemonSetName
+	rbdDaemonSet.Namespace = c.OperatorNamespace
+
+	err := c.createOrUpdate(&rbdDaemonSet, func() error {
+		if err := c.own(&rbdDaemonSet); err != nil {
 			return err
 		}
-		csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
+		csi.SetRBDDaemonSetDesiredState(&rbdDaemonSet)
 		return nil
 	})
 	if err != nil {
 		c.log.Error(err, "failed to create/update rbd daemonset")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileCephFSCSIDrivers() error {
+	c.log.Info("Reconciling CephFSCSIDrivers")
 
 	// Need to handle deletion of the csiDriver object, we cannot set
 	// ownerReference on it as its cluster scoped resource
 	cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
-	cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
-	err = csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver)
-	if err != nil {
+	cephfsCSIDriver.Name = csi.GetCephFSDriverName()
+	if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
 		c.log.Error(err, "unable to create cephfs CSIDriver")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileRBDCSIDriver() error {
+	c.log.Info("Reconciling RBDCSIDriver")
 
 	rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
-	rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
-	err = csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver)
-	if err != nil {
+	rbdCSIDriver.Name = csi.GetRBDDriverName()
+	if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
 		c.log.Error(err, "unable to create rbd CSIDriver")
-		return ctrl.Result{}, err
+		return err
 	}
+	return nil
+}
 
-	prometheusRule := &monitoringv1.PrometheusRule{}
-	err = k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule)
-	if err != nil {
-		c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
-		return ctrl.Result{}, err
-	}
+func (c *ClusterVersionReconciler) reconcilePrometheusRule() error {
+	c.log.Info("Reconciling PrometheusRule")
 
-	operatorConfig, err := c.getOperatorConfig()
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	prometheusRule.SetNamespace(c.OperatorNamespace)
+	prometheusRule := monitoringv1.PrometheusRule{}
+	prometheusRule.Name = "prometheus-pvc-rules"
+	prometheusRule.Namespace = c.OperatorNamespace
 
-	err = c.createOrUpdate(prometheusRule, func() error {
-		applyLabels(operatorConfig.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
-		return c.own(prometheusRule)
+	err := c.createOrUpdate(&prometheusRule, func() error {
+		if err := c.own(&prometheusRule); err != nil {
+			return err
+		}
+
+		parseAndAddLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule)
+
+		desiredState := monitoringv1.PrometheusRule{}
+		decoder := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000)
+		if err := decoder.Decode(&desiredState); err != nil {
+			c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+			return err
+		}
+
+		// Copying spec only to prevant the loss of previous metadata
+		desiredState.Spec.DeepCopyInto(&prometheusRule.Spec)
+
+		return nil
 	})
 	if err != nil {
 		c.log.Error(err, "failed to create/update prometheus rules")
-		return ctrl.Result{}, err
+		return err
 	}
 
 	c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+	return nil
 
-	return ctrl.Result{}, nil
 }
 
 func (c *ClusterVersionReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
@@ -329,6 +492,10 @@ func (c *ClusterVersionReconciler) createOrUpdate(obj client.Object, f controlle
 	return nil
 }
 
+func (c *ClusterVersionReconciler) get(obj client.Object) error {
+	return c.Client.Get(c.ctx, client.ObjectKeyFromObject(obj), obj)
+}
+
 func (c *ClusterVersionReconciler) own(obj client.Object) error {
 	return controllerutil.SetControllerReference(c.OperatorDeployment, obj, c.Client.Scheme())
 }
@@ -338,101 +505,22 @@ func (c *ClusterVersionReconciler) create(obj client.Object) error {
 }
 
 // applyLabels adds labels to object meta, overwriting keys that are already defined.
-func applyLabels(label string, t *metav1.ObjectMeta) {
-	// Create a map to store the configuration
-	promLabel := make(map[string]string)
+func parseAndAddLabels(labelsAsString string, obj metav1.Object) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+		obj.SetLabels(labels)
+	}
 
-	labels := strings.Split(label, "\n")
 	// Loop through the lines and extract key-value pairs
-	for _, line := range labels {
+	lines := strings.Split(labelsAsString, "\n")
+	for _, line := range lines {
 		if len(line) == 0 {
 			continue
 		}
 		parts := strings.SplitN(line, ":", 2)
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-		promLabel[key] = value
+		labels[key] = value
 	}
-
-	t.Labels = promLabel
-}
-
-func (c *ClusterVersionReconciler) getOperatorConfig() (*corev1.ConfigMap, error) {
-	cm := &corev1.ConfigMap{}
-	err := c.Client.Get(c.ctx, types.NamespacedName{Name: operatorConfigMapName, Namespace: c.OperatorNamespace}, cm)
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return nil, err
-	}
-	return cm, nil
-}
-
-func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
-	c.consoleDeployment = &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      console.DeploymentName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-
-	err := c.Client.Get(c.ctx, types.NamespacedName{
-		Name:      console.DeploymentName,
-		Namespace: c.OperatorNamespace,
-	}, c.consoleDeployment)
-	if err != nil {
-		c.log.Error(err, "failed to get the deployment for the console")
-		return err
-	}
-
-	nginxConf := console.GetNginxConf()
-	nginxConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      console.NginxConfigMapName,
-			Namespace: c.OperatorNamespace,
-		},
-		Data: map[string]string{
-			"nginx.conf": nginxConf,
-		},
-	}
-	err = c.createOrUpdate(nginxConfigMap, func() error {
-		if consoleConfigMapData := nginxConfigMap.Data["nginx.conf"]; consoleConfigMapData != nginxConf {
-			nginxConfigMap.Data["nginx.conf"] = nginxConf
-		}
-		return controllerutil.SetControllerReference(c.consoleDeployment, nginxConfigMap, c.Scheme)
-	})
-
-	if err != nil {
-		c.log.Error(err, "failed to create nginx config map")
-		return err
-	}
-
-	consoleService := console.GetService(c.ConsolePort, c.OperatorNamespace)
-
-	err = c.createOrUpdate(consoleService, func() error {
-		if err := controllerutil.SetControllerReference(c.consoleDeployment, consoleService, c.Scheme); err != nil {
-			return err
-		}
-		console.GetService(c.ConsolePort, c.OperatorNamespace).DeepCopyInto(consoleService)
-		return nil
-	})
-
-	if err != nil {
-		c.log.Error(err, "failed to create/update service for console")
-		return err
-	}
-
-	consolePlugin := console.GetConsolePlugin(c.ConsolePort, c.OperatorNamespace)
-	err = c.createOrUpdate(consolePlugin, func() error {
-		// preserve the resourceVersion of the consolePlugin
-		resourceVersion := consolePlugin.ResourceVersion
-		console.GetConsolePlugin(c.ConsolePort, c.OperatorNamespace).DeepCopyInto(consolePlugin)
-		consolePlugin.ResourceVersion = resourceVersion
-		return nil
-	})
-
-	if err != nil {
-		c.log.Error(err, "failed to create/update consoleplugin")
-		return err
-	}
-
-	return nil
 }

@@ -82,7 +82,9 @@ func InitializeSidecars(log logr.Logger, ver string) error {
 	}
 	if sidecarImages == nil {
 		// happens only if all sidecars image versions are greater than platform
-		return fmt.Errorf("failed to find container details suitable for %v platform version", pltVersion)
+		err := fmt.Errorf("failed to find container details suitable for %v platform version", pltVersion)
+		log.Error(err, "unable to initialize sidecars")
+		return err
 	}
 
 	log.Info("selected sidecar images", "version", sidecarImages.Version)
