@@ -18,7 +18,10 @@ package utils
 
 import (
 	"fmt"
+	"maps"
 	"os"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -59,4 +62,14 @@ func ValidateStausReporterImage() error {
 	}
 
 	return nil
+}
+
+// AddLabels adds values from newLabels to the keys on the supplied obj or overwrites values for existing keys on the obj
+func AddLabels(obj metav1.Object, newLabels map[string]string) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+		obj.SetLabels(labels)
+	}
+	maps.Copy(labels, newLabels)
 }

@@ -60,6 +60,9 @@ var rbdDaemonSetSpec = appsv1.DaemonSetSpec{
 		MatchLabels: rbdDaemonsetLabels,
 	},
 	Template: corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: rbdDaemonsetLabels,
+		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: rbdPluginServiceAccountName,
 			HostNetwork:        true,
@@ -312,9 +315,7 @@ var rbdDaemonSetSpec = appsv1.DaemonSetSpec{
 
 func SetRBDDaemonSetDesiredState(ds *appsv1.DaemonSet) {
 	// Copy required labels
-	for key := range rbdDaemonsetLabels {
-		ds.Labels[key] = cephfsDaemonsetLabels[key]
-	}
+	utils.AddLabels(ds, rbdDaemonsetLabels)
 
 	// Update the demaon set with desired state
 	rbdDaemonSetSpec.DeepCopyInto(&ds.Spec)
