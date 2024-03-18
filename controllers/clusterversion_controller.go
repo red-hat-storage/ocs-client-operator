@@ -16,11 +16,13 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	// The embed package is required for the prometheus rule files
 	_ "embed"
 
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
@@ -128,6 +130,20 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	c.ctx = ctx
 	c.log = log.FromContext(ctx, "ClusterVersion", req)
 	c.log.Info("Reconciling ClusterVersion")
+
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients, client.Limit(1)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list storageclients: %v", err)
+	}
+
+	// TODO(leelavg): after the change to configmap controller, we should list csi by owner ref
+	// and if they exist we need to reconcile them
+	if len(storageClients.Items) == 0 {
+		// there are chances that we'll be running in same namespace as rook managing CSI and
+		// inorder to overcome that, we are checking for storageclient which mandates CSI to be deployed by us
+		c.log.Info("No storageclients exists and not deploying CSI")
+		return ctrl.Result{}, nil
+	}
 
 	if err := c.ensureConsolePlugin(); err != nil {
 		c.log.Error(err, "unable to deploy client console")
@@ -435,4 +451,8 @@ func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
+}
+
+func (c *ClusterVersionReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
+	return c.List(c.ctx, obj, listOptions...)
 }
