@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -79,6 +80,15 @@ func (r *StorageClassClaimMigrationReconciler) Reconcile(ctx context.Context, re
 	r.log.Info(fmt.Sprintf("Migrating storageclassclaim %q", storageClassClaim.Name))
 	if err := r.create(storageClaim); err != nil && !kerrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, fmt.Errorf("failed to create storageclaims %q: %v", storageClaim.Name, err)
+	}
+
+	for idx := range storageClassClaim.Status.SecretNames {
+		secret := &corev1.Secret{}
+		secret.Name = storageClassClaim.Status.SecretNames[idx]
+		secret.Namespace = storageClassClaim.Spec.StorageClient.Namespace
+		if err := r.delete(secret); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete secret %s: %v", client.ObjectKeyFromObject(secret), err)
+		}
 	}
 
 	// remove finalizer on existing storageclassclaim

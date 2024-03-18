@@ -82,10 +82,6 @@ spec:
             properties:
               phase:
                 type: string
-              secretNames:
-                items:
-                  type: string
-                type: array
             type: object
         type: object
     served: true

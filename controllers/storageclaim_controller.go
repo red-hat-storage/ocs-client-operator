@@ -341,14 +341,15 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			// Create the received resources, if necessary.
 			switch resource.Kind {
 			case "Secret":
-				if !contains(r.storageClaim.Status.SecretNames, resource.Name) {
-					r.storageClaim.Status.SecretNames = append(r.storageClaim.Status.SecretNames, resource.Name)
-				}
 				secret := &corev1.Secret{}
 				secret.Name = resource.Name
 				secret.Namespace = r.storageClient.Namespace
 				_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
-					//cannot own secret here. we need to do get and delete
+					// cluster scoped resource owning namespace scoped resource which allows garbage collection
+					if err := r.own(secret); err != nil {
+						return fmt.Errorf("failed to own secret: %v", err)
+					}
+
 					if secret.Data == nil {
 						secret.Data = map[string][]byte{}
 					}
@@ -458,16 +459,6 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to revoke StorageClassClaim: %s", err)
-		}
-
-		// Delete secrets created for the StorageClaim.
-		for _, secretName := range r.storageClaim.Status.SecretNames {
-			secret := &corev1.Secret{}
-			secret.Name = secretName
-			secret.Namespace = r.storageClient.Namespace
-			if err = r.delete(secret); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to delete secret %s/%s: %s", secret.Namespace, secret.Name, err)
-			}
 		}
 
 		if contains(r.storageClaim.GetFinalizers(), storageClaimFinalizer) {

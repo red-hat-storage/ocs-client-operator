@@ -41,8 +41,7 @@ const (
 
 // StorageClaimStatus defines the observed state of StorageClaim
 type StorageClaimStatus struct {
-	Phase       storageClaimState `json:"phase,omitempty"`
-	SecretNames []string          `json:"secretNames,omitempty"`
+	Phase storageClaimState `json:"phase,omitempty"`
 }
 
 type StorageClientNamespacedName struct {
