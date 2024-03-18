@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +43,9 @@ var cephFSDeploymentSpec = appsv1.DeploymentSpec{
 		MatchLabels: cephfsDeploymentLabels,
 	},
 	Template: corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: cephfsDeploymentLabels,
+		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: cephFSProvisionerServiceAccountName,
 			Containers: []corev1.Container{
@@ -178,9 +182,7 @@ var cephFSDeploymentSpec = appsv1.DeploymentSpec{
 
 func SetCephFSDeploymentDesiredState(deploy *appsv1.Deployment) {
 	// Copy required labels
-	for key := range cephfsDaemonsetLabels {
-		deploy.Labels[key] = cephfsDaemonsetLabels[key]
-	}
+	utils.AddLabels(deploy, cephfsDeploymentLabels)
 
 	// Update the deployment set with desired spec
 	cephFSDeploymentSpec.DeepCopyInto(&deploy.Spec)

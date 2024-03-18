@@ -48,6 +48,9 @@ var cephFSDaemonSetSpec = appsv1.DaemonSetSpec{
 		MatchLabels: cephfsDaemonsetLabels,
 	},
 	Template: corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: cephfsDaemonsetLabels,
+		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: cephFSPluginServiceAccountName,
 			HostNetwork:        true,
@@ -251,9 +254,7 @@ var cephFSDaemonSetSpec = appsv1.DaemonSetSpec{
 
 func SetCephFSDaemonSetDesiredState(ds *appsv1.DaemonSet) {
 	// Copy required labels
-	for key := range cephfsDaemonsetLabels {
-		ds.Labels[key] = cephfsDaemonsetLabels[key]
-	}
+	utils.AddLabels(ds, cephfsDaemonsetLabels)
 
 	// Update the demaon set with desired spec
 	cephFSDaemonSetSpec.DeepCopyInto(&ds.Spec)
