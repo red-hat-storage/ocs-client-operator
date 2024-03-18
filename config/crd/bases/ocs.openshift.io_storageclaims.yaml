@@ -1,0 +1,94 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.9.2
+  creationTimestamp: null
+  name: storageclaims.ocs.openshift.io
+spec:
+  group: ocs.openshift.io
+  names:
+    kind: StorageClaim
+    listKind: StorageClaimList
+    plural: storageclaims
+    singular: storageclaim
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: StorageType
+      type: string
+    - jsonPath: .spec.storageProfile
+      name: StorageProfile
+      type: string
+    - jsonPath: .spec.storageClient.name
+      name: StorageClientName
+      type: string
+    - jsonPath: .spec.storageClient.namespace
+      name: StorageClientNamespace
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: StorageClaim is the Schema for the storageclaims API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: StorageClaimSpec defines the desired state of StorageClaim
+            properties:
+              encryptionMethod:
+                type: string
+              storageClient:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              storageProfile:
+                type: string
+              type:
+                enum:
+                - blockpool
+                - sharedfilesystem
+                type: string
+            required:
+            - storageClient
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: oldSelf == self
+          status:
+            description: StorageClaimStatus defines the observed state of StorageClaim
+            properties:
+              phase:
+                type: string
+              secretNames:
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

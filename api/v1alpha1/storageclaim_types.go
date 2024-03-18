@@ -20,33 +20,38 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type storageClassClaimState string
+type storageClaimState string
 
 const (
-	// StorageClassClaimInitializing represents Initializing state of StorageClassClaim
-	StorageClassClaimInitializing storageClassClaimState = "Initializing"
-	// StorageClassClaimValidating represents Validating state of StorageClassClaim
-	StorageClassClaimValidating storageClassClaimState = "Validating"
-	// StorageClassClaimFailed represents Failed state of StorageClassClaim
-	StorageClassClaimFailed storageClassClaimState = "Failed"
-	// StorageClassClaimCreating represents Configuring state of StorageClassClaim
-	StorageClassClaimCreating storageClassClaimState = "Creating"
-	// StorageClassClaimConfiguring represents Configuring state of StorageClassClaim
-	StorageClassClaimConfiguring storageClassClaimState = "Configuring"
-	// StorageClassClaimReady represents Ready state of StorageClassClaim
-	StorageClassClaimReady storageClassClaimState = "Ready"
-	// StorageClassClaimDeleting represents Deleting state of StorageClassClaim
-	StorageClassClaimDeleting storageClassClaimState = "Deleting"
+	// StorageClaimInitializing represents Initializing state of StorageClaim
+	StorageClaimInitializing storageClaimState = "Initializing"
+	// StorageClaimValidating represents Validating state of StorageClaim
+	StorageClaimValidating storageClaimState = "Validating"
+	// StorageClaimFailed represents Failed state of StorageClaim
+	StorageClaimFailed storageClaimState = "Failed"
+	// StorageClaimCreating represents Configuring state of StorageClaim
+	StorageClaimCreating storageClaimState = "Creating"
+	// StorageClaimConfiguring represents Configuring state of StorageClaim
+	StorageClaimConfiguring storageClaimState = "Configuring"
+	// StorageClaimReady represents Ready state of StorageClaim
+	StorageClaimReady storageClaimState = "Ready"
+	// StorageClaimDeleting represents Deleting state of StorageClaim
+	StorageClaimDeleting storageClaimState = "Deleting"
 )
 
-// StorageClassClaimStatus defines the observed state of StorageClassClaim
-type StorageClassClaimStatus struct {
-	Phase       storageClassClaimState `json:"phase,omitempty"`
-	SecretNames []string               `json:"secretNames,omitempty"`
+// StorageClaimStatus defines the observed state of StorageClaim
+type StorageClaimStatus struct {
+	Phase       storageClaimState `json:"phase,omitempty"`
+	SecretNames []string          `json:"secretNames,omitempty"`
 }
 
-// StorageClassClaimSpec defines the desired state of StorageClassClaim
-type StorageClassClaimSpec struct {
+type StorageClientNamespacedName struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+// StorageClaimSpec defines the desired state of StorageClaim
+type StorageClaimSpec struct {
 	//+kubebuilder:validation:Enum=blockpool;sharedfilesystem
 	Type             string                       `json:"type"`
 	EncryptionMethod string                       `json:"encryptionMethod,omitempty"`
@@ -63,26 +68,26 @@ type StorageClassClaimSpec struct {
 //+kubebuilder:printcolumn:name="StorageClientNamespace",type="string",JSONPath=".spec.storageClient.namespace"
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 
-// StorageClassClaim is the Schema for the storageclassclaims API
-type StorageClassClaim struct {
+// StorageClaim is the Schema for the storageclaims API
+type StorageClaim struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	//+kubebuilder:validation:Required
 	//+kubebuilder:validation:XValidation:rule="oldSelf == self",message="spec is immutable"
-	Spec   StorageClassClaimSpec   `json:"spec"`
-	Status StorageClassClaimStatus `json:"status,omitempty"`
+	Spec   StorageClaimSpec   `json:"spec,omitempty"`
+	Status StorageClaimStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// StorageClassClaimList contains a list of StorageClassClaim
-type StorageClassClaimList struct {
+// StorageClaimList contains a list of StorageClaim
+type StorageClaimList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []StorageClassClaim `json:"items"`
+	Items           []StorageClaim `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&StorageClassClaim{}, &StorageClassClaimList{})
+	SchemeBuilder.Register(&StorageClaim{}, &StorageClaimList{})
 }
