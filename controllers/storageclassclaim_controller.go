@@ -340,14 +340,25 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 					return reconcile.Result{}, fmt.Errorf("failed to create or update secret %v: %s", secret, err)
 				}
 			case "StorageClass":
+				if rns, ok := data["radosnamespace"]; ok {
+					csiClusterConfigEntry.CephRBD = new(csi.CephRBDSpec)
+					csiClusterConfigEntry.CephRBD.RadosNamespace = rns
+					delete(data, "radosnamespace")
+				}
+
+				// The clusterID is an opaque value used by the CSI driver
+				// to identify the cluster config (e.g. mon IPs) to use
+				// for a volume from a given StorageClass. We set it to
+				// the claim name for ease of identification.
+				//
+				// NOTE: This is distinct from the notion of a "clusterID"
+				// used within Ceph and Rook-Ceph, despite sharing the
+				// same name.
 				csiClusterConfigEntry.ClusterID = r.storageClassClaim.Name
 				var storageClass *storagev1.StorageClass
 				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.storageClient.Namespace
 				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.storageClient.Namespace
 				data["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.storageClient.Namespace
-				// generate a new clusterID for cephfs subvolumegroup, as
-				// storageclassclaim is clusterscoped resources using its
-				// name as the clusterID
 				data["clusterID"] = r.storageClassClaim.Name
 
 				if resource.Name == "cephfs" {
@@ -384,7 +395,7 @@ func (r *StorageClassClaimReconciler) reconcilePhases() (reconcile.Result, error
 		}
 
 		// update monitor configuration for cephcsi
-		err = cc.UpdateMonConfigMap(r.storageClassClaim.Name, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
+		err = cc.UpdateMonConfigMap(csiClusterConfigEntry.ClusterID, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
