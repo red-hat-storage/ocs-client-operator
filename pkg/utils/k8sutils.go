@@ -39,6 +39,9 @@ const StorageClientNamespaceEnvVar = "STORAGE_CLIENT_NAMESPACE"
 
 const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
 
+// Value corresponding to annotation key has subscription channel
+const DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
+
 const runCSIDaemonsetOnMaster = "RUN_CSI_DAEMONSET_ON_MASTER"
 
 // GetOperatorNamespace returns the namespace where the operator is deployed.
@@ -72,6 +75,20 @@ func AddLabels(obj metav1.Object, newLabels map[string]string) {
 		obj.SetLabels(labels)
 	}
 	maps.Copy(labels, newLabels)
+}
+
+// AddAnnotation adds label to a resource metadata, returns true if added else false
+func AddLabel(obj metav1.Object, key string, value string) bool {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+		obj.SetLabels(labels)
+	}
+	if oldValue, exist := labels[key]; !exist || oldValue != value {
+		labels[key] = value
+		return true
+	}
+	return false
 }
 
 // AddAnnotation adds an annotation to a resource metadata, returns true if added else false
