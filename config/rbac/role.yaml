@@ -46,6 +46,15 @@ rules:
   verbs:
   - get
   - list
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  verbs:
+  - create
+  - get
+  - list
+  - update
   - watch
 - apiGroups:
   - apps
@@ -203,6 +212,15 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - operators.coreos.com
+  resources:
+  - subscriptions
+  verbs:
+  - get
+  - list
+  - update
   - watch
 - apiGroups:
   - security.openshift.io
