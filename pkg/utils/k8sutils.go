@@ -17,11 +17,14 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
 
+	configv1 "github.com/openshift/api/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -103,4 +106,20 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 		return true
 	}
 	return false
+}
+
+// GetPlatformVersion returns the version from last completed update
+func GetPlatformVersion(ctx context.Context, cl client.Client) (string, error) {
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterVersion), clusterVersion); err != nil {
+		return "", fmt.Errorf("failed to get clusterversion: %v", err)
+	}
+	record := Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
+		return record.State == configv1.CompletedUpdate
+	})
+	if record == nil {
+		return "", fmt.Errorf("failed to find platform version")
+	}
+	return record.Version, nil
 }

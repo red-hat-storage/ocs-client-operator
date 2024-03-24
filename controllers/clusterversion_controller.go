@@ -22,6 +22,7 @@ import (
 	// The embed package is required for the prometheus rule files
 	_ "embed"
 
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
@@ -39,6 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/version"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,14 +74,15 @@ type ClusterVersionReconciler struct {
 	ConsolePort        int32
 	Scheme             *runtime.Scheme
 
-	log               logr.Logger
-	ctx               context.Context
-	consoleDeployment *appsv1.Deployment
-	cephFSDeployment  *appsv1.Deployment
-	cephFSDaemonSet   *appsv1.DaemonSet
-	rbdDeployment     *appsv1.Deployment
-	rbdDaemonSet      *appsv1.DaemonSet
-	scc               *secv1.SecurityContextConstraints
+	log                 logr.Logger
+	ctx                 context.Context
+	consoleDeployment   *appsv1.Deployment
+	cephFSDeployment    *appsv1.Deployment
+	cephFSDaemonSet     *appsv1.DaemonSet
+	rbdDeployment       *appsv1.Deployment
+	rbdDaemonSet        *appsv1.DaemonSet
+	scc                 *secv1.SecurityContextConstraints
+	subscriptionChannel string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -125,11 +128,24 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	storageClientPredicate := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				annotations := obj.GetAnnotations()
+				if annotations == nil {
+					return false
+				}
+				return c.subscriptionChannel != annotations[utils.DesiredSubscriptionChannelAnnotationKey]
+			},
+		),
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
 		Watches(&corev1.ConfigMap{}, enqueueClusterVersionRequest, configMapPredicates).
 		Watches(&opv1a1.Subscription{}, enqueueClusterVersionRequest, subscriptionPredicates).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueClusterVersionRequest, webhookPredicates).
+		Watches(&v1alpha1.StorageClient{}, enqueueClusterVersionRequest, storageClientPredicate).
 		Complete(c)
 }
 
@@ -164,6 +180,11 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if err := labelClientOperatorSubscription(c); err != nil {
 		c.log.Error(err, "unable to label ocs client operator subscription")
+		return ctrl.Result{}, err
+	}
+
+	if err := c.reconcileSubscription(); err != nil {
+		c.log.Error(err, "unable to reconcile subscription")
 		return ctrl.Result{}, err
 	}
 
@@ -554,6 +575,100 @@ func labelClientOperatorSubscription(c *ClusterVersionReconciler) error {
 		}
 	}
 
+	c.subscriptionChannel = sub.Spec.Channel
+
 	c.log.Info("successfully labelled ocs-client-operator subscription")
 	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileSubscription() error {
+
+	pltVersion, err := utils.GetPlatformVersion(c.ctx, c.Client)
+	if err != nil {
+		return fmt.Errorf("failed to get platform version: %v", err)
+	}
+
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients); err != nil {
+		return fmt.Errorf("failed to list storageclients: %v", err)
+	}
+
+	lowestDesiredVersion := version.MajorMinor(100, 0)
+	// TODO: what if there are no storageclients at all (maybe not in provider mode)
+	for idx := range storageClients.Items {
+		storageClient := &storageClients.Items[idx]
+		annotations := storageClient.GetAnnotations()
+		if annotations == nil {
+			// annotations doesn't exist on storageclient and no action to be taken
+			return nil
+		}
+		clientDesiredVersion, err := getVersionFromChannel(annotations[utils.DesiredSubscriptionChannelAnnotationKey])
+		if err != nil {
+			return fmt.Errorf("failed to parse desired channel for storageclient %q: %v", client.ObjectKeyFromObject(storageClient), err)
+		}
+		if clientDesiredVersion.LessThan(lowestDesiredVersion) {
+			lowestDesiredVersion = clientDesiredVersion
+		}
+	}
+
+	if lowestDesiredVersion.Major() == 100 {
+		// there are no storageclients
+		return nil
+	}
+
+	currentPlatformVersion := version.MustParseGeneric(pltVersion)
+	// TODO: do we need to start thinking about EUS upgrades?
+	if currentPlatformVersion.LessThan(lowestDesiredVersion) {
+		c.log.Info("Not proceeding with update of client subscription as it'll violate platform support")
+		return nil
+	}
+
+	subscriptions := &opv1a1.SubscriptionList{}
+	// we are already setting this label during reconcile phases
+	err = c.list(subscriptions, client.InNamespace(c.OperatorNamespace), client.MatchingLabels{subscriptionLabelKey: subscriptionLabelValue})
+	if err != nil {
+		return fmt.Errorf("failed to list subscriptions with known labels: %v", err)
+	}
+
+	if len(subscriptions.Items) != 1 {
+		return fmt.Errorf("failed to validate the presence and uniqueness of ocs-client-operator subscription")
+	}
+
+	clientSubscription := &subscriptions.Items[0]
+	currentSubscriptionVersion, err := getVersionFromChannel(clientSubscription.Spec.Channel)
+	if err != nil {
+		return fmt.Errorf("failed to parse current subscription channel as version: %v", err)
+	}
+
+	if currentSubscriptionVersion.LessThan(lowestDesiredVersion) {
+		// TODO: maybe get the mapping of version to channel from a user supplied configmap?
+		clientSubscription.Spec.Channel = fmt.Sprintf("stable-%s", lowestDesiredVersion.String())
+		if err := c.update(clientSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *ClusterVersionReconciler) list(obj client.ObjectList, opts ...client.ListOption) error {
+	return c.List(c.ctx, obj, opts...)
+}
+
+func (c *ClusterVersionReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
+	return c.Update(c.ctx, obj, opts...)
+}
+
+func getVersionFromChannel(channel string) (*version.Version, error) {
+	_, versionFromChannel, found := strings.Cut(channel, "-")
+	if !found {
+		return nil, fmt.Errorf("unable to refer version from channel name")
+	}
+
+	genericVersion, err := version.ParseGeneric(versionFromChannel)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse referred version from channel: %w", err)
+	}
+
+	return genericVersion, nil
 }
