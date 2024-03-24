@@ -17,11 +17,14 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
 
+	configv1 "github.com/openshift/api/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -38,6 +41,9 @@ const StorageClientNameEnvVar = "STORAGE_CLIENT_NAME"
 const StorageClientNamespaceEnvVar = "STORAGE_CLIENT_NAMESPACE"
 
 const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
+
+// Value corresponding to annotation key has subscription channel
+const DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
 
 const runCSIDaemonsetOnMaster = "RUN_CSI_DAEMONSET_ON_MASTER"
 
@@ -74,6 +80,20 @@ func AddLabels(obj metav1.Object, newLabels map[string]string) {
 	maps.Copy(labels, newLabels)
 }
 
+// AddAnnotation adds label to a resource metadata, returns true if added else false
+func AddLabel(obj metav1.Object, key string, value string) bool {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+		obj.SetLabels(labels)
+	}
+	if oldValue, exist := labels[key]; !exist || oldValue != value {
+		labels[key] = value
+		return true
+	}
+	return false
+}
+
 // AddAnnotation adds an annotation to a resource metadata, returns true if added else false
 func AddAnnotation(obj metav1.Object, key string, value string) bool {
 	annotations := obj.GetAnnotations()
@@ -86,4 +106,20 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 		return true
 	}
 	return false
+}
+
+// GetPlatformVersion returns the version from last completed update
+func GetPlatformVersion(ctx context.Context, cl client.Client) (string, error) {
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterVersion), clusterVersion); err != nil {
+		return "", fmt.Errorf("failed to get clusterversion: %v", err)
+	}
+	record := Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
+		return record.State == configv1.CompletedUpdate
+	})
+	if record == nil {
+		return "", fmt.Errorf("failed to find platform version")
+	}
+	return record.Version, nil
 }

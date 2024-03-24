@@ -16,25 +16,31 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	// The embed package is required for the prometheus rule files
 	_ "embed"
 
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/version"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -55,6 +61,9 @@ const (
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
 	clusterVersionName = "version"
+
+	subscriptionLabelKey   = "managed-by"
+	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
 )
 
 // ClusterVersionReconciler reconciles a ClusterVersion object
@@ -65,14 +74,15 @@ type ClusterVersionReconciler struct {
 	ConsolePort        int32
 	Scheme             *runtime.Scheme
 
-	log               logr.Logger
-	ctx               context.Context
-	consoleDeployment *appsv1.Deployment
-	cephFSDeployment  *appsv1.Deployment
-	cephFSDaemonSet   *appsv1.DaemonSet
-	rbdDeployment     *appsv1.Deployment
-	rbdDaemonSet      *appsv1.DaemonSet
-	scc               *secv1.SecurityContextConstraints
+	log                 logr.Logger
+	ctx                 context.Context
+	consoleDeployment   *appsv1.Deployment
+	cephFSDeployment    *appsv1.Deployment
+	cephFSDaemonSet     *appsv1.DaemonSet
+	rbdDeployment       *appsv1.Deployment
+	rbdDaemonSet        *appsv1.DaemonSet
+	scc                 *secv1.SecurityContextConstraints
+	subscriptionChannel string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -101,9 +111,41 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	)
 
+	subscriptionPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				return client.GetNamespace() == c.OperatorNamespace
+			},
+		),
+		predicate.GenerationChangedPredicate{},
+	)
+
+	webhookPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				return client.GetName() == templates.SubscriptionWebhookName
+			},
+		),
+	)
+
+	storageClientPredicate := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				annotations := obj.GetAnnotations()
+				if annotations == nil {
+					return false
+				}
+				return c.subscriptionChannel != annotations[utils.DesiredSubscriptionChannelAnnotationKey]
+			},
+		),
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
 		Watches(&corev1.ConfigMap{}, enqueueClusterVersionRequest, configMapPredicates).
+		Watches(&opv1a1.Subscription{}, enqueueClusterVersionRequest, subscriptionPredicates).
+		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueClusterVersionRequest, webhookPredicates).
+		Watches(&v1alpha1.StorageClient{}, enqueueClusterVersionRequest, storageClientPredicate).
 		Complete(c)
 }
 
@@ -120,6 +162,8 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -128,6 +172,21 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	c.ctx = ctx
 	c.log = log.FromContext(ctx, "ClusterVersion", req)
 	c.log.Info("Reconciling ClusterVersion")
+
+	if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
+		c.log.Error(err, "unable to register subscription validating webhook")
+		return ctrl.Result{}, err
+	}
+
+	if err := labelClientOperatorSubscription(c); err != nil {
+		c.log.Error(err, "unable to label ocs client operator subscription")
+		return ctrl.Result{}, err
+	}
+
+	if err := c.reconcileSubscription(); err != nil {
+		c.log.Error(err, "unable to reconcile subscription")
+		return ctrl.Result{}, err
+	}
 
 	if err := c.ensureConsolePlugin(); err != nil {
 		c.log.Error(err, "unable to deploy client console")
@@ -435,4 +494,181 @@ func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileSubscriptionValidatingWebhook() error {
+	whConfig := &admrv1.ValidatingWebhookConfiguration{}
+	whConfig.Name = templates.SubscriptionWebhookName
+
+	// TODO (lgangava): after change to configmap controller, need to remove webhook during deletion
+	err := c.createOrUpdate(whConfig, func() error {
+
+		// openshift fills in the ca on finding this annotation
+		whConfig.Annotations = map[string]string{
+			"service.beta.openshift.io/inject-cabundle": "true",
+		}
+
+		var caBundle []byte
+		if len(whConfig.Webhooks) == 0 {
+			whConfig.Webhooks = make([]admrv1.ValidatingWebhook, 1)
+		} else {
+			// do not mutate CA bundle that was injected by openshift
+			caBundle = whConfig.Webhooks[0].ClientConfig.CABundle
+		}
+
+		// webhook desired state
+		var wh *admrv1.ValidatingWebhook = &whConfig.Webhooks[0]
+		templates.SubscriptionValidatingWebhook.DeepCopyInto(wh)
+
+		wh.Name = whConfig.Name
+
+		// only send requests received from own namespace
+		wh.NamespaceSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"kubernetes.io/metadata.name": c.OperatorNamespace,
+			},
+		}
+
+		// only send resources matching the label
+		wh.ObjectSelector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				subscriptionLabelKey: subscriptionLabelValue,
+			},
+		}
+
+		// preserve the existing (injected) CA bundle if any
+		wh.ClientConfig.CABundle = caBundle
+
+		// send request to the service running in own namespace
+		wh.ClientConfig.Service.Namespace = c.OperatorNamespace
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	c.log.Info("successfully registered validating webhook")
+	return nil
+}
+
+func labelClientOperatorSubscription(c *ClusterVersionReconciler) error {
+	subscriptionList := &opv1a1.SubscriptionList{}
+	err := c.List(c.ctx, subscriptionList, client.InNamespace(c.OperatorNamespace))
+	if err != nil {
+		return fmt.Errorf("failed to list subscriptions")
+	}
+
+	sub := utils.Find(subscriptionList.Items, func(sub *opv1a1.Subscription) bool {
+		return sub.Spec.Package == "ocs-client-operator"
+	})
+
+	if sub == nil {
+		return fmt.Errorf("failed to find subscription with ocs-client-operator package")
+	}
+
+	if utils.AddLabel(sub, subscriptionLabelKey, subscriptionLabelValue) {
+		err = c.Update(c.ctx, sub)
+		if err != nil {
+			return err
+		}
+	}
+
+	c.subscriptionChannel = sub.Spec.Channel
+
+	c.log.Info("successfully labelled ocs-client-operator subscription")
+	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileSubscription() error {
+
+	pltVersion, err := utils.GetPlatformVersion(c.ctx, c.Client)
+	if err != nil {
+		return fmt.Errorf("failed to get platform version: %v", err)
+	}
+
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients); err != nil {
+		return fmt.Errorf("failed to list storageclients: %v", err)
+	}
+
+	lowestDesiredVersion := version.MajorMinor(100, 0)
+	// TODO: what if there are no storageclients at all (maybe not in provider mode)
+	for idx := range storageClients.Items {
+		storageClient := &storageClients.Items[idx]
+		annotations := storageClient.GetAnnotations()
+		if annotations == nil {
+			// annotations doesn't exist on storageclient and no action to be taken
+			return nil
+		}
+		clientDesiredVersion, err := getVersionFromChannel(annotations[utils.DesiredSubscriptionChannelAnnotationKey])
+		if err != nil {
+			return fmt.Errorf("failed to parse desired channel for storageclient %q: %v", client.ObjectKeyFromObject(storageClient), err)
+		}
+		if clientDesiredVersion.LessThan(lowestDesiredVersion) {
+			lowestDesiredVersion = clientDesiredVersion
+		}
+	}
+
+	if lowestDesiredVersion.Major() == 100 {
+		// there are no storageclients
+		return nil
+	}
+
+	currentPlatformVersion := version.MustParseGeneric(pltVersion)
+	// TODO: do we need to start thinking about EUS upgrades?
+	if currentPlatformVersion.LessThan(lowestDesiredVersion) {
+		c.log.Info("Not proceeding with update of client subscription as it'll violate platform support")
+		return nil
+	}
+
+	subscriptions := &opv1a1.SubscriptionList{}
+	// we are already setting this label during reconcile phases
+	err = c.list(subscriptions, client.InNamespace(c.OperatorNamespace), client.MatchingLabels{subscriptionLabelKey: subscriptionLabelValue})
+	if err != nil {
+		return fmt.Errorf("failed to list subscriptions with known labels: %v", err)
+	}
+
+	if len(subscriptions.Items) != 1 {
+		return fmt.Errorf("failed to validate the presence and uniqueness of ocs-client-operator subscription")
+	}
+
+	clientSubscription := &subscriptions.Items[0]
+	currentSubscriptionVersion, err := getVersionFromChannel(clientSubscription.Spec.Channel)
+	if err != nil {
+		return fmt.Errorf("failed to parse current subscription channel as version: %v", err)
+	}
+
+	if currentSubscriptionVersion.LessThan(lowestDesiredVersion) {
+		// TODO: maybe get the mapping of version to channel from a user supplied configmap?
+		clientSubscription.Spec.Channel = fmt.Sprintf("stable-%s", lowestDesiredVersion.String())
+		if err := c.update(clientSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *ClusterVersionReconciler) list(obj client.ObjectList, opts ...client.ListOption) error {
+	return c.List(c.ctx, obj, opts...)
+}
+
+func (c *ClusterVersionReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
+	return c.Update(c.ctx, obj, opts...)
+}
+
+func getVersionFromChannel(channel string) (*version.Version, error) {
+	_, versionFromChannel, found := strings.Cut(channel, "-")
+	if !found {
+		return nil, fmt.Errorf("unable to refer version from channel name")
+	}
+
+	genericVersion, err := version.ParseGeneric(versionFromChannel)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse referred version from channel: %w", err)
+	}
+
+	return genericVersion, nil
 }

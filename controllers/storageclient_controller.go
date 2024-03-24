@@ -38,7 +38,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -440,16 +439,6 @@ func getStatusReporterName(namespace, name string) string {
 	return fmt.Sprintf("storageclient-%s-status-reporter", hex.EncodeToString(reporterName[:8]))
 }
 
-// addLabel add a label to a resource metadata
-func addLabel(obj metav1.Object, key string, value string) {
-	labels := obj.GetLabels()
-	if labels == nil {
-		labels = map[string]string{}
-		obj.SetLabels(labels)
-	}
-	labels[key] = value
-}
-
 func (s *StorageClientReconciler) delete(obj client.Object) error {
 	if err := s.Client.Delete(s.ctx, obj); err != nil && !errors.IsNotFound(err) {
 		return err
@@ -462,8 +451,8 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 	cronJob := &batchv1.CronJob{}
 	cronJob.Name = getStatusReporterName(instance.Namespace, instance.Name)
 	cronJob.Namespace = s.OperatorNamespace
-	addLabel(cronJob, storageClientNameLabel, instance.Name)
-	addLabel(cronJob, storageClientNamespaceLabel, instance.Namespace)
+	utils.AddLabel(cronJob, storageClientNameLabel, instance.Name)
+	utils.AddLabel(cronJob, storageClientNamespaceLabel, instance.Namespace)
 	var podDeadLineSeconds int64 = 120
 	jobDeadLineSeconds := podDeadLineSeconds + 35
 	var keepJobResourceSeconds int32 = 600
