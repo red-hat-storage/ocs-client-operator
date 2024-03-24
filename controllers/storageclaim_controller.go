@@ -233,7 +233,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		// 	StorageClaim passes validation and is promoted to the configuring phase if:
 		//  * the StorageClaim has the same type as the StorageClass.
 		// 	* the StorageClaim has no encryption method specified when the type is filesystem.
-		// 	* the StorageClaim has a blockpool type and:
+		// 	* the StorageClaim has a block type and:
 		// 		 * the StorageClaim has an encryption method specified.
 		// 	  * the StorageClaim has the same encryption method as the StorageClass.
 		// 	StorageClaim fails validation and falls back to a failed phase indefinitely (no reconciliation happens).
@@ -247,8 +247,8 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			sccEncryptionMethod := r.storageClaim.Spec.EncryptionMethod
 			_, scIsFSType := existing.Parameters["fsName"]
 			scEncryptionMethod, scHasEncryptionMethod := existing.Parameters["encryptionMethod"]
-			if !((sccType == "sharedfilesystem" && scIsFSType && !scHasEncryptionMethod) ||
-				(sccType == "blockpool" && !scIsFSType && sccEncryptionMethod == scEncryptionMethod)) {
+			if !((sccType == "sharedfile" && scIsFSType && !scHasEncryptionMethod) ||
+				(sccType == "block" && !scIsFSType && sccEncryptionMethod == scEncryptionMethod)) {
 				r.log.Error(fmt.Errorf("storageClaim is not compatible with existing StorageClass"),
 					"StorageClaim validation failed.")
 				r.storageClaim.Status.Phase = v1alpha1.StorageClaimFailed
@@ -281,9 +281,9 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		// storageClaimStorageType is the storage type of the StorageClaim
 		var storageClaimStorageType providerclient.StorageType
 		switch r.storageClaim.Spec.Type {
-		case "blockpool":
+		case "block":
 			storageClaimStorageType = providerclient.StorageTypeBlockpool
-		case "sharedfilesystem":
+		case "sharedfile":
 			storageClaimStorageType = providerclient.StorageTypeSharedfilesystem
 		default:
 			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", r.storageClaim.Spec.Type)

@@ -51,7 +51,7 @@ type StorageClientNamespacedName struct {
 
 // StorageClaimSpec defines the desired state of StorageClaim
 type StorageClaimSpec struct {
-	//+kubebuilder:validation:Enum=blockpool;sharedfilesystem
+	//+kubebuilder:validation:Enum=block;sharedfile
 	Type             string                       `json:"type"`
 	EncryptionMethod string                       `json:"encryptionMethod,omitempty"`
 	StorageProfile   string                       `json:"storageProfile,omitempty"`

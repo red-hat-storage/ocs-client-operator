@@ -72,7 +72,14 @@ func (r *StorageClassClaimMigrationReconciler) Reconcile(ctx context.Context, re
 
 	storageClaim := &v1alpha1.StorageClaim{}
 	storageClaim.Name = storageClassClaim.Name
-	storageClaim.Spec.Type = storageClassClaim.Spec.Type
+
+	switch storageClassClaim.Spec.Type {
+	case "blockpool":
+		storageClaim.Spec.Type = "block"
+	case "sharedfilesystem":
+		storageClaim.Spec.Type = "sharedfile"
+	}
+
 	storageClaim.Spec.EncryptionMethod = storageClassClaim.Spec.EncryptionMethod
 	storageClaim.Spec.StorageProfile = storageClassClaim.Spec.StorageProfile
 	storageClaim.Spec.StorageClient = storageClassClaim.Spec.StorageClient.DeepCopy()
