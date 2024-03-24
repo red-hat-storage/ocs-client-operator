@@ -23,6 +23,7 @@ import (
 	// The embed package is required for the prometheus rule files
 	_ "embed"
 
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
@@ -134,6 +135,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&extv1.CustomResourceDefinition{}, enqueueConfigMapRequest, builder.OnlyMetadata).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
+		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{})).
 		Complete(c)
 }
 
@@ -175,6 +177,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if err := labelClientOperatorSubscription(c); err != nil {
 		c.log.Error(err, "unable to label ocs client operator subscription")
+		return ctrl.Result{}, err
+	}
+
+	if err := c.reconcileSubscription(); err != nil {
+		c.log.Error(err, "unable to reconcile subscription")
 		return ctrl.Result{}, err
 	}
 
@@ -590,4 +597,69 @@ func labelClientOperatorSubscription(c *OperatorConfigMapReconciler) error {
 
 	c.log.Info("successfully labelled ocs-client-operator subscription")
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileSubscription() error {
+
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients); err != nil {
+		return fmt.Errorf("failed to list storageclients: %v", err)
+	}
+
+	var desiredChannel string
+	for idx := range storageClients.Items {
+		// empty if annotation doesn't exist or else gets desired channel
+		channel := storageClients.
+			Items[idx].
+			GetAnnotations()[utils.DesiredSubscriptionChannelAnnotationKey]
+		// skip clients with no/empty desired channel annotation
+		if channel != "" {
+			// check if we already established a desired channel
+			if desiredChannel == "" {
+				desiredChannel = channel
+			}
+			// check for agreement between clients
+			if channel != desiredChannel {
+				desiredChannel = ""
+				// two clients didn't agree for a same channel and no need to continue further
+				break
+			}
+		}
+	}
+
+	if desiredChannel != "" {
+		subscriptions := &opv1a1.SubscriptionList{}
+		err := c.list(
+			subscriptions,
+			client.InNamespace(c.OperatorNamespace),
+			client.MatchingLabels{subscriptionLabelKey: subscriptionLabelValue},
+			client.Limit(1),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to list subscription for ocs-client-operator using labels: %v", err)
+		}
+
+		if len(subscriptions.Items) == 1 {
+			clientSubscription := &subscriptions.Items[0]
+			if desiredChannel != clientSubscription.Spec.Channel {
+				clientSubscription.Spec.Channel = desiredChannel
+				// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
+				// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
+				// without any side effects for already running workloads. However, this will be a silent failure and need to be fixed via above TODO issue.
+				if err := c.update(clientSubscription); err != nil {
+					return fmt.Errorf("failed to update subscription channel to %v: %v", desiredChannel, err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) list(obj client.ObjectList, opts ...client.ListOption) error {
+	return c.List(c.ctx, obj, opts...)
+}
+
+func (c *OperatorConfigMapReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
+	return c.Update(c.ctx, obj, opts...)
 }
