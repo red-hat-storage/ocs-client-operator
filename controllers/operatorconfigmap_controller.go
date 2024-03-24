@@ -57,16 +57,16 @@ const (
 	clusterVersionName = "version"
 )
 
-// ClusterVersionReconciler reconciles a ClusterVersion object
-type ClusterVersionReconciler struct {
+// OperatorConfigMapReconciler reconciles a ClusterVersion object
+type OperatorConfigMapReconciler struct {
 	client.Client
-	OperatorDeployment *appsv1.Deployment
-	OperatorNamespace  string
-	ConsolePort        int32
-	Scheme             *runtime.Scheme
+	OperatorNamespace string
+	ConsolePort       int32
+	Scheme            *runtime.Scheme
 
 	log               logr.Logger
 	ctx               context.Context
+	operatorConfigMap *corev1.ConfigMap
 	consoleDeployment *appsv1.Deployment
 	cephFSDeployment  *appsv1.Deployment
 	cephFSDaemonSet   *appsv1.DaemonSet
@@ -76,7 +76,7 @@ type ClusterVersionReconciler struct {
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	clusterVersionPredicates := builder.WithPredicates(
 		predicate.GenerationChangedPredicate{},
 	)
@@ -90,32 +90,32 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			},
 		),
 	)
-	// Reconcile the ClusterVersion object when the operator config map is updated
-	enqueueClusterVersionRequest := handler.EnqueueRequestsFromMapFunc(
+	// Reconcile the OperatorConfigMap object when the cluster's version object is updated
+	enqueueConfigMapRequest := handler.EnqueueRequestsFromMapFunc(
 		func(_ context.Context, _ client.Object) []reconcile.Request {
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
-					Name: clusterVersionName,
+					Name:      operatorConfigMapName,
+					Namespace: c.OperatorNamespace,
 				},
 			}}
 		},
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
-		Watches(&corev1.ConfigMap{}, enqueueClusterVersionRequest, configMapPredicates).
+		For(&corev1.ConfigMap{}, configMapPredicates).
+		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
 		Complete(c)
 }
 
-//+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions/finalizers,verbs=update
+//+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups="apps",resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="apps",resources=deployments/finalizers,verbs=update
 //+kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="apps",resources=daemonsets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="storage.k8s.io",resources=csidrivers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -123,23 +123,33 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
-func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
 	c.ctx = ctx
-	c.log = log.FromContext(ctx, "ClusterVersion", req)
-	c.log.Info("Reconciling ClusterVersion")
+	c.log = log.FromContext(ctx, "OperatorConfigMap", req)
+	c.log.Info("Reconciling OperatorConfigMap")
+
+	c.operatorConfigMap = &corev1.ConfigMap{}
+	c.operatorConfigMap.Name = req.Name
+	c.operatorConfigMap.Namespace = req.Namespace
+	if err := c.get(c.operatorConfigMap); err != nil {
+		c.log.Error(err, "failed to get the operator's configMap")
+		return reconcile.Result{}, err
+	}
+
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = clusterVersionName
+	if err := c.get(clusterVersion); err != nil {
+		c.log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
+		return reconcile.Result{}, err
+	}
 
 	if err := c.ensureConsolePlugin(); err != nil {
 		c.log.Error(err, "unable to deploy client console")
 		return ctrl.Result{}, err
 	}
 
-	instance := configv1.ClusterVersion{}
-	if err = c.Client.Get(context.TODO(), req.NamespacedName, &instance); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if err := csi.InitializeSidecars(c.log, instance.Status.Desired.Version); err != nil {
+	if err := csi.InitializeSidecars(c.log, clusterVersion.Status.Desired.Version); err != nil {
 		c.log.Error(err, "unable to initialize sidecars")
 		return ctrl.Result{}, err
 	}
@@ -176,8 +186,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := c.own(monConfigMap); err != nil {
 		return ctrl.Result{}, err
 	}
-	err = c.create(monConfigMap)
-	if err != nil && !k8serrors.IsAlreadyExists(err) {
+	if err := c.create(monConfigMap); err != nil && !k8serrors.IsAlreadyExists(err) {
 		c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
 		return ctrl.Result{}, err
 	}
@@ -197,8 +206,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := c.own(encConfigMap); err != nil {
 		return ctrl.Result{}, err
 	}
-	err = c.create(encConfigMap)
-	if err != nil && !k8serrors.IsAlreadyExists(err) {
+	if err := c.create(encConfigMap); err != nil && !k8serrors.IsAlreadyExists(err) {
 		c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
 		return ctrl.Result{}, err
 	}
@@ -279,35 +287,28 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// ownerReference on it as its cluster scoped resource
 	cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
 	cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
-	err = csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver)
-	if err != nil {
+	if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
 		c.log.Error(err, "unable to create cephfs CSIDriver")
 		return ctrl.Result{}, err
 	}
 
 	rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
 	rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
-	err = csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver)
-	if err != nil {
+	if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
 		c.log.Error(err, "unable to create rbd CSIDriver")
 		return ctrl.Result{}, err
 	}
 
 	prometheusRule := &monitoringv1.PrometheusRule{}
-	err = k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule)
-	if err != nil {
+	if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
 		c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
 		return ctrl.Result{}, err
 	}
 
-	operatorConfig, err := c.getOperatorConfig()
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 	prometheusRule.SetNamespace(c.OperatorNamespace)
 
 	err = c.createOrUpdate(prometheusRule, func() error {
-		applyLabels(operatorConfig.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
+		applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
 		return c.own(prometheusRule)
 	})
 	if err != nil {
@@ -320,7 +321,7 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-func (c *ClusterVersionReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
+func (c *OperatorConfigMapReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
 	result, err := controllerutil.CreateOrUpdate(c.ctx, c.Client, obj, f)
 	if err != nil {
 		return err
@@ -329,11 +330,16 @@ func (c *ClusterVersionReconciler) createOrUpdate(obj client.Object, f controlle
 	return nil
 }
 
-func (c *ClusterVersionReconciler) own(obj client.Object) error {
-	return controllerutil.SetControllerReference(c.OperatorDeployment, obj, c.Client.Scheme())
+func (c *OperatorConfigMapReconciler) get(obj client.Object) error {
+	key := client.ObjectKeyFromObject(obj)
+	return c.Client.Get(c.ctx, key, obj)
 }
 
-func (c *ClusterVersionReconciler) create(obj client.Object) error {
+func (c *OperatorConfigMapReconciler) own(obj client.Object) error {
+	return controllerutil.SetControllerReference(c.operatorConfigMap, obj, c.Client.Scheme())
+}
+
+func (c *OperatorConfigMapReconciler) create(obj client.Object) error {
 	return c.Client.Create(c.ctx, obj)
 }
 
@@ -357,16 +363,7 @@ func applyLabels(label string, t *metav1.ObjectMeta) {
 	t.Labels = promLabel
 }
 
-func (c *ClusterVersionReconciler) getOperatorConfig() (*corev1.ConfigMap, error) {
-	cm := &corev1.ConfigMap{}
-	err := c.Client.Get(c.ctx, types.NamespacedName{Name: operatorConfigMapName, Namespace: c.OperatorNamespace}, cm)
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return nil, err
-	}
-	return cm, nil
-}
-
-func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
+func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	c.consoleDeployment = &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      console.DeploymentName,
@@ -374,10 +371,7 @@ func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
 		},
 	}
 
-	err := c.Client.Get(c.ctx, types.NamespacedName{
-		Name:      console.DeploymentName,
-		Namespace: c.OperatorNamespace,
-	}, c.consoleDeployment)
+	err := c.get(c.consoleDeployment)
 	if err != nil {
 		c.log.Error(err, "failed to get the deployment for the console")
 		return err
