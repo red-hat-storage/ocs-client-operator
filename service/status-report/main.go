@@ -110,6 +110,7 @@ func main() {
 	}
 
 	var pltVersion string
+	var clusterID configv1.ClusterID
 	clusterVersion := &configv1.ClusterVersion{}
 	clusterVersion.Name = "version"
 	if err = cl.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
@@ -121,9 +122,15 @@ func main() {
 		if item != nil {
 			pltVersion = item.Version
 		}
+		clusterID = clusterVersion.Spec.ClusterID
 	}
 	if pltVersion == "" {
 		klog.Warningf("Unable to find ocp version with completed update")
+	}
+
+	namespacedName := types.NamespacedName{
+		Namespace: storageClient.Namespace,
+		Name:      storageClient.Name,
 	}
 
 	providerClient, err := providerclient.NewProviderClient(
@@ -138,7 +145,9 @@ func main() {
 
 	status := providerclient.NewStorageClientStatus().
 		SetPlatformVersion(pltVersion).
-		SetOperatorVersion(oprVersion)
+		SetOperatorVersion(oprVersion).
+		SetClusterID(string(clusterID)).
+		SetNamespacedName(namespacedName.String())
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
