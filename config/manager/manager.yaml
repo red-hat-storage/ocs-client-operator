@@ -12,10 +12,12 @@ metadata:
   namespace: system
   labels:
     control-plane: controller-manager
+    app: ocs-client-operator
 spec:
   selector:
     matchLabels:
       control-plane: controller-manager
+      app: ocs-client-operator
   replicas: 1
   template:
     metadata:
@@ -23,6 +25,7 @@ spec:
         kubectl.kubernetes.io/default-container: manager
       labels:
         control-plane: controller-manager
+        app: ocs-client-operator
     spec:
       securityContext:
         runAsNonRoot: true
@@ -36,6 +39,8 @@ spec:
         volumeMounts:
         - name: csi-images
           mountPath: /opt/config
+        - mountPath: /etc/tls/private
+          name: webhook-cert-secret
         env:
         - name: OPERATOR_NAMESPACE
           valueFrom:
@@ -74,5 +79,8 @@ spec:
       - name: csi-images
         configMap:
           name: csi-images
+      - name: webhook-cert-secret
+        secret:
+          secretName: webhook-cert-secret
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

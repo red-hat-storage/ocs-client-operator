@@ -38,8 +38,7 @@ import (
 )
 
 const (
-	desiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
-	csvPrefix                               = "ocs-client-operator"
+	csvPrefix = "ocs-client-operator"
 )
 
 func main() {
@@ -146,7 +145,7 @@ func main() {
 
 	storageClientCopy := &v1alpha1.StorageClient{}
 	storageClient.DeepCopyInto(storageClientCopy)
-	if utils.AddAnnotation(storageClient, desiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
+	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
 		// patch is being used here as to not have any conflicts over storageclient cr changes as this annotation value doesn't depend on storageclient spec
 		if err := cl.Patch(ctx, storageClient, client.MergeFrom(storageClientCopy)); err != nil {
 			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
