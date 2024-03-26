@@ -109,11 +109,11 @@ var rbdDeploymentSpec = appsv1.DeploymentSpec{
 						},
 						{
 							Name:      "ceph-csi-configs",
-							MountPath: "/etc/ceph-csi-config",
+							MountPath: templates.DefaultCephCSIConfigPath,
 						},
 						{
 							Name:      "keys-tmp-dir",
-							MountPath: "/tmp/csi/keys",
+							MountPath: templates.DefaultTmpDir,
 						},
 						{
 							Name:      "ceph-csi-kms-config",
@@ -218,12 +218,18 @@ var rbdDeploymentSpec = appsv1.DeploymentSpec{
 	},
 }
 
-func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment) {
+func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment, enableOMAPGenerator bool) {
 	// Copy required labels
 	utils.AddLabels(deploy, rbdDeploymentLabels)
 
 	// Update the deployment set with desired spec
 	rbdDeploymentSpec.DeepCopyInto(&deploy.Spec)
+
+	if enableOMAPGenerator {
+		deploy.Spec.Template.Spec.Containers = append(
+			deploy.Spec.Template.Spec.Containers,
+			corev1.Container{Name: templates.OMAPGeneratorContainer.Name})
+	}
 
 	// Find and Update placeholder containers with desired state
 	leaderElectionArg := fmt.Sprintf("--leader-election-namespace=%s", deploy.Namespace)
@@ -256,6 +262,11 @@ func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment) {
 			templates.CSIAddonsContainer.DeepCopyInto(c)
 			c.Image = sidecarImages.ContainerImages.CSIADDONSImageURL
 			c.Args = append(c.Args, leaderElectionArg)
+
+		case templates.OMAPGeneratorContainer.Name:
+			templates.OMAPGeneratorContainer.DeepCopyInto(c)
+			c.Image = sidecarImages.ContainerImages.CephCSIImageURL
+			c.Args = append(c.Args, fmt.Sprintf("--drivername=%s", GetRBDDriverName()))
 
 		case rbdDeploymentContainerName:
 			c.Image = sidecarImages.ContainerImages.CephCSIImageURL
