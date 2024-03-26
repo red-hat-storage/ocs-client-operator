@@ -36,8 +36,7 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -56,14 +55,19 @@ const (
 	GetStorageConfig      = "GetStorageConfig"
 	AcknowledgeOnboarding = "AcknowledgeOnboarding"
 
-	storageClientAnnotationKey  = "ocs.openshift.io/storageclient"
-	storageClientNameLabel      = "ocs.openshift.io/storageclient.name"
-	storageClientNamespaceLabel = "ocs.openshift.io/storageclient.namespace"
-	storageClientFinalizer      = "storageclient.ocs.openshift.io"
+	storageClientAnnotationKey          = "ocs.openshift.io/storageclient"
+	storageClientNameLabel              = "ocs.openshift.io/storageclient.name"
+	storageClientNamespaceLabel         = "ocs.openshift.io/storageclient.namespace"
+	storageClientFinalizer              = "storageclient.ocs.openshift.io"
+	defaultClaimsOwnerAnnotationKey     = "ocs.openshift.io/storageclaim.owner"
+	defaultClaimsProcessedAnnotationKey = "ocs.openshift.io/storageclaim.processed"
+	defaultBlockStorageClaim            = "ocs-storagecluster-ceph-rbd"
+	defaultSharedfileStorageClaim       = "ocs-storagecluster-cephfs"
 
 	// indexes for caching
 	storageProviderEndpointIndexName = "index:storageProviderEndpoint"
 	storageClientAnnotationIndexName = "index:storageClientAnnotation"
+	defaultClaimsOwnerIndexName      = "index:defaultClaimsOwner"
 
 	csvPrefix = "ocs-client-operator"
 )
@@ -99,6 +103,12 @@ func (s *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return []string{obj.GetAnnotations()[storageClientAnnotationKey]}
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for storageclient annotation: %v", err)
+	}
+
+	if err := mgr.GetCache().IndexField(ctx, &v1alpha1.StorageClient{}, defaultClaimsOwnerIndexName, func(obj client.Object) []string {
+		return []string{obj.GetAnnotations()[defaultClaimsOwnerAnnotationKey]}
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for storageclient owner annotation: %v", err)
 	}
 
 	enqueueStorageClientRequest := handler.EnqueueRequestsFromMapFunc(
@@ -139,7 +149,7 @@ func (s *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	instance.Namespace = req.Namespace
 
 	if err = s.Client.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, instance); err != nil {
-		if apierrors.IsNotFound(err) {
+		if kerrors.IsNotFound(err) {
 			s.Log.Info("StorageClient resource not found. Ignoring since object must be deleted.")
 			return reconcile.Result{}, nil
 		}
@@ -217,6 +227,10 @@ func (s *StorageClientReconciler) reconcilePhases(instance *v1alpha1.StorageClie
 		return res, err
 	}
 
+	if err := s.reconcileDefaultStorageClaims(instance); err != nil {
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
 }
 
@@ -244,6 +258,10 @@ func (s *StorageClientReconciler) deletionPhase(instance *v1alpha1.StorageClient
 		if err := s.delete(cronJob); err != nil {
 			s.Log.Error(err, "Failed to delete the status reporter job")
 			return reconcile.Result{}, fmt.Errorf("failed to delete the status reporter job: %v", err)
+		}
+
+		if err := s.deleteDefaultStorageClaims(instance); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to delete default storageclaims: %v", err)
 		}
 
 		s.Log.Info("removing finalizer from StorageClient.", "StorageClient", klog.KRef(instance.Namespace, instance.Name))
@@ -440,7 +458,7 @@ func getStatusReporterName(namespace, name string) string {
 }
 
 func (s *StorageClientReconciler) delete(obj client.Object) error {
-	if err := s.Client.Delete(s.ctx, obj); err != nil && !errors.IsNotFound(err) {
+	if err := s.Client.Delete(s.ctx, obj); err != nil && !kerrors.IsNotFound(err) {
 		return err
 	}
 	return nil
@@ -510,4 +528,96 @@ func (s *StorageClientReconciler) reconcileClientStatusReporterJob(instance *v1a
 
 func (s *StorageClientReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
 	return s.Client.List(s.ctx, obj, listOptions...)
+}
+
+func (s *StorageClientReconciler) reconcileDefaultStorageClaims(instance *v1alpha1.StorageClient) error {
+
+	if instance.GetAnnotations()[defaultClaimsProcessedAnnotationKey] == "true" {
+		// we already processed default claims for this client
+		return nil
+	}
+
+	// try to list the default client who is the default storage claims owner
+	claimOwners := &v1alpha1.StorageClientList{}
+	if err := s.list(claimOwners, client.MatchingFields{defaultClaimsOwnerIndexName: "true"}); err != nil {
+		return fmt.Errorf("failed to list default storage claims owner: %v", err)
+	}
+
+	if len(claimOwners.Items) == 0 {
+		// no other storageclient claims as an owner and take responsibility of creating the default claims by becoming owner
+		if utils.AddAnnotation(instance, defaultClaimsOwnerAnnotationKey, "true") {
+			if err := s.update(instance); err != nil {
+				return fmt.Errorf("not able to claim ownership of creating default storageclaims: %v", err)
+			}
+		}
+	}
+
+	// we successfully took the ownership to create a default claim from this storageclient, so create default claims if not created
+	// after claiming as an owner no other storageclient will try to take ownership for creating default storageclaims
+	annotations := instance.GetAnnotations()
+	if annotations[defaultClaimsOwnerAnnotationKey] == "true" && annotations[defaultClaimsProcessedAnnotationKey] != "true" {
+		if err := s.createDefaultBlockStorageClaim(instance); err != nil && !kerrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create %q storageclaim: %v", defaultBlockStorageClaim, err)
+		}
+		if err := s.createDefaultSharedfileStorageClaim(instance); err != nil && !kerrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create %q storageclaim: %v", defaultSharedfileStorageClaim, err)
+		}
+	}
+
+	// annotate that we created default storageclaims successfully and will not retry
+	if utils.AddAnnotation(instance, defaultClaimsProcessedAnnotationKey, "true") {
+		if err := s.update(instance); err != nil {
+			return fmt.Errorf("not able to update annotation for creation of default storageclaims: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *StorageClientReconciler) createDefaultBlockStorageClaim(instance *v1alpha1.StorageClient) error {
+	storageclaim := &v1alpha1.StorageClaim{}
+	storageclaim.Name = defaultBlockStorageClaim
+	storageclaim.Spec.Type = "block"
+	storageclaim.Spec.StorageClient = &v1alpha1.StorageClientNamespacedName{
+		Name:      instance.Name,
+		Namespace: instance.Namespace,
+	}
+	return s.create(storageclaim)
+}
+
+func (s *StorageClientReconciler) createDefaultSharedfileStorageClaim(instance *v1alpha1.StorageClient) error {
+	sharedfileClaim := &v1alpha1.StorageClaim{}
+	sharedfileClaim.Name = defaultSharedfileStorageClaim
+	sharedfileClaim.Spec.Type = "sharedfile"
+	sharedfileClaim.Spec.StorageClient = &v1alpha1.StorageClientNamespacedName{
+		Name:      instance.Name,
+		Namespace: instance.Namespace,
+	}
+	return s.create(sharedfileClaim)
+}
+
+func (s *StorageClientReconciler) deleteDefaultStorageClaims(instance *v1alpha1.StorageClient) error {
+	if instance.GetAnnotations()[defaultClaimsOwnerAnnotationKey] == "true" {
+		blockClaim := &v1alpha1.StorageClaim{}
+		blockClaim.Name = defaultBlockStorageClaim
+		if err := s.delete(blockClaim); err != nil {
+			return fmt.Errorf("failed to remove default storageclaim %q: %v", blockClaim.Name, err)
+		}
+
+		sharedfsClaim := &v1alpha1.StorageClaim{}
+		sharedfsClaim.Name = defaultSharedfileStorageClaim
+		if err := s.delete(sharedfsClaim); err != nil {
+			return fmt.Errorf("failed to remove default storageclaim %q: %v", blockClaim.Name, err)
+		}
+		s.Log.Info("Successfully deleted default storageclaims")
+	}
+	return nil
+}
+
+func (s *StorageClientReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
+	return s.Update(s.ctx, obj, opts...)
+}
+
+func (s *StorageClientReconciler) create(obj client.Object, opts ...client.CreateOption) error {
+	return s.Create(s.ctx, obj, opts...)
 }
