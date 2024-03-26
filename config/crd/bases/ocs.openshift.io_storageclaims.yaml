@@ -5,14 +5,14 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
-  name: storageclassclaims.ocs.openshift.io
+  name: storageclaims.ocs.openshift.io
 spec:
   group: ocs.openshift.io
   names:
-    kind: StorageClassClaim
-    listKind: StorageClassClaimList
-    plural: storageclassclaims
-    singular: storageclassclaim
+    kind: StorageClaim
+    listKind: StorageClaimList
+    plural: storageclaims
+    singular: storageclaim
   scope: Cluster
   versions:
   - additionalPrinterColumns:
@@ -31,13 +31,10 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    deprecated: true
-    deprecationWarning: StorageClassClaim API is deprecated and will be removed in
-      future version, please use StorageClaim API instead.
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: StorageClassClaim is the Schema for the storageclassclaims API
+        description: StorageClaim is the Schema for the storageclaims API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -52,7 +49,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: StorageClassClaimSpec defines the desired state of StorageClassClaim
+            description: StorageClaimSpec defines the desired state of StorageClaim
             properties:
               encryptionMethod:
                 type: string
@@ -70,8 +67,8 @@ spec:
                 type: string
               type:
                 enum:
-                - blockpool
-                - sharedfilesystem
+                - block
+                - sharedfile
                 type: string
             required:
             - storageClient
@@ -81,17 +78,11 @@ spec:
             - message: spec is immutable
               rule: oldSelf == self
           status:
-            description: StorageClassClaimStatus defines the observed state of StorageClassClaim
+            description: StorageClaimStatus defines the observed state of StorageClaim
             properties:
               phase:
                 type: string
-              secretNames:
-                items:
-                  type: string
-                type: array
             type: object
-        required:
-        - spec
         type: object
     served: true
     storage: true

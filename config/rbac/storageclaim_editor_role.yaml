@@ -1,0 +1,31 @@
+# permissions for end users to edit storageclaims.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: storageclaim-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: ocs-client-operator
+    app.kubernetes.io/part-of: ocs-client-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: storageclaim-editor-role
+rules:
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclaims/status
+  verbs:
+  - get

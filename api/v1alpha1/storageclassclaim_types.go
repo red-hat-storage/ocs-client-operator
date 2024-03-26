@@ -45,11 +45,6 @@ type StorageClassClaimStatus struct {
 	SecretNames []string               `json:"secretNames,omitempty"`
 }
 
-type StorageClientNamespacedName struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-}
-
 // StorageClassClaimSpec defines the desired state of StorageClassClaim
 type StorageClassClaimSpec struct {
 	//+kubebuilder:validation:Enum=blockpool;sharedfilesystem
@@ -69,6 +64,7 @@ type StorageClassClaimSpec struct {
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 
 // StorageClassClaim is the Schema for the storageclassclaims API
+//+kubebuilder:deprecatedversion:warning="StorageClassClaim API is deprecated and will be removed in future version, please use StorageClaim API instead."
 type StorageClassClaim struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
