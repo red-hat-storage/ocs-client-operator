@@ -18,6 +18,8 @@ package controllers
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -63,10 +65,11 @@ type StorageClaimReconciler struct {
 	Scheme            *runtime.Scheme
 	OperatorNamespace string
 
-	log           logr.Logger
-	ctx           context.Context
-	storageClient *v1alpha1.StorageClient
-	storageClaim  *v1alpha1.StorageClaim
+	log              logr.Logger
+	ctx              context.Context
+	storageClient    *v1alpha1.StorageClient
+	storageClaim     *v1alpha1.StorageClaim
+	storageClaimHash string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -146,6 +149,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return reconcile.Result{}, err
 	}
 
+	r.storageClaimHash = getMD5Hash(r.storageClaim.Name)
 	r.storageClaim.Status.Phase = v1alpha1.StorageClaimInitializing
 
 	if r.storageClaim.Spec.StorageClient == nil {
@@ -376,12 +380,12 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				// NOTE: This is distinct from the notion of a "clusterID"
 				// used within Ceph and Rook-Ceph, despite sharing the
 				// same name.
-				csiClusterConfigEntry.ClusterID = r.storageClaim.Name
+				csiClusterConfigEntry.ClusterID = r.storageClaimHash
 				var storageClass *storagev1.StorageClass
 				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.storageClient.Namespace
 				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.storageClient.Namespace
 				data["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.storageClient.Namespace
-				data["clusterID"] = r.storageClaim.Name
+				data["clusterID"] = r.storageClaimHash
 
 				if resource.Name == "cephfs" {
 					csiClusterConfigEntry.CephFS = new(csi.CephFSSpec)
@@ -402,8 +406,8 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.storageClient.Namespace
 				// generate a new clusterID for cephfs subvolumegroup, as
 				// storageclaim is clusterscoped resources using its
-				// name as the clusterID
-				data["clusterID"] = r.storageClaim.Name
+				// hash as the clusterID
+				data["clusterID"] = r.storageClaimHash
 				if resource.Name == "cephfs" {
 					volumeSnapshotClass = r.getCephFSVolumeSnapshotClass(data)
 				} else if resource.Name == "ceph-rbd" {
@@ -444,7 +448,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		}
 
 		// Delete configmap entry for cephcsi
-		err = cc.UpdateMonConfigMap(r.storageClaim.Name, r.storageClient.Status.ConsumerID, nil)
+		err = cc.UpdateMonConfigMap(r.storageClaimHash, r.storageClient.Status.ConsumerID, nil)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
@@ -633,7 +637,7 @@ func (r *StorageClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapsh
 
 func (r *StorageClaimReconciler) hasPersistentVolumes() (bool, error) {
 	pvList := &corev1.PersistentVolumeList{}
-	if err := r.list(pvList, client.MatchingFields{pvClusterIDIndexName: r.storageClaim.Name}, client.Limit(1)); err != nil {
+	if err := r.list(pvList, client.MatchingFields{pvClusterIDIndexName: r.storageClaimHash}, client.Limit(1)); err != nil {
 		return false, fmt.Errorf("failed to list persistent volumes: %v", err)
 	}
 
@@ -647,7 +651,7 @@ func (r *StorageClaimReconciler) hasPersistentVolumes() (bool, error) {
 
 func (r *StorageClaimReconciler) hasVolumeSnapshotContents() (bool, error) {
 	vscList := &snapapi.VolumeSnapshotContentList{}
-	if err := r.list(vscList, client.MatchingFields{vscClusterIDIndexName: r.storageClaim.Name}); err != nil {
+	if err := r.list(vscList, client.MatchingFields{vscClusterIDIndexName: r.storageClaimHash}); err != nil {
 		return false, fmt.Errorf("failed to list volume snapshot content resources: %v", err)
 	}
 
@@ -657,4 +661,9 @@ func (r *StorageClaimReconciler) hasVolumeSnapshotContents() (bool, error) {
 	}
 
 	return false, nil
+}
+
+func getMD5Hash(text string) string {
+	hash := md5.Sum([]byte(text))
+	return hex.EncodeToString(hash[:])
 }
