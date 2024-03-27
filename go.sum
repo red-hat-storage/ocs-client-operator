@@ -120,8 +120,8 @@ github.com/prometheus/common v0.45.0 h1:2BGz0eBc2hdMDLnO/8n0jeB3oPrt2D08CekT0lne
 github.com/prometheus/common v0.45.0/go.mod h1:YJmSTw9BoKxJplESWWxlbyttQR4uaEcGyv9MZjVOJsY=
 github.com/prometheus/procfs v0.12.0 h1:jluTpSng7V9hY0O2R9DzzJHYb2xULk9VTR1V1R/k6Bo=
 github.com/prometheus/procfs v0.12.0/go.mod h1:pcuDEFsWDnvcgNzo4EEweacyhjeA9Zk3cnaOZAZEfOo=
-github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240325171742-7a2177d09b00 h1:XNUvXtgCSvj/dOWKUXOmzX/a7+cCAhdFilxc+MhO0TY=
-github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240325171742-7a2177d09b00/go.mod h1:cE35IBM6w9KQfLbmJBR8b/jhoitTkvjPBb/Yp6QQnKI=
+github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240326142239-493179cfe220 h1:mShY6Zjrr++zSWWXKShePkWKKq/rAm8R1CgyltiO1Sg=
+github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240326142239-493179cfe220/go.mod h1:cE35IBM6w9KQfLbmJBR8b/jhoitTkvjPBb/Yp6QQnKI=
 github.com/rogpeppe/go-internal v1.11.0 h1:cWPaGQEPrBb5/AsnsZesgZZ9yb1OQ+GOISoDNXVBh4M=
 github.com/rogpeppe/go-internal v1.11.0/go.mod h1:ddIwULY96R17DhadqLgMfk9H9tvdUzkipdSkR5nkCZA=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
