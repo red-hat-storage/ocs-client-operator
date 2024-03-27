@@ -57,6 +57,10 @@ vet: ## Run go vet against code.
 lint: ## Run golangci-lint against code.
 	docker run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
+verify-deps: godeps-update
+	@echo "Verifying dependency files"
+	hack/verify-dependencies.sh
+
 godeps-update:  ## Run go mod tidy & vendor
 	go mod tidy && go mod vendor
 
