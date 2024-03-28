@@ -25,7 +25,7 @@ var (
 	fileFSGroupPolicy = v1k8scsi.FileFSGroupPolicy
 )
 
-var CephFSCSIDriver = &v1k8scsi.CSIDriver{
+var CephFSCSIDriver = v1k8scsi.CSIDriver{
 	Spec: v1k8scsi.CSIDriverSpec{
 		AttachRequired: ptr.To(true),
 		PodInfoOnMount: ptr.To(false),
@@ -33,7 +33,7 @@ var CephFSCSIDriver = &v1k8scsi.CSIDriver{
 	},
 }
 
-var RbdCSIDriver = &v1k8scsi.CSIDriver{
+var RbdCSIDriver = v1k8scsi.CSIDriver{
 	Spec: v1k8scsi.CSIDriverSpec{
 		AttachRequired: ptr.To(true),
 		PodInfoOnMount: ptr.To(false),

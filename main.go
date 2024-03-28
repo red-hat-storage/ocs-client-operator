@@ -23,7 +23,9 @@ import (
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/controllers"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -33,16 +35,22 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
-	apiclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -61,6 +69,7 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(consolev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(opv1a1.AddToScheme(scheme))
+	utilruntime.Must(extv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -69,8 +78,10 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var consolePort int
+	var webhookPort int
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.IntVar(&webhookPort, "webhook-port", 7443, "The port the webhook sever binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -83,22 +94,40 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	storageclustersSelector := fields.SelectorFromSet(fields.Set{"metadata.name": "storageclusters.ocs.openshift.io"})
+	subscriptionwebhookSelector := fields.SelectorFromSet(fields.Set{"metadata.name": templates.SubscriptionWebhookName})
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metrics.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "7cb6f2e5.ocs.openshift.io",
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&extv1.CustomResourceDefinition{}: {
+					// only cache storagecluster crd
+					Field: storageclustersSelector,
+				},
+				&admrv1.ValidatingWebhookConfiguration{}: {
+					// only cache our validation webhook
+					Field: subscriptionwebhookSelector,
+				},
+			},
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: "/etc/tls/private",
+		}),
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable to create manager")
 		os.Exit(1)
 	}
 
 	// apiclient.New() returns a client without cache.
 	// cache is not initialized before mgr.Start()
 	// we need this because we need to interact with OperatorCondition
-	apiClient, err := apiclient.New(mgr.GetConfig(), apiclient.Options{
+	apiClient, err := client.New(mgr.GetConfig(), client.Options{
 		Scheme: mgr.GetScheme(),
 	})
 	if err != nil {
@@ -119,6 +148,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	setupLog.Info("setting up webhook server")
+	hookServer := mgr.GetWebhookServer()
+
+	setupLog.Info("registering Subscription Channel validating webhook endpoint")
+	hookServer.Register("/validate-subscription", &webhook.Admission{
+		Handler: &admwebhook.SubscriptionAdmission{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+			Log:     mgr.GetLogger().WithName("webhook.subscription"),
+		}},
+	)
+
 	if err = (&controllers.StorageClientReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
@@ -128,10 +169,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.StorageClassClaimReconciler{
+	if err = (&controllers.StorageClaimReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "StorageClaim")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.StorageClassClaimMigrationReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClassClaim")
 		os.Exit(1)

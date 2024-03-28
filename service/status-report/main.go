@@ -109,6 +109,7 @@ func main() {
 	}
 
 	var pltVersion string
+	var clusterID configv1.ClusterID
 	clusterVersion := &configv1.ClusterVersion{}
 	clusterVersion.Name = "version"
 	if err = cl.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
@@ -120,9 +121,15 @@ func main() {
 		if item != nil {
 			pltVersion = item.Version
 		}
+		clusterID = clusterVersion.Spec.ClusterID
 	}
 	if pltVersion == "" {
 		klog.Warningf("Unable to find ocp version with completed update")
+	}
+
+	namespacedName := types.NamespacedName{
+		Namespace: storageClient.Namespace,
+		Name:      storageClient.Name,
 	}
 
 	providerClient, err := providerclient.NewProviderClient(
@@ -137,9 +144,21 @@ func main() {
 
 	status := providerclient.NewStorageClientStatus().
 		SetPlatformVersion(pltVersion).
-		SetOperatorVersion(oprVersion)
-	if _, err = providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status); err != nil {
+		SetOperatorVersion(oprVersion).
+		SetClusterID(string(clusterID)).
+		SetNamespacedName(namespacedName.String())
+	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
+	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
+
+	storageClientCopy := &v1alpha1.StorageClient{}
+	storageClient.DeepCopyInto(storageClientCopy)
+	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
+		// patch is being used here as to not have any conflicts over storageclient cr changes as this annotation value doesn't depend on storageclient spec
+		if err := cl.Patch(ctx, storageClient, client.MergeFrom(storageClientCopy)); err != nil {
+			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
+		}
 	}
 
 	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)

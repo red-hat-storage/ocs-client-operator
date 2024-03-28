@@ -12,10 +12,10 @@ jobs:
     name: codespell
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: codespell
-        uses: codespell-project/actions-codespell@master
+        uses: codespell-project/actions-codespell@v2
         with:
           exclude_file: go.sum
           check_filenames: true
