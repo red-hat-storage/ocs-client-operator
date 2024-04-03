@@ -3,7 +3,6 @@ include hack/make-project-vars.mk
 include hack/make-tools.mk
 include hack/make-bundle-vars.mk
 
-
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -55,15 +54,15 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 lint: ## Run golangci-lint against code.
-	docker run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
+	$(IMAGE_BUILD_CMD) run --rm -v $(PROJECT_DIR):/app -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
 godeps-update:  ## Run go mod tidy & vendor
 	go mod tidy && go mod vendor
 
-test-setup: godeps-update generate fmt vet ## Run setup targets for tests
+test-setup: godeps-update generate fmt vet envtest ## Run setup targets for tests
 
 go-test: ## Run go test against code.
-	./hack/go-test.sh
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(BIN_DIR) -p path)" go test -coverprofile cover.out `go list ./... | grep -v "e2e"`
 
 test: test-setup go-test ## Run go unit tests.
 
@@ -82,11 +81,11 @@ go-build: ## Run go build against code.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
-container-build: test-setup ## Build container image with the manager.
-	docker build -t ${IMG} .
+container-build: test ## Build container image with the manager.
+	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
 
 container-push: ## Push container image with the manager.
-	docker push ${IMG}
+	$(IMAGE_BUILD_CMD) push ${IMG}
 
 ##@ Deployment
 
@@ -128,27 +127,27 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
 	$(KUSTOMIZE) build $(MANIFEST_PATH) | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}'| \
 		$(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts="$$($(KUSTOMIZE) build $(MANIFEST_PATH) | $(YQ) 'select(.kind == "ServiceAccount") | .metadata.name' -N | paste -sd "," -)"
-	sed -i "s|packageName:.*|packageName: ${CSI_ADDONS_PACKAGE_NAME}|g" "config/metadata/dependencies.yaml"
-	sed -i "s|version:.*|version: "${CSI_ADDONS_PACKAGE_VERSION}"|g" "config/metadata/dependencies.yaml"
+	yq -i '.dependencies[0].value.packageName = "'${CSI_ADDONS_PACKAGE_NAME}'"' config/metadata/dependencies.yaml
+	yq -i '.dependencies[0].value.version = "'${CSI_ADDONS_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
 	cp config/metadata/* bundle/metadata/
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build
 bundle-build: bundle ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
-	docker push $(BUNDLE_IMG)
+	$(IMAGE_BUILD_CMD) push $(BUNDLE_IMG)
 
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: catalog-build
 catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --permissive --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+	./hack/build-catalog.sh
 
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
-	docker push $(CATALOG_IMG)
+	$(IMAGE_BUILD_CMD) push $(CATALOG_IMG)
