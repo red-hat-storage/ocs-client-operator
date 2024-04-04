@@ -49,7 +49,7 @@ IMAGE_TAG ?= latest
 IMAGE_NAME ?= ocs-client-operator
 BUNDLE_IMAGE_NAME ?= $(IMAGE_NAME)-bundle
 CSI_ADDONS_BUNDLE_IMAGE_NAME ?= k8s-bundle
-CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.5.0
+CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.8.0
 CATALOG_IMAGE_NAME ?= $(IMAGE_NAME)-catalog
 
 OCS_CLIENT_CONSOLE_IMG_NAME ?= ocs-client-console
@@ -99,7 +99,7 @@ endif
 
 # csi-addons dependencies
 CSI_ADDONS_PACKAGE_NAME ?= csi-addons
-CSI_ADDONS_PACKAGE_VERSION ?= 0.5.0
+CSI_ADDONS_PACKAGE_VERSION ?= 0.8.0
 
 ## CSI driver images
 # The following variables define the default CSI container images to deploy
