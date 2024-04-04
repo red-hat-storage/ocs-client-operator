@@ -8,12 +8,17 @@ metadata:
     olm.skipRange: ""
     operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
-  name: ocs-client-operator.v4.12.0
+  name: ocs-client-operator.v4.16.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
+    - description: StorageClaim is the Schema for the storageclaims API
+      displayName: Storage Claim
+      kind: StorageClaim
+      name: storageclaims.ocs.openshift.io
+      version: v1alpha1
     - description: StorageClassClaim is the Schema for the storageclassclaims API
       displayName: Storage Class Claim
       kind: StorageClassClaim
@@ -47,6 +52,12 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - configmaps/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ""
+          resources:
           - secrets
           verbs:
           - create
@@ -66,6 +77,24 @@ spec:
           - list
           - patch
           - update
+          - watch
+        - apiGroups:
+          - admissionregistration.k8s.io
+          resources:
+          - validatingwebhookconfigurations
+          verbs:
+          - create
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - apiextensions.k8s.io
+          resources:
+          - customresourcedefinitions
+          verbs:
+          - get
+          - list
           - watch
         - apiGroups:
           - apps
@@ -119,27 +148,9 @@ spec:
           resources:
           - clusterversions
           verbs:
-          - create
-          - delete
           - get
           - list
-          - patch
-          - update
           - watch
-        - apiGroups:
-          - config.openshift.io
-          resources:
-          - clusterversions/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - config.openshift.io
-          resources:
-          - clusterversions/status
-          verbs:
-          - get
-          - patch
-          - update
         - apiGroups:
           - console.openshift.io
           resources:
@@ -164,6 +175,32 @@ spec:
           - list
           - update
           - watch
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclaims
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclaims/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclaims/status
+          verbs:
+          - get
+          - patch
+          - update
         - apiGroups:
           - ocs.openshift.io
           resources:
@@ -225,6 +262,15 @@ spec:
           - list
           - watch
         - apiGroups:
+          - operators.coreos.com
+          resources:
+          - subscriptions
+          verbs:
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
           - security.openshift.io
           resources:
           - securitycontextconstraints
@@ -242,6 +288,14 @@ spec:
           verbs:
           - create
           - delete
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotcontents
+          verbs:
           - get
           - list
           - watch
@@ -598,6 +652,7 @@ spec:
           verbs:
           - get
           - list
+          - patch
         - apiGroups:
           - ""
           resources:
@@ -679,12 +734,14 @@ spec:
               - emptyDir: {}
                 name: ocs-client-operator-console-nginx-tmp
       - label:
+          app: ocs-client-operator
           control-plane: controller-manager
         name: ocs-client-operator-controller-manager
         spec:
           replicas: 1
           selector:
             matchLabels:
+              app: ocs-client-operator
               control-plane: controller-manager
           strategy: {}
           template:
@@ -692,6 +749,7 @@ spec:
               annotations:
                 kubectl.kubernetes.io/default-container: manager
               labels:
+                app: ocs-client-operator
                 control-plane: controller-manager
             spec:
               containers:
@@ -700,7 +758,7 @@ spec:
                 - --upstream=http://127.0.0.1:8080/
                 - --logtostderr=true
                 - --v=0
-                image: gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0
+                image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.9.0
                 name: kube-rbac-proxy
                 ports:
                 - containerPort: 8443
@@ -757,6 +815,8 @@ spec:
                 volumeMounts:
                 - mountPath: /opt/config
                   name: csi-images
+                - mountPath: /etc/tls/private
+                  name: webhook-cert-secret
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
@@ -765,6 +825,9 @@ spec:
               - configMap:
                   name: ocs-client-operator-csi-images
                 name: csi-images
+              - name: webhook-cert-secret
+                secret:
+                  secretName: webhook-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
         name: console
@@ -934,4 +997,4 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
-  version: 4.12.0
+  version: 4.16.0

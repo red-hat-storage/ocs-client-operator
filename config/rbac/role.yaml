@@ -19,6 +19,12 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
@@ -109,27 +115,9 @@ rules:
   resources:
   - clusterversions
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - clusterversions/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - clusterversions/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - console.openshift.io
   resources:
