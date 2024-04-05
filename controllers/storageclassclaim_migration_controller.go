@@ -82,7 +82,7 @@ func (r *StorageClassClaimMigrationReconciler) Reconcile(ctx context.Context, re
 
 	storageClaim.Spec.EncryptionMethod = storageClassClaim.Spec.EncryptionMethod
 	storageClaim.Spec.StorageProfile = storageClassClaim.Spec.StorageProfile
-	storageClaim.Spec.StorageClient = storageClassClaim.Spec.StorageClient.DeepCopy()
+	storageClaim.Spec.StorageClientName = &storageClassClaim.Spec.StorageClient.Name
 
 	r.log.Info(fmt.Sprintf("Migrating storageclassclaim %q", storageClassClaim.Name))
 	if err := r.create(storageClaim); err != nil && !kerrors.IsAlreadyExists(err) {
