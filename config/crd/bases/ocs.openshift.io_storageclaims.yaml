@@ -54,15 +54,7 @@ spec:
               encryptionMethod:
                 type: string
               storageClient:
-                properties:
-                  name:
-                    type: string
-                  namespace:
-                    type: string
-                required:
-                - name
-                - namespace
-                type: object
+                type: string
               storageProfile:
                 type: string
               type:
