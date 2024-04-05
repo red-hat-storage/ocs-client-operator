@@ -37,6 +37,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -51,9 +52,8 @@ const (
 	GetStorageConfig      = "GetStorageConfig"
 	AcknowledgeOnboarding = "AcknowledgeOnboarding"
 
-	storageClientNameLabel     = "ocs.openshift.io/storageclient.name"
-	storageClientFinalizer     = "storageclient.ocs.openshift.io"
-	storageClientAnnotationKey = "ocs.openshift.io/storageclient"
+	storageClientNameLabel = "ocs.openshift.io/storageclient.name"
+	storageClientFinalizer = "storageclient.ocs.openshift.io"
 
 	// indexes for caching
 	storageProviderEndpointIndexName = "index:storageProviderEndpoint"
@@ -483,9 +483,7 @@ func (r *StorageClientReconciler) createBlockStorageClaim() error {
 	blockClaim := &v1alpha1.StorageClaim{}
 	blockClaim.Name = fmt.Sprintf("%s-ceph-rbd", r.storageClient.Name)
 	blockClaim.Spec.Type = "block"
-	blockClaim.Spec.StorageClient = &v1alpha1.StorageClientNamespacedName{
-		Name: r.storageClient.Name,
-	}
+	blockClaim.Spec.StorageClientName = ptr.To(r.storageClient.Name)
 	if err := r.own(blockClaim); err != nil {
 		return fmt.Errorf("failed to own storageclaim of type block: %v", err)
 	}
@@ -496,9 +494,7 @@ func (r *StorageClientReconciler) createSharedfileStorageClaim() error {
 	sharedfileClaim := &v1alpha1.StorageClaim{}
 	sharedfileClaim.Name = fmt.Sprintf("%s-cephfs", r.storageClient.Name)
 	sharedfileClaim.Spec.Type = "sharedfile"
-	sharedfileClaim.Spec.StorageClient = &v1alpha1.StorageClientNamespacedName{
-		Name: r.storageClient.Name,
-	}
+	sharedfileClaim.Spec.StorageClientName = ptr.To(r.storageClient.Name)
 	if err := r.own(sharedfileClaim); err != nil {
 		return fmt.Errorf("failed to own storageclaim of type sharedfile: %v", err)
 	}

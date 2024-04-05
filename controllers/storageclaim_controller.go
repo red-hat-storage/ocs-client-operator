@@ -152,7 +152,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.storageClaimHash = getMD5Hash(r.storageClaim.Name)
 	r.storageClaim.Status.Phase = v1alpha1.StorageClaimInitializing
 
-	if r.storageClaim.Spec.StorageClient == nil {
+	if r.storageClaim.Spec.StorageClientName == nil {
 		storageClientList := &v1alpha1.StorageClientList{}
 		if err := r.list(storageClientList); err != nil {
 			return reconcile.Result{}, err
@@ -170,8 +170,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	} else {
 		// Fetch the StorageClient instance
 		r.storageClient = &v1alpha1.StorageClient{}
-		r.storageClient.Name = r.storageClaim.Spec.StorageClient.Name
-		r.storageClient.Namespace = r.storageClaim.Spec.StorageClient.Namespace
+		r.storageClient.Name = *r.storageClaim.Spec.StorageClientName
 		if err := r.get(r.storageClient); err != nil {
 			r.log.Error(err, "Failed to get StorageClient.")
 			return reconcile.Result{}, err
@@ -267,12 +266,15 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 
 		updateStorageClaim := false
 		// Check if finalizers are present, if not, add them.
-		if !contains(r.storageClaim.GetFinalizers(), storageClaimFinalizer) {
-			r.log.Info("Finalizer not found for StorageClaim. Adding finalizer.", "StorageClaim", r.storageClaim.Name)
-			r.storageClaim.SetFinalizers(append(r.storageClaim.GetFinalizers(), storageClaimFinalizer))
+		if controllerutil.AddFinalizer(r.storageClaim, storageClaimFinalizer) {
 			updateStorageClaim = true
 		}
-		if utils.AddAnnotation(r.storageClaim, storageClientAnnotationKey, client.ObjectKeyFromObject(r.storageClient).String()) {
+
+		// if claim is created by default we'll already have a controller reference, however set the owner if it is explictly created by user
+		if !controllerutil.HasControllerReference(r.storageClaim) {
+			if err := r.ownWithOwner(r.storageClient, r.storageClaim); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to set storageclient %v as owner of storageclaim %v", r.storageClient.Name, r.storageClaim.Name)
+			}
 			updateStorageClaim = true
 		}
 
@@ -347,7 +349,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			case "Secret":
 				secret := &corev1.Secret{}
 				secret.Name = resource.Name
-				secret.Namespace = r.storageClient.Namespace
+				secret.Namespace = r.OperatorNamespace
 				_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
 					// cluster scoped resource owning namespace scoped resource which allows garbage collection
 					if err := r.own(secret); err != nil {
@@ -382,9 +384,9 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				// same name.
 				csiClusterConfigEntry.ClusterID = r.storageClaimHash
 				var storageClass *storagev1.StorageClass
-				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.storageClient.Namespace
-				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.storageClient.Namespace
-				data["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.storageClient.Namespace
+				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
+				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
+				data["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
 				data["clusterID"] = r.storageClaimHash
 
 				if resource.Name == "cephfs" {
@@ -403,7 +405,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				}
 			case "VolumeSnapshotClass":
 				var volumeSnapshotClass *snapapi.VolumeSnapshotClass
-				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.storageClient.Namespace
+				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
 				// generate a new clusterID for cephfs subvolumegroup, as
 				// storageclaim is clusterscoped resources using its
 				// hash as the clusterID
@@ -465,8 +467,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to revoke StorageClassClaim: %s", err)
 		}
 
-		if contains(r.storageClaim.GetFinalizers(), storageClaimFinalizer) {
-			r.storageClaim.Finalizers = remove(r.storageClaim.Finalizers, storageClaimFinalizer)
+		if controllerutil.RemoveFinalizer(r.storageClaim, storageClaimFinalizer) {
 			if err := r.update(r.storageClaim); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from storageClaim: %s", err)
 			}
@@ -595,8 +596,11 @@ func (r *StorageClaimReconciler) delete(obj client.Object) error {
 }
 
 func (r *StorageClaimReconciler) own(resource metav1.Object) error {
-	// Ensure StorageClaim ownership on a resource
-	return controllerutil.SetOwnerReference(r.storageClaim, resource, r.Scheme)
+	return r.ownWithOwner(r.storageClaim, resource)
+}
+
+func (r *StorageClaimReconciler) ownWithOwner(owner, dependent metav1.Object) error {
+	return controllerutil.SetControllerReference(owner, dependent, r.Scheme)
 }
 
 func (r *StorageClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapshotClass *snapapi.VolumeSnapshotClass) error {
