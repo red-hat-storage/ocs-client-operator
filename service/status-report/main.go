@@ -74,11 +74,6 @@ func main() {
 
 	ctx := context.Background()
 
-	storageClientNamespace, isSet := os.LookupEnv(utils.StorageClientNamespaceEnvVar)
-	if !isSet {
-		klog.Exitf("%s env var not set", utils.StorageClientNamespaceEnvVar)
-	}
-
 	storageClientName, isSet := os.LookupEnv(utils.StorageClientNameEnvVar)
 	if !isSet {
 		klog.Exitf("%s env var not set", utils.StorageClientNameEnvVar)
@@ -90,15 +85,14 @@ func main() {
 	}
 	storageClient := &v1alpha1.StorageClient{}
 	storageClient.Name = storageClientName
-	storageClient.Namespace = storageClientNamespace
 
-	if err = cl.Get(ctx, types.NamespacedName{Name: storageClient.Name, Namespace: storageClient.Namespace}, storageClient); err != nil {
+	if err = cl.Get(ctx, client.ObjectKeyFromObject(storageClient), storageClient); err != nil {
 		klog.Exitf("Failed to get storageClient %q/%q: %v", storageClient.Namespace, storageClient.Name, err)
 	}
 
 	var oprVersion string
 	csvList := opv1a1.ClusterServiceVersionList{}
-	if err = cl.List(ctx, &csvList, client.InNamespace(storageClientNamespace)); err != nil {
+	if err = cl.List(ctx, &csvList, client.InNamespace(operatorNamespace)); err != nil {
 		klog.Warningf("Failed to list csv resources: %v", err)
 	} else {
 		item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
@@ -129,11 +123,6 @@ func main() {
 	}
 	if pltVersion == "" {
 		klog.Warningf("Unable to find ocp version with completed update")
-	}
-
-	namespacedName := types.NamespacedName{
-		Namespace: storageClient.Namespace,
-		Name:      storageClient.Name,
 	}
 
 	clusterConfig := &corev1.ConfigMap{}
@@ -174,7 +163,7 @@ func main() {
 		SetOperatorVersion(oprVersion).
 		SetClusterID(string(clusterID)).
 		SetClusterName(clusterName).
-		SetNamespacedName(namespacedName.String())
+		SetNamespacedName(storageClientName)
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
