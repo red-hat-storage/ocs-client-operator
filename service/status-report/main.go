@@ -163,7 +163,7 @@ func main() {
 		SetOperatorVersion(oprVersion).
 		SetClusterID(string(clusterID)).
 		SetClusterName(clusterName).
-		SetNamespacedName(storageClientName)
+		SetClientName(storageClientName)
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
