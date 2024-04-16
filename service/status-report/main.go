@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"os"
@@ -90,64 +91,6 @@ func main() {
 		klog.Exitf("Failed to get storageClient %q/%q: %v", storageClient.Namespace, storageClient.Name, err)
 	}
 
-	var oprVersion string
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err = cl.List(ctx, &csvList, client.InNamespace(operatorNamespace)); err != nil {
-		klog.Warningf("Failed to list csv resources: %v", err)
-	} else {
-		item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
-			return strings.HasPrefix(csv.Name, csvPrefix)
-		})
-		if item != nil {
-			oprVersion = item.Spec.Version.String()
-		}
-	}
-	if oprVersion == "" {
-		klog.Warningf("Unable to find csv with prefix %q", csvPrefix)
-	}
-
-	var pltVersion string
-	var clusterID configv1.ClusterID
-	clusterVersion := &configv1.ClusterVersion{}
-	clusterVersion.Name = "version"
-	if err = cl.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
-		klog.Warningf("Failed to get clusterVersion: %v", err)
-	} else {
-		item := utils.Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
-			return record.State == configv1.CompletedUpdate
-		})
-		if item != nil {
-			pltVersion = item.Version
-		}
-		clusterID = clusterVersion.Spec.ClusterID
-	}
-	if pltVersion == "" {
-		klog.Warningf("Unable to find ocp version with completed update")
-	}
-
-	clusterConfig := &corev1.ConfigMap{}
-	clusterConfig.Name = clusterConfigName
-	clusterConfig.Namespace = clusterConfigNamespace
-
-	if err = cl.Get(ctx, client.ObjectKeyFromObject(clusterConfig), clusterConfig); err != nil {
-		klog.Warningf("Failed to get clusterConfig %q/%q: %v", clusterConfig.Namespace, clusterConfig.Name, err)
-	}
-
-	clusterMetadataYAML := clusterConfig.Data["install-config"]
-	clusterMetadata := struct {
-		Metadata struct {
-			Name string `yaml:"name"`
-		} `yaml:"metadata"`
-	}{}
-	err = yaml.Unmarshal([]byte(clusterMetadataYAML), &clusterMetadata)
-	if err != nil {
-		klog.Warningf("Fatal error, %v", err)
-	}
-	clusterName := ""
-	if len(clusterMetadata.Metadata.Name) > 0 {
-		clusterName = clusterMetadata.Metadata.Name
-	}
-
 	providerClient, err := providerclient.NewProviderClient(
 		ctx,
 		storageClient.Spec.StorageProviderEndpoint,
@@ -159,11 +102,10 @@ func main() {
 	defer providerClient.Close()
 
 	status := providerclient.NewStorageClientStatus().
-		SetPlatformVersion(pltVersion).
-		SetOperatorVersion(oprVersion).
-		SetClusterID(string(clusterID)).
-		SetClusterName(clusterName).
 		SetClientName(storageClientName)
+	setPlatformInformation(ctx, cl, status)
+	setOperatorInformation(ctx, cl, status, operatorNamespace)
+	setClusterInformation(ctx, cl, status)
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
@@ -201,4 +143,80 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
+}
+
+func setClusterInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
+	var clusterID configv1.ClusterID
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err := cl.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
+		klog.Warningf("Failed to get clusterVersion: %v", err)
+	} else {
+		clusterID = clusterVersion.Spec.ClusterID
+	}
+	status.SetClusterID(string(clusterID))
+
+	clusterConfig := &corev1.ConfigMap{}
+	clusterConfig.Name = clusterConfigName
+	clusterConfig.Namespace = clusterConfigNamespace
+
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterConfig), clusterConfig); err != nil {
+		klog.Warningf("Failed to get clusterConfig %q/%q: %v", clusterConfig.Namespace, clusterConfig.Name, err)
+	}
+
+	clusterMetadataYAML := clusterConfig.Data["install-config"]
+	clusterMetadata := struct {
+		Metadata struct {
+			Name string `yaml:"name"`
+		} `yaml:"metadata"`
+	}{}
+	err := yaml.Unmarshal([]byte(clusterMetadataYAML), &clusterMetadata)
+	if err != nil {
+		klog.Warningf("Failed to unmarshal cluster metadata, %v", err)
+	}
+	if len(clusterMetadata.Metadata.Name) == 0 {
+		klog.Warningf("Cluster name is empty, %v", err)
+	}
+	status.SetClusterName(clusterMetadata.Metadata.Name)
+
+}
+
+func setOperatorInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus,
+	operatorNamespace string) {
+	var operatorVersion string
+	csvList := opv1a1.ClusterServiceVersionList{}
+	if err := cl.List(ctx, &csvList, client.InNamespace(operatorNamespace)); err != nil {
+		klog.Warningf("Failed to list csv resources: %v", err)
+	} else {
+		item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
+			return strings.HasPrefix(csv.Name, csvPrefix)
+		})
+		if item != nil {
+			operatorVersion = item.Spec.Version.String()
+		}
+	}
+	if operatorVersion == "" {
+		klog.Warningf("Unable to find csv with prefix %q", csvPrefix)
+	}
+	status.SetOperatorVersion(operatorVersion)
+}
+
+func setPlatformInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
+	var platformVersion string
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterVersion), clusterVersion); err != nil {
+		klog.Warningf("Failed to get clusterVersion: %v", err)
+	} else {
+		item := utils.Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
+			return record.State == configv1.CompletedUpdate
+		})
+		if item != nil {
+			platformVersion = item.Version
+		}
+	}
+	if platformVersion == "" {
+		klog.Warningf("Unable to find ocp version with completed update")
+	}
+	status.SetPlatformVersion(platformVersion)
 }
