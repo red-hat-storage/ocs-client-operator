@@ -188,15 +188,16 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		return res, err
 	}
 
-	if err := r.reconcileBlockStorageClaim(); err != nil {
-		return reconcile.Result{}, err
-	}
+	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] != "true" {
+		if err := r.reconcileBlockStorageClaim(); err != nil {
+			return reconcile.Result{}, err
+		}
 
-	if err := r.reconcileSharedfileStorageClaim(); err != nil {
-		return reconcile.Result{}, err
-	}
+		if err := r.reconcileSharedfileStorageClaim(); err != nil {
+			return reconcile.Result{}, err
+		}
 
-	if utils.AddAnnotation(r.storageClient, storageClaimProcessedAnnotationKey, "true") {
+		utils.AddAnnotation(r.storageClient, storageClaimProcessedAnnotationKey, "true")
 		if err := r.update(r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with claim processed annotation: %v", err)
 		}
@@ -209,8 +210,11 @@ func (r *StorageClientReconciler) deletionPhase(externalClusterClient *providerC
 	// TODO Need to take care of deleting the SCC created for this
 	// storageClient and also the default SCC created for this storageClient
 	r.storageClient.Status.Phase = v1alpha1.StorageClientOffboarding
-	err := r.verifyNoStorageClaimsExist()
-	if err != nil {
+
+	if err := r.deleteOwnedStorageClaims(); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to delete storageclaims owned by storageclient %v: %v", r.storageClient.Name, err)
+	}
+	if err := r.verifyNoStorageClaimsExist(); err != nil {
 		r.Log.Error(err, "still storageclaims exist for this storageclient")
 		return reconcile.Result{}, fmt.Errorf("still storageclaims exist for this storageclient: %v", err)
 	}
@@ -323,28 +327,42 @@ func (r *StorageClientReconciler) offboardConsumer(externalClusterClient *provid
 	return reconcile.Result{}, nil
 }
 
+func (r *StorageClientReconciler) deleteOwnedStorageClaims() error {
+	storageClaims := &v1alpha1.StorageClaimList{}
+	if err := r.list(storageClaims, client.MatchingFields{ownerIndexName: string(r.storageClient.UID)}); err != nil {
+		return fmt.Errorf("failed to list storageClaims via owner reference: %v", err)
+	}
+
+	for idx := range storageClaims.Items {
+		storageClaim := &storageClaims.Items[idx]
+		if err := r.delete(storageClaim); err != nil {
+			return fmt.Errorf("failed to delete storageClaim %v: %v", storageClaim.Name, err)
+		}
+	}
+	return nil
+}
+
 func (r *StorageClientReconciler) verifyNoStorageClaimsExist() error {
 
 	storageClaims := &v1alpha1.StorageClaimList{}
-	err := r.Client.List(r.ctx,
-		storageClaims,
-		client.MatchingFields{ownerIndexName: string(r.storageClient.UID)},
-		client.Limit(1),
-	)
-	if err != nil {
+	if err := r.list(storageClaims); err != nil {
 		return fmt.Errorf("failed to list storageClaims: %v", err)
 	}
 
-	if len(storageClaims.Items) != 0 {
-		err = fmt.Errorf("Failed to cleanup resources. storageClaims are present."+
-			"Delete all storageClaims corresponding to storageclient %q for the cleanup to proceed", client.ObjectKeyFromObject(r.storageClient))
-		r.recorder.ReportIfNotPresent(r.storageClient, corev1.EventTypeWarning, "Cleanup", err.Error())
-		r.Log.Error(err, "Waiting for all storageClaims to be deleted.")
-		return err
+	for idx := range storageClaims.Items {
+		storageClaim := &storageClaims.Items[idx]
+		if (storageClaim.Spec.StorageClient == "" && r.storageClient.Annotations[storageClientDefaultAnnotationKey] == "true") ||
+			storageClaim.Spec.StorageClient == r.storageClient.Name {
+			err := fmt.Errorf("failed to cleanup resources. storageClaims are present on the cluster")
+			r.recorder.ReportIfNotPresent(r.storageClient, corev1.EventTypeWarning, "Cleanup", err.Error())
+			r.Log.Error(err, "Waiting for all storageClaims to be deleted.")
+			return err
+		}
 	}
 
 	return nil
 }
+
 func (r *StorageClientReconciler) logGrpcErrorAndReportEvent(grpcCallName string, err error, errCode codes.Code) {
 
 	var msg, eventReason, eventType string
@@ -460,10 +478,6 @@ func (r *StorageClientReconciler) list(obj client.ObjectList, listOptions ...cli
 }
 
 func (r *StorageClientReconciler) reconcileBlockStorageClaim() error {
-	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] == "true" {
-		// we already processed claim creation for this client
-		return nil
-	}
 	blockClaim := &v1alpha1.StorageClaim{}
 	blockClaim.Name = fmt.Sprintf("%s-ceph-rbd", r.storageClient.Name)
 	blockClaim.Spec.Type = "block"
@@ -478,10 +492,6 @@ func (r *StorageClientReconciler) reconcileBlockStorageClaim() error {
 }
 
 func (r *StorageClientReconciler) reconcileSharedfileStorageClaim() error {
-	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] == "true" {
-		// we already processed claim creation for this client
-		return nil
-	}
 	sharedfileClaim := &v1alpha1.StorageClaim{}
 	sharedfileClaim.Name = fmt.Sprintf("%s-cephfs", r.storageClient.Name)
 	sharedfileClaim.Spec.Type = "sharedfile"
@@ -506,6 +516,13 @@ func (r *StorageClientReconciler) update(obj client.Object, opts ...client.Updat
 
 func (r *StorageClientReconciler) create(obj client.Object, opts ...client.CreateOption) error {
 	return r.Create(r.ctx, obj, opts...)
+}
+
+func (r *StorageClientReconciler) delete(obj client.Object, opts ...client.DeleteOption) error {
+	if err := r.Delete(r.ctx, obj, opts...); err != nil && !kerrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 func (r *StorageClientReconciler) own(dependent metav1.Object) error {
