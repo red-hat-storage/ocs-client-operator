@@ -131,8 +131,17 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	servicePredicate := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				return obj.GetNamespace() == c.OperatorNamespace && obj.GetName() == templates.WebhookServiceName
+			},
+		),
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}, configMapPredicates).
+		Owns(&corev1.Service{}, servicePredicate).
 		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
 		Watches(&extv1.CustomResourceDefinition{}, enqueueConfigMapRequest, builder.OnlyMetadata).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
@@ -182,12 +191,17 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
+		if err := c.reconcileWebhookService(); err != nil {
+			c.log.Error(err, "unable to reconcile webhook service")
+			return ctrl.Result{}, err
+		}
+
 		if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
 			c.log.Error(err, "unable to register subscription validating webhook")
 			return ctrl.Result{}, err
 		}
 
-		if err := labelClientOperatorSubscription(c); err != nil {
+		if err := c.reconcileClientOperatorSubscriptionLabel(); err != nil {
 			c.log.Error(err, "unable to label ocs client operator subscription")
 			return ctrl.Result{}, err
 		}
@@ -423,6 +437,14 @@ func (c *OperatorConfigMapReconciler) deletionPhase() error {
 		c.log.Error(err, "unable to delete SCC")
 		return err
 	}
+
+	whConfig := &admrv1.ValidatingWebhookConfiguration{}
+	whConfig.Name = templates.SubscriptionWebhookName
+	if err := c.delete(whConfig); err != nil {
+		c.log.Error(err, "failed to delete subscription webhook")
+		return err
+	}
+
 	return nil
 }
 
@@ -624,7 +646,7 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 	return nil
 }
 
-func labelClientOperatorSubscription(c *OperatorConfigMapReconciler) error {
+func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscriptionLabel() error {
 	subscriptionList := &opv1a1.SubscriptionList{}
 	err := c.List(c.ctx, subscriptionList, client.InNamespace(c.OperatorNamespace))
 	if err != nil {
@@ -706,10 +728,36 @@ func (c *OperatorConfigMapReconciler) reconcileSubscription() error {
 	return nil
 }
 
+func (c *OperatorConfigMapReconciler) reconcileWebhookService() error {
+	svc := &corev1.Service{}
+	svc.Name = templates.WebhookServiceName
+	svc.Namespace = c.OperatorNamespace
+	err := c.createOrUpdate(svc, func() error {
+		if err := c.own(svc); err != nil {
+			return err
+		}
+		utils.AddAnnotation(svc, "service.beta.openshift.io/serving-cert-secret-name", "webhook-cert-secret")
+		templates.WebhookService.Spec.DeepCopyInto(&svc.Spec)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	c.log.Info("successfully reconcile webhook service")
+	return nil
+}
+
 func (c *OperatorConfigMapReconciler) list(obj client.ObjectList, opts ...client.ListOption) error {
 	return c.List(c.ctx, obj, opts...)
 }
 
 func (c *OperatorConfigMapReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
 	return c.Update(c.ctx, obj, opts...)
+}
+
+func (c *OperatorConfigMapReconciler) delete(obj client.Object, opts ...client.DeleteOption) error {
+	if err := c.Delete(c.ctx, obj, opts...); err != nil && !kerrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
