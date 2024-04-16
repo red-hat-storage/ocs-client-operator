@@ -65,6 +65,8 @@ const (
 	deployCSIKey           = "DEPLOY_CSI"
 	subscriptionLabelKey   = "managed-by"
 	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
+
+	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -170,210 +172,249 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
-	if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
-		c.log.Error(err, "unable to register subscription validating webhook")
-		return ctrl.Result{}, err
-	}
+	if c.operatorConfigMap.GetDeletionTimestamp().IsZero() {
 
-	if err := labelClientOperatorSubscription(c); err != nil {
-		c.log.Error(err, "unable to label ocs client operator subscription")
-		return ctrl.Result{}, err
-	}
-
-	if err := c.reconcileSubscription(); err != nil {
-		c.log.Error(err, "unable to reconcile subscription")
-		return ctrl.Result{}, err
-	}
-
-	if err := c.ensureConsolePlugin(); err != nil {
-		c.log.Error(err, "unable to deploy client console")
-		return ctrl.Result{}, err
-	}
-
-	if deployCSI, err := c.getDeployCSIConfig(); err != nil {
-		c.log.Error(err, "failed to perform precheck for deploying CSI")
-		return ctrl.Result{}, err
-	} else if deployCSI {
-		clusterVersion := &configv1.ClusterVersion{}
-		clusterVersion.Name = clusterVersionName
-		if err := c.get(clusterVersion); err != nil {
-			c.log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
-			return reconcile.Result{}, err
-		}
-
-		if err := csi.InitializeSidecars(c.log, clusterVersion.Status.Desired.Version); err != nil {
-			c.log.Error(err, "unable to initialize sidecars")
-			return ctrl.Result{}, err
-		}
-
-		c.scc = &secv1.SecurityContextConstraints{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: csi.SCCName,
-			},
-		}
-		err = c.createOrUpdate(c.scc, func() error {
-			// TODO: this is a hack to preserve the resourceVersion of the SCC
-			resourceVersion := c.scc.ResourceVersion
-			csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
-			c.scc.ResourceVersion = resourceVersion
-			return nil
-		})
-		if err != nil {
-			c.log.Error(err, "unable to create/update SCC")
-			return ctrl.Result{}, err
-		}
-
-		// create the monitor configmap for the csi drivers but never updates it.
-		// This is because the monitor configurations are added to the configmap
-		// when user creates storageclassclaims.
-		monConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      templates.MonConfigMapName,
-				Namespace: c.OperatorNamespace,
-			},
-			Data: map[string]string{
-				"config.json": "[]",
-			},
-		}
-		if err := c.own(monConfigMap); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		if err := c.create(monConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
-			c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
-			return ctrl.Result{}, err
-		}
-
-		// create the encryption configmap for the csi driver but never updates it.
-		// This is because the encryption configuration are added to the configmap
-		// by the users before they create the encryption storageclassclaims.
-		encConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      templates.EncryptionConfigMapName,
-				Namespace: c.OperatorNamespace,
-			},
-			Data: map[string]string{
-				"config.json": "[]",
-			},
-		}
-		if err := c.own(encConfigMap); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		if err := c.create(encConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
-			c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
-			return ctrl.Result{}, err
-		}
-
-		c.cephFSDeployment = &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      csi.CephFSDeploymentName,
-				Namespace: c.OperatorNamespace,
-			},
-		}
-		err = c.createOrUpdate(c.cephFSDeployment, func() error {
-			if err := c.own(c.cephFSDeployment); err != nil {
-				return err
+		//ensure finalizer
+		if controllerutil.AddFinalizer(c.operatorConfigMap, operatorConfigMapFinalizer) {
+			c.log.Info("finalizer missing on the operatorConfigMap resource, adding...")
+			if err := c.Client.Update(c.ctx, c.operatorConfigMap); err != nil {
+				return ctrl.Result{}, err
 			}
-			csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
-			return nil
-		})
-		if err != nil {
-			c.log.Error(err, "failed to create/update cephfs deployment")
+		}
+
+		if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
+			c.log.Error(err, "unable to register subscription validating webhook")
 			return ctrl.Result{}, err
 		}
 
-		c.cephFSDaemonSet = &appsv1.DaemonSet{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      csi.CephFSDaemonSetName,
-				Namespace: c.OperatorNamespace,
-			},
+		if err := labelClientOperatorSubscription(c); err != nil {
+			c.log.Error(err, "unable to label ocs client operator subscription")
+			return ctrl.Result{}, err
 		}
-		err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
-			if err := c.own(c.cephFSDaemonSet); err != nil {
-				return err
+
+		if err := c.reconcileSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile subscription")
+			return ctrl.Result{}, err
+		}
+
+		if err := c.ensureConsolePlugin(); err != nil {
+			c.log.Error(err, "unable to deploy client console")
+			return ctrl.Result{}, err
+		}
+
+		if deployCSI, err := c.getDeployCSIConfig(); err != nil {
+			c.log.Error(err, "failed to perform precheck for deploying CSI")
+			return ctrl.Result{}, err
+		} else if deployCSI {
+			clusterVersion := &configv1.ClusterVersion{}
+			clusterVersion.Name = clusterVersionName
+			if err := c.get(clusterVersion); err != nil {
+				c.log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
+				return reconcile.Result{}, err
 			}
-			csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
-			return nil
-		})
-		if err != nil {
-			c.log.Error(err, "failed to create/update cephfs daemonset")
-			return ctrl.Result{}, err
-		}
 
-		c.rbdDeployment = &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      csi.RBDDeploymentName,
-				Namespace: c.OperatorNamespace,
-			},
-		}
-		err = c.createOrUpdate(c.rbdDeployment, func() error {
-			if err := c.own(c.rbdDeployment); err != nil {
-				return err
+			if err := csi.InitializeSidecars(c.log, clusterVersion.Status.Desired.Version); err != nil {
+				c.log.Error(err, "unable to initialize sidecars")
+				return ctrl.Result{}, err
 			}
-			csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
-			return nil
-		})
-		if err != nil {
-			c.log.Error(err, "failed to create/update rbd deployment")
-			return ctrl.Result{}, err
-		}
 
-		c.rbdDaemonSet = &appsv1.DaemonSet{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      csi.RBDDaemonSetName,
-				Namespace: c.OperatorNamespace,
-			},
-		}
-		err = c.createOrUpdate(c.rbdDaemonSet, func() error {
-			if err := c.own(c.rbdDaemonSet); err != nil {
-				return err
+			c.scc = &secv1.SecurityContextConstraints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: csi.SCCName,
+				},
 			}
-			csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
-			return nil
-		})
-		if err != nil {
-			c.log.Error(err, "failed to create/update rbd daemonset")
-			return ctrl.Result{}, err
+			err = c.createOrUpdate(c.scc, func() error {
+				// TODO: this is a hack to preserve the resourceVersion of the SCC
+				resourceVersion := c.scc.ResourceVersion
+				csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
+				c.scc.ResourceVersion = resourceVersion
+				return nil
+			})
+			if err != nil {
+				c.log.Error(err, "unable to create/update SCC")
+				return ctrl.Result{}, err
+			}
+
+			// create the monitor configmap for the csi drivers but never updates it.
+			// This is because the monitor configurations are added to the configmap
+			// when user creates storageclassclaims.
+			monConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      templates.MonConfigMapName,
+					Namespace: c.OperatorNamespace,
+				},
+				Data: map[string]string{
+					"config.json": "[]",
+				},
+			}
+			if err := c.own(monConfigMap); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			if err := c.create(monConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
+				c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
+				return ctrl.Result{}, err
+			}
+
+			// create the encryption configmap for the csi driver but never updates it.
+			// This is because the encryption configuration are added to the configmap
+			// by the users before they create the encryption storageclassclaims.
+			encConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      templates.EncryptionConfigMapName,
+					Namespace: c.OperatorNamespace,
+				},
+				Data: map[string]string{
+					"config.json": "[]",
+				},
+			}
+			if err := c.own(encConfigMap); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			if err := c.create(encConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
+				c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
+				return ctrl.Result{}, err
+			}
+
+			c.cephFSDeployment = &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      csi.CephFSDeploymentName,
+					Namespace: c.OperatorNamespace,
+				},
+			}
+			err = c.createOrUpdate(c.cephFSDeployment, func() error {
+				if err := c.own(c.cephFSDeployment); err != nil {
+					return err
+				}
+				csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
+				return nil
+			})
+			if err != nil {
+				c.log.Error(err, "failed to create/update cephfs deployment")
+				return ctrl.Result{}, err
+			}
+
+			c.cephFSDaemonSet = &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      csi.CephFSDaemonSetName,
+					Namespace: c.OperatorNamespace,
+				},
+			}
+			err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
+				if err := c.own(c.cephFSDaemonSet); err != nil {
+					return err
+				}
+				csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
+				return nil
+			})
+			if err != nil {
+				c.log.Error(err, "failed to create/update cephfs daemonset")
+				return ctrl.Result{}, err
+			}
+
+			c.rbdDeployment = &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      csi.RBDDeploymentName,
+					Namespace: c.OperatorNamespace,
+				},
+			}
+			err = c.createOrUpdate(c.rbdDeployment, func() error {
+				if err := c.own(c.rbdDeployment); err != nil {
+					return err
+				}
+				csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
+				return nil
+			})
+			if err != nil {
+				c.log.Error(err, "failed to create/update rbd deployment")
+				return ctrl.Result{}, err
+			}
+
+			c.rbdDaemonSet = &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      csi.RBDDaemonSetName,
+					Namespace: c.OperatorNamespace,
+				},
+			}
+			err = c.createOrUpdate(c.rbdDaemonSet, func() error {
+				if err := c.own(c.rbdDaemonSet); err != nil {
+					return err
+				}
+				csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
+				return nil
+			})
+			if err != nil {
+				c.log.Error(err, "failed to create/update rbd daemonset")
+				return ctrl.Result{}, err
+			}
+
+			// Need to handle deletion of the csiDriver object, we cannot set
+			// ownerReference on it as its cluster scoped resource
+			cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
+			cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
+			if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
+				c.log.Error(err, "unable to create cephfs CSIDriver")
+				return ctrl.Result{}, err
+			}
+
+			rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
+			rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
+			if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
+				c.log.Error(err, "unable to create rbd CSIDriver")
+				return ctrl.Result{}, err
+			}
+
+			prometheusRule := &monitoringv1.PrometheusRule{}
+			if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
+				c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+				return ctrl.Result{}, err
+			}
+
+			prometheusRule.SetNamespace(c.OperatorNamespace)
+
+			err = c.createOrUpdate(prometheusRule, func() error {
+				applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
+				return c.own(prometheusRule)
+			})
+			if err != nil {
+				c.log.Error(err, "failed to create/update prometheus rules")
+				return ctrl.Result{}, err
+			}
+
+			c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+		} else {
+			// deletion phase
+			if err := c.deletionPhase(); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			//remove finalizer
+			if controllerutil.RemoveFinalizer(c.operatorConfigMap, operatorConfigMapFinalizer) {
+				if err := c.Client.Update(c.ctx, c.operatorConfigMap); err != nil {
+					return ctrl.Result{}, err
+				}
+				c.log.Info("finallizer removed successfully")
+			}
 		}
-
-		// Need to handle deletion of the csiDriver object, we cannot set
-		// ownerReference on it as its cluster scoped resource
-		cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
-		cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
-		if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
-			c.log.Error(err, "unable to create cephfs CSIDriver")
-			return ctrl.Result{}, err
-		}
-
-		rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
-		rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
-		if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
-			c.log.Error(err, "unable to create rbd CSIDriver")
-			return ctrl.Result{}, err
-		}
-
-		prometheusRule := &monitoringv1.PrometheusRule{}
-		if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
-			c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
-			return ctrl.Result{}, err
-		}
-
-		prometheusRule.SetNamespace(c.OperatorNamespace)
-
-		err = c.createOrUpdate(prometheusRule, func() error {
-			applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
-			return c.own(prometheusRule)
-		})
-		if err != nil {
-			c.log.Error(err, "failed to create/update prometheus rules")
-			return ctrl.Result{}, err
-		}
-
-		c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
 	}
-
 	return ctrl.Result{}, nil
+}
+
+func (c *OperatorConfigMapReconciler) deletionPhase() error {
+	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetCephFSDriverName()); err != nil && !kerrors.IsNotFound(err) {
+		c.log.Error(err, "unable to delete cephfs CSIDriver")
+		return err
+	}
+	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetRBDDriverName()); err != nil && !kerrors.IsNotFound(err) {
+		c.log.Error(err, "unable to delete rbd CSIDriver")
+		return err
+	}
+	if err := c.Client.Delete(c.ctx, c.scc); err != nil && !kerrors.IsNotFound(err) {
+		c.log.Error(err, "unable to delete SCC")
+		return err
+	}
+	return nil
 }
 
 func (c *OperatorConfigMapReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
