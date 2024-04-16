@@ -402,6 +402,15 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 }
 
 func (c *OperatorConfigMapReconciler) deletionPhase() error {
+	claimsList := &v1alpha1.StorageClaimList{}
+	if err := c.list(claimsList, client.Limit(1)); err != nil {
+		c.log.Error(err, "unable to verify StorageClaims presence prior to removal of CSI resources")
+		return err
+	} else if len(claimsList.Items) != 0 {
+		err = fmt.Errorf("failed to clean up resources: storage claims are present on the cluster")
+		c.log.Error(err, "Waiting for all storageClaims to be deleted.")
+		return err
+	}
 	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetCephFSDriverName()); err != nil && !kerrors.IsNotFound(err) {
 		c.log.Error(err, "unable to delete cephfs CSIDriver")
 		return err
