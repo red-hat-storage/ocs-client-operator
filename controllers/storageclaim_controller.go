@@ -275,15 +275,15 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		var storageClaimStorageType providerclient.StorageType
 		switch r.storageClaim.Spec.Type {
 		case "block":
-			storageClaimStorageType = providerclient.StorageTypeBlockpool
+			storageClaimStorageType = providerclient.StorageTypeBlock
 		case "sharedfile":
-			storageClaimStorageType = providerclient.StorageTypeSharedfilesystem
+			storageClaimStorageType = providerclient.StorageTypeSharedfile
 		default:
 			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", r.storageClaim.Spec.Type)
 		}
 
-		// Call the `FulfillStorageClassClaim` service on the provider server with StorageClaim as a request message.
-		_, err = providerClient.FulfillStorageClassClaim(
+		// Call the `FulfillStorageClaim` service on the provider server with StorageClaim as a request message.
+		_, err = providerClient.FulfillStorageClaim(
 			r.ctx,
 			r.storageClient.Status.ConsumerID,
 			r.storageClaim.Name,
@@ -295,14 +295,14 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to initiate fulfillment of StorageClaim: %v", err)
 		}
 
-		// Call the `GetStorageClassClaimConfig` service on the provider server with StorageClaim as a request message.
-		response, err := providerClient.GetStorageClassClaimConfig(
+		// Call the `GetStorageClaimConfig` service on the provider server with StorageClaim as a request message.
+		response, err := providerClient.GetStorageClaimConfig(
 			r.ctx,
 			r.storageClient.Status.ConsumerID,
 			r.storageClaim.Name,
 		)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to get StorageClassClaim config: %v", err)
+			return reconcile.Result{}, fmt.Errorf("failed to get StorageClaim config: %v", err)
 		}
 		resources := response.ExternalResource
 		if resources == nil {
@@ -328,7 +328,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			data := map[string]string{}
 			err = json.Unmarshal(resource.Data, &data)
 			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClassClaim configuration response: %v", err)
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
 			}
 
 			// Create the received resources, if necessary.
@@ -442,16 +442,16 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
 
-		// Call `RevokeStorageClassClaim` service on the provider server with StorageClaim as a request message.
+		// Call `RevokeStorageClaim` service on the provider server with StorageClaim as a request message.
 		// Check if StorageClaim is still exists (it might have been manually removed during the StorageClass
 		// removal above).
-		_, err = providerClient.RevokeStorageClassClaim(
+		_, err = providerClient.RevokeStorageClaim(
 			r.ctx,
 			r.storageClient.Status.ConsumerID,
 			r.storageClaim.Name,
 		)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to revoke StorageClassClaim: %s", err)
+			return reconcile.Result{}, fmt.Errorf("failed to revoke StorageClaim: %s", err)
 		}
 
 		if controllerutil.RemoveFinalizer(r.storageClaim, storageClaimFinalizer) {
