@@ -12,7 +12,7 @@ spec:
     listKind: StorageClientList
     plural: storageclients
     singular: storageclient
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.phase

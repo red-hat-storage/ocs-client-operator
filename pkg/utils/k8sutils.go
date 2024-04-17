@@ -34,9 +34,6 @@ const OperatorPodNameEnvVar = "OPERATOR_POD_NAME"
 // StorageClientNameEnvVar is the constant for env variable STORAGE_CLIENT_NAME
 const StorageClientNameEnvVar = "STORAGE_CLIENT_NAME"
 
-// StorageClientNamespaceEnvVar is the constant for env variable STORAGE_CLIENT_NAMESPACE
-const StorageClientNamespaceEnvVar = "STORAGE_CLIENT_NAMESPACE"
-
 const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
 
 // Value corresponding to annotation key has subscription channel
