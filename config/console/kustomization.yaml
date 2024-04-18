@@ -12,3 +12,4 @@ images:
 - name: ocs-client-operator-console
   newName: quay.io/ocs-dev/ocs-client-console
   newTag: latest
+namePrefix: ocs-client-operator-

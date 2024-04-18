@@ -51,6 +51,7 @@ rules:
   - validatingwebhookconfigurations
   verbs:
   - create
+  - delete
   - get
   - list
   - update
@@ -243,6 +244,7 @@ rules:
   - securitycontextconstraints
   verbs:
   - create
+  - delete
   - get
   - list
   - patch

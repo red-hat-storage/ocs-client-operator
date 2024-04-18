@@ -414,7 +414,7 @@ func (r *StorageClientReconciler) logGrpcErrorAndReportEvent(grpcCallName string
 func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.Result, error) {
 	cronJob := &batchv1.CronJob{}
 	// maximum characters allowed for cronjob name is 52 and below interpolation creates 47 characters
-	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", getMD5Hash(r.storageClient.Name))
+	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", getMD5Hash(r.storageClient.Name)[:16])
 	cronJob.Namespace = r.OperatorNamespace
 
 	var podDeadLineSeconds int64 = 120

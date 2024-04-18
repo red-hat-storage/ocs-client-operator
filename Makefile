@@ -116,7 +116,8 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	rm -rf ./bundle
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG)
+	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
+		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/default && \
 		$(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG) && \
 		$(KUSTOMIZE) edit set namespace $(OPERATOR_NAMESPACE) && \
