@@ -159,12 +159,12 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="storage.k8s.io",resources=csidrivers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
-//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update
+//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
-//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -177,6 +177,10 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	c.operatorConfigMap.Name = req.Name
 	c.operatorConfigMap.Namespace = req.Namespace
 	if err := c.get(c.operatorConfigMap); err != nil {
+		if kerrors.IsNotFound(err) {
+			c.log.Info("Operator ConfigMap resource not found. Ignoring since object might be deleted.")
+			return reconcile.Result{}, nil
+		}
 		c.log.Error(err, "failed to get the operator's configMap")
 		return reconcile.Result{}, err
 	}
@@ -397,19 +401,19 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 
 			c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
-		} else {
-			// deletion phase
-			if err := c.deletionPhase(); err != nil {
+		}
+	} else {
+		// deletion phase
+		if err := c.deletionPhase(); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		//remove finalizer
+		if controllerutil.RemoveFinalizer(c.operatorConfigMap, operatorConfigMapFinalizer) {
+			if err := c.Client.Update(c.ctx, c.operatorConfigMap); err != nil {
 				return ctrl.Result{}, err
 			}
-
-			//remove finalizer
-			if controllerutil.RemoveFinalizer(c.operatorConfigMap, operatorConfigMapFinalizer) {
-				if err := c.Client.Update(c.ctx, c.operatorConfigMap); err != nil {
-					return ctrl.Result{}, err
-				}
-				c.log.Info("finallizer removed successfully")
-			}
+			c.log.Info("finallizer removed successfully")
 		}
 	}
 	return ctrl.Result{}, nil
@@ -433,7 +437,10 @@ func (c *OperatorConfigMapReconciler) deletionPhase() error {
 		c.log.Error(err, "unable to delete rbd CSIDriver")
 		return err
 	}
-	if err := c.Client.Delete(c.ctx, c.scc); err != nil && !kerrors.IsNotFound(err) {
+
+	c.scc = &secv1.SecurityContextConstraints{}
+	c.scc.Name = csi.SCCName
+	if err := c.delete(c.scc); err != nil {
 		c.log.Error(err, "unable to delete SCC")
 		return err
 	}

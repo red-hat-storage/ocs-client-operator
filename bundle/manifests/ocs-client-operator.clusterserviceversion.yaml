@@ -84,6 +84,7 @@ spec:
           - validatingwebhookconfigurations
           verbs:
           - create
+          - delete
           - get
           - list
           - update
@@ -276,6 +277,7 @@ spec:
           - securitycontextconstraints
           verbs:
           - create
+          - delete
           - get
           - list
           - patch
@@ -672,68 +674,6 @@ spec:
         serviceAccountName: ocs-client-operator-status-reporter
       deployments:
       - label:
-          app.kubernetes.io/name: ocs-client-operator-console
-        name: ocs-client-operator-console
-        spec:
-          selector:
-            matchLabels:
-              app.kubernetes.io/name: ocs-client-operator-console
-          strategy: {}
-          template:
-            metadata:
-              labels:
-                app.kubernetes.io/name: ocs-client-operator-console
-            spec:
-              containers:
-              - image: quay.io/ocs-dev/ocs-client-console:latest
-                livenessProbe:
-                  httpGet:
-                    path: /plugin-manifest.json
-                    port: 9001
-                    scheme: HTTPS
-                  initialDelaySeconds: 1000
-                  periodSeconds: 60
-                name: ocs-client-operator-console
-                ports:
-                - containerPort: 9001
-                  protocol: TCP
-                resources:
-                  limits:
-                    cpu: 100m
-                    memory: 512Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-                  readOnlyRootFilesystem: true
-                  seccompProfile:
-                    type: RuntimeDefault
-                volumeMounts:
-                - mountPath: /var/serving-cert
-                  name: ocs-client-operator-console-serving-cert
-                  readOnly: true
-                - mountPath: /etc/nginx/nginx.conf
-                  name: ocs-client-operator-console-nginx-conf
-                  subPath: nginx.conf
-                - mountPath: /var/log/nginx
-                  name: ocs-client-operator-console-nginx-log
-                - mountPath: /var/lib/nginx/tmp
-                  name: ocs-client-operator-console-nginx-tmp
-              securityContext:
-                runAsNonRoot: true
-              volumes:
-              - name: ocs-client-operator-console-serving-cert
-                secret:
-                  secretName: ocs-client-operator-console-serving-cert
-              - configMap:
-                  name: ocs-client-operator-console-nginx-conf
-                name: ocs-client-operator-console-nginx-conf
-              - emptyDir: {}
-                name: ocs-client-operator-console-nginx-log
-              - emptyDir: {}
-                name: ocs-client-operator-console-nginx-tmp
-      - label:
           app: ocs-client-operator
           control-plane: controller-manager
         name: ocs-client-operator-controller-manager
@@ -830,7 +770,7 @@ spec:
                   secretName: webhook-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
-        name: console
+        name: ocs-client-operator-console
         spec:
           selector:
             matchLabels:

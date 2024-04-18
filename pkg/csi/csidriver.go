@@ -54,9 +54,6 @@ func CreateCSIDriver(ctx context.Context, client client.Client, csiDriver *v1k8s
 	return err
 }
 
-// TODO need to check how to delete the csidriver object
-
-//nolint:deadcode,unused
 func DeleteCSIDriver(ctx context.Context, client client.Client, name string) error {
 	csiDriver := &v1k8scsi.CSIDriver{
 		ObjectMeta: metav1.ObjectMeta{

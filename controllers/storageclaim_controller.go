@@ -93,6 +93,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		vsc := o.(*snapapi.VolumeSnapshotContent)
 		if vsc != nil &&
 			slices.Contains(csiDrivers, vsc.Spec.Driver) &&
+			vsc.Status != nil &&
 			vsc.Status.SnapshotHandle != nil {
 			parts := strings.Split(*vsc.Status.SnapshotHandle, "-")
 			if len(parts) == 9 {

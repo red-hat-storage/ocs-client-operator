@@ -64,7 +64,7 @@ type StorageClassClaimSpec struct {
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 
 // StorageClassClaim is the Schema for the storageclassclaims API
-//+kubebuilder:deprecatedversion:warning="StorageClassClaim API is deprecated and will be removed in future version, please use StorageClaim API instead."
+// +kubebuilder:deprecatedversion:warning="StorageClassClaim API is deprecated and will be removed in future version, please use StorageClaim API instead."
 type StorageClassClaim struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

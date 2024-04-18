@@ -46,7 +46,6 @@ resources:
 - ../rbac
 - ../manager
 - ../crd
-- ../console
 images:
 - name: kube-rbac-proxy
   newName: registry.redhat.io/openshift4/ose-kube-rbac-proxy
