@@ -278,7 +278,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		case "block":
 			storageClaimStorageType = providerclient.StorageTypeBlock
 		case "sharedfile":
-			storageClaimStorageType = providerclient.StorageTypeSharedfile
+			storageClaimStorageType = providerclient.StorageTypeSharedFile
 		default:
 			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", r.storageClaim.Spec.Type)
 		}
