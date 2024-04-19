@@ -46,7 +46,7 @@ type StorageClaimStatus struct {
 
 // StorageClaimSpec defines the desired state of StorageClaim
 type StorageClaimSpec struct {
-	//+kubebuilder:validation:Enum=block;sharedfile
+	//+kubebuilder:validation:XValidation:rule="self.lowerAscii()=='block'||self.lowerAscii()=='sharedfile'",message="value should be either 'sharedfile' or 'block'"
 	Type             string `json:"type"`
 	EncryptionMethod string `json:"encryptionMethod,omitempty"`
 	StorageProfile   string `json:"storageProfile,omitempty"`
