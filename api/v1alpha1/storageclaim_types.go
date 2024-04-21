@@ -44,13 +44,6 @@ type StorageClaimStatus struct {
 	Phase storageClaimState `json:"phase,omitempty"`
 }
 
-// TODO: remove after storageclassclaim migration controller and storageclassclaim is deleted
-
-type StorageClientNamespacedName struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-}
-
 // StorageClaimSpec defines the desired state of StorageClaim
 type StorageClaimSpec struct {
 	//+kubebuilder:validation:Enum=block;sharedfile
