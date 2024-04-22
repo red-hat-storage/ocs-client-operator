@@ -93,6 +93,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		vsc := o.(*snapapi.VolumeSnapshotContent)
 		if vsc != nil &&
 			slices.Contains(csiDrivers, vsc.Spec.Driver) &&
+			vsc.Status != nil &&
 			vsc.Status.SnapshotHandle != nil {
 			parts := strings.Split(*vsc.Status.SnapshotHandle, "-")
 			if len(parts) == 9 {
@@ -152,7 +153,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.storageClaimHash = getMD5Hash(r.storageClaim.Name)
 	r.storageClaim.Status.Phase = v1alpha1.StorageClaimInitializing
 
-	if r.storageClaim.Spec.StorageClient == nil {
+	if r.storageClaim.Spec.StorageClient == "" {
 		storageClientList := &v1alpha1.StorageClientList{}
 		if err := r.list(storageClientList); err != nil {
 			return reconcile.Result{}, err
@@ -170,8 +171,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	} else {
 		// Fetch the StorageClient instance
 		r.storageClient = &v1alpha1.StorageClient{}
-		r.storageClient.Name = r.storageClaim.Spec.StorageClient.Name
-		r.storageClient.Namespace = r.storageClaim.Spec.StorageClient.Namespace
+		r.storageClient.Name = r.storageClaim.Spec.StorageClient
 		if err := r.get(r.storageClient); err != nil {
 			r.log.Error(err, "Failed to get StorageClient.")
 			return reconcile.Result{}, err
@@ -246,13 +246,14 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				Name: r.storageClaim.Name,
 			},
 		}
+		var claimType string
 		if err = r.get(existing); err == nil {
-			sccType := r.storageClaim.Spec.Type
+			claimType = strings.ToLower(r.storageClaim.Spec.Type)
 			sccEncryptionMethod := r.storageClaim.Spec.EncryptionMethod
 			_, scIsFSType := existing.Parameters["fsName"]
 			scEncryptionMethod, scHasEncryptionMethod := existing.Parameters["encryptionMethod"]
-			if !((sccType == "sharedfile" && scIsFSType && !scHasEncryptionMethod) ||
-				(sccType == "block" && !scIsFSType && sccEncryptionMethod == scEncryptionMethod)) {
+			if !((claimType == "sharedfile" && scIsFSType && !scHasEncryptionMethod) ||
+				(claimType == "block" && !scIsFSType && sccEncryptionMethod == scEncryptionMethod)) {
 				r.log.Error(fmt.Errorf("storageClaim is not compatible with existing StorageClass"),
 					"StorageClaim validation failed.")
 				r.storageClaim.Status.Phase = v1alpha1.StorageClaimFailed
@@ -265,18 +266,8 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		// Configuration phase.
 		r.storageClaim.Status.Phase = v1alpha1.StorageClaimConfiguring
 
-		updateStorageClaim := false
 		// Check if finalizers are present, if not, add them.
-		if !contains(r.storageClaim.GetFinalizers(), storageClaimFinalizer) {
-			r.log.Info("Finalizer not found for StorageClaim. Adding finalizer.", "StorageClaim", r.storageClaim.Name)
-			r.storageClaim.SetFinalizers(append(r.storageClaim.GetFinalizers(), storageClaimFinalizer))
-			updateStorageClaim = true
-		}
-		if utils.AddAnnotation(r.storageClaim, storageClientAnnotationKey, client.ObjectKeyFromObject(r.storageClient).String()) {
-			updateStorageClaim = true
-		}
-
-		if updateStorageClaim {
+		if controllerutil.AddFinalizer(r.storageClaim, storageClaimFinalizer) {
 			if err := r.update(r.storageClaim); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to update StorageClaim %q: %v", r.storageClaim.Name, err)
 			}
@@ -284,17 +275,17 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 
 		// storageClaimStorageType is the storage type of the StorageClaim
 		var storageClaimStorageType providerclient.StorageType
-		switch r.storageClaim.Spec.Type {
+		switch claimType {
 		case "block":
-			storageClaimStorageType = providerclient.StorageTypeBlockpool
+			storageClaimStorageType = providerclient.StorageTypeBlock
 		case "sharedfile":
-			storageClaimStorageType = providerclient.StorageTypeSharedfilesystem
+			storageClaimStorageType = providerclient.StorageTypeSharedFile
 		default:
-			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", r.storageClaim.Spec.Type)
+			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", claimType)
 		}
 
-		// Call the `FulfillStorageClassClaim` service on the provider server with StorageClaim as a request message.
-		_, err = providerClient.FulfillStorageClassClaim(
+		// Call the `FulfillStorageClaim` service on the provider server with StorageClaim as a request message.
+		_, err = providerClient.FulfillStorageClaim(
 			r.ctx,
 			r.storageClient.Status.ConsumerID,
 			r.storageClaim.Name,
@@ -306,14 +297,14 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to initiate fulfillment of StorageClaim: %v", err)
 		}
 
-		// Call the `GetStorageClassClaimConfig` service on the provider server with StorageClaim as a request message.
-		response, err := providerClient.GetStorageClassClaimConfig(
+		// Call the `GetStorageClaimConfig` service on the provider server with StorageClaim as a request message.
+		response, err := providerClient.GetStorageClaimConfig(
 			r.ctx,
 			r.storageClient.Status.ConsumerID,
 			r.storageClaim.Name,
 		)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to get StorageClassClaim config: %v", err)
+			return reconcile.Result{}, fmt.Errorf("failed to get StorageClaim config: %v", err)
 		}
 		resources := response.ExternalResource
 		if resources == nil {
@@ -339,7 +330,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			data := map[string]string{}
 			err = json.Unmarshal(resource.Data, &data)
 			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClassClaim configuration response: %v", err)
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
 			}
 
 			// Create the received resources, if necessary.
@@ -347,7 +338,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			case "Secret":
 				secret := &corev1.Secret{}
 				secret.Name = resource.Name
-				secret.Namespace = r.storageClient.Namespace
+				secret.Namespace = r.OperatorNamespace
 				_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
 					// cluster scoped resource owning namespace scoped resource which allows garbage collection
 					if err := r.own(secret); err != nil {
@@ -382,9 +373,9 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				// same name.
 				csiClusterConfigEntry.ClusterID = r.storageClaimHash
 				var storageClass *storagev1.StorageClass
-				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.storageClient.Namespace
-				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.storageClient.Namespace
-				data["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.storageClient.Namespace
+				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
+				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
+				data["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
 				data["clusterID"] = r.storageClaimHash
 
 				if resource.Name == "cephfs" {
@@ -403,7 +394,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				}
 			case "VolumeSnapshotClass":
 				var volumeSnapshotClass *snapapi.VolumeSnapshotClass
-				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.storageClient.Namespace
+				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
 				// generate a new clusterID for cephfs subvolumegroup, as
 				// storageclaim is clusterscoped resources using its
 				// hash as the clusterID
@@ -453,20 +444,19 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
 		}
 
-		// Call `RevokeStorageClassClaim` service on the provider server with StorageClaim as a request message.
+		// Call `RevokeStorageClaim` service on the provider server with StorageClaim as a request message.
 		// Check if StorageClaim is still exists (it might have been manually removed during the StorageClass
 		// removal above).
-		_, err = providerClient.RevokeStorageClassClaim(
+		_, err = providerClient.RevokeStorageClaim(
 			r.ctx,
 			r.storageClient.Status.ConsumerID,
 			r.storageClaim.Name,
 		)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to revoke StorageClassClaim: %s", err)
+			return reconcile.Result{}, fmt.Errorf("failed to revoke StorageClaim: %s", err)
 		}
 
-		if contains(r.storageClaim.GetFinalizers(), storageClaimFinalizer) {
-			r.storageClaim.Finalizers = remove(r.storageClaim.Finalizers, storageClaimFinalizer)
+		if controllerutil.RemoveFinalizer(r.storageClaim, storageClaimFinalizer) {
 			if err := r.update(r.storageClaim); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from storageClaim: %s", err)
 			}
@@ -595,8 +585,7 @@ func (r *StorageClaimReconciler) delete(obj client.Object) error {
 }
 
 func (r *StorageClaimReconciler) own(resource metav1.Object) error {
-	// Ensure StorageClaim ownership on a resource
-	return controllerutil.SetOwnerReference(r.storageClaim, resource, r.Scheme)
+	return controllerutil.SetControllerReference(r.storageClaim, resource, r.Scheme)
 }
 
 func (r *StorageClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapshotClass *snapapi.VolumeSnapshotClass) error {

@@ -8,16 +8,16 @@ metadata:
     olm.skipRange: ""
     operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
-  name: ocs-client-operator.v4.12.0
+  name: ocs-client-operator.v4.16.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: StorageClassClaim is the Schema for the storageclassclaims API
-      displayName: Storage Class Claim
-      kind: StorageClassClaim
-      name: storageclassclaims.ocs.openshift.io
+    - description: StorageClaim is the Schema for the storageclaims API
+      displayName: Storage Claim
+      kind: StorageClaim
+      name: storageclaims.ocs.openshift.io
       version: v1alpha1
     - description: StorageClient is the Schema for the storageclients API
       displayName: Storage Client
@@ -47,6 +47,12 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - configmaps/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ""
+          resources:
           - secrets
           verbs:
           - create
@@ -66,6 +72,25 @@ spec:
           - list
           - patch
           - update
+          - watch
+        - apiGroups:
+          - admissionregistration.k8s.io
+          resources:
+          - validatingwebhookconfigurations
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - apiextensions.k8s.io
+          resources:
+          - customresourcedefinitions
+          verbs:
+          - get
+          - list
           - watch
         - apiGroups:
           - apps
@@ -119,27 +144,9 @@ spec:
           resources:
           - clusterversions
           verbs:
-          - create
-          - delete
           - get
           - list
-          - patch
-          - update
           - watch
-        - apiGroups:
-          - config.openshift.io
-          resources:
-          - clusterversions/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - config.openshift.io
-          resources:
-          - clusterversions/status
-          verbs:
-          - get
-          - patch
-          - update
         - apiGroups:
           - console.openshift.io
           resources:
@@ -167,7 +174,7 @@ spec:
         - apiGroups:
           - ocs.openshift.io
           resources:
-          - storageclassclaims
+          - storageclaims
           verbs:
           - create
           - delete
@@ -179,13 +186,13 @@ spec:
         - apiGroups:
           - ocs.openshift.io
           resources:
-          - storageclassclaims/finalizers
+          - storageclaims/finalizers
           verbs:
           - update
         - apiGroups:
           - ocs.openshift.io
           resources:
-          - storageclassclaims/status
+          - storageclaims/status
           verbs:
           - get
           - patch
@@ -225,11 +232,21 @@ spec:
           - list
           - watch
         - apiGroups:
+          - operators.coreos.com
+          resources:
+          - subscriptions
+          verbs:
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
           - security.openshift.io
           resources:
           - securitycontextconstraints
           verbs:
           - create
+          - delete
           - get
           - list
           - patch
@@ -242,6 +259,14 @@ spec:
           verbs:
           - create
           - delete
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotcontents
+          verbs:
           - get
           - list
           - watch
@@ -598,6 +623,7 @@ spec:
           verbs:
           - get
           - list
+          - patch
         - apiGroups:
           - ""
           resources:
@@ -617,74 +643,14 @@ spec:
         serviceAccountName: ocs-client-operator-status-reporter
       deployments:
       - label:
-          app.kubernetes.io/name: ocs-client-operator-console
-        name: ocs-client-operator-console
-        spec:
-          selector:
-            matchLabels:
-              app.kubernetes.io/name: ocs-client-operator-console
-          strategy: {}
-          template:
-            metadata:
-              labels:
-                app.kubernetes.io/name: ocs-client-operator-console
-            spec:
-              containers:
-              - image: quay.io/ocs-dev/ocs-client-console:latest
-                livenessProbe:
-                  httpGet:
-                    path: /plugin-manifest.json
-                    port: 9001
-                    scheme: HTTPS
-                  initialDelaySeconds: 1000
-                  periodSeconds: 60
-                name: ocs-client-operator-console
-                ports:
-                - containerPort: 9001
-                  protocol: TCP
-                resources:
-                  limits:
-                    cpu: 100m
-                    memory: 512Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-                  readOnlyRootFilesystem: true
-                  seccompProfile:
-                    type: RuntimeDefault
-                volumeMounts:
-                - mountPath: /var/serving-cert
-                  name: ocs-client-operator-console-serving-cert
-                  readOnly: true
-                - mountPath: /etc/nginx/nginx.conf
-                  name: ocs-client-operator-console-nginx-conf
-                  subPath: nginx.conf
-                - mountPath: /var/log/nginx
-                  name: ocs-client-operator-console-nginx-log
-                - mountPath: /var/lib/nginx/tmp
-                  name: ocs-client-operator-console-nginx-tmp
-              securityContext:
-                runAsNonRoot: true
-              volumes:
-              - name: ocs-client-operator-console-serving-cert
-                secret:
-                  secretName: ocs-client-operator-console-serving-cert
-              - configMap:
-                  name: ocs-client-operator-console-nginx-conf
-                name: ocs-client-operator-console-nginx-conf
-              - emptyDir: {}
-                name: ocs-client-operator-console-nginx-log
-              - emptyDir: {}
-                name: ocs-client-operator-console-nginx-tmp
-      - label:
+          app: ocs-client-operator
           control-plane: controller-manager
         name: ocs-client-operator-controller-manager
         spec:
           replicas: 1
           selector:
             matchLabels:
+              app: ocs-client-operator
               control-plane: controller-manager
           strategy: {}
           template:
@@ -692,6 +658,7 @@ spec:
               annotations:
                 kubectl.kubernetes.io/default-container: manager
               labels:
+                app: ocs-client-operator
                 control-plane: controller-manager
             spec:
               containers:
@@ -700,7 +667,7 @@ spec:
                 - --upstream=http://127.0.0.1:8080/
                 - --logtostderr=true
                 - --v=0
-                image: gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0
+                image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.9.0
                 name: kube-rbac-proxy
                 ports:
                 - containerPort: 8443
@@ -757,6 +724,8 @@ spec:
                 volumeMounts:
                 - mountPath: /opt/config
                   name: csi-images
+                - mountPath: /etc/tls/private
+                  name: webhook-cert-secret
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
@@ -765,9 +734,12 @@ spec:
               - configMap:
                   name: ocs-client-operator-csi-images
                 name: csi-images
+              - name: webhook-cert-secret
+                secret:
+                  secretName: webhook-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
-        name: console
+        name: ocs-client-operator-console
         spec:
           selector:
             matchLabels:
@@ -934,4 +906,4 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
-  version: 4.12.0
+  version: 4.16.0

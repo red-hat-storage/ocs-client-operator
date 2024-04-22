@@ -19,6 +19,12 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
@@ -45,6 +51,7 @@ rules:
   - validatingwebhookconfigurations
   verbs:
   - create
+  - delete
   - get
   - list
   - update
@@ -109,27 +116,9 @@ rules:
   resources:
   - clusterversions
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - clusterversions/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - clusterversions/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - console.openshift.io
   resources:
@@ -183,32 +172,6 @@ rules:
 - apiGroups:
   - ocs.openshift.io
   resources:
-  - storageclassclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclassclaims/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclassclaims/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ocs.openshift.io
-  resources:
   - storageclients
   verbs:
   - create
@@ -255,6 +218,7 @@ rules:
   - securitycontextconstraints
   verbs:
   - create
+  - delete
   - get
   - list
   - patch

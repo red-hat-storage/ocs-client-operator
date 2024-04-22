@@ -30,8 +30,13 @@ func (r *ReportStatusRequest) SetClusterID(clusterID string) ifaces.StorageClien
 	return r
 }
 
-func (r *ReportStatusRequest) SetNamespacedName(namespacedName string) ifaces.StorageClientStatus {
-	r.NamespacedName = namespacedName
+func (r *ReportStatusRequest) SetClientName(clientName string) ifaces.StorageClientStatus {
+	r.ClientName = clientName
+	return r
+}
+
+func (r *ReportStatusRequest) SetClusterName(clusterName string) ifaces.StorageClientStatus {
+	r.ClusterName = clusterName
 	return r
 }
 

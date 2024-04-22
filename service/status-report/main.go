@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"os"
 	"strings"
 	"time"
@@ -38,7 +40,9 @@ import (
 )
 
 const (
-	csvPrefix = "ocs-client-operator"
+	csvPrefix              = "ocs-client-operator"
+	clusterConfigNamespace = "kube-system"
+	clusterConfigName      = "cluster-config-v1"
 )
 
 func main() {
@@ -70,11 +74,6 @@ func main() {
 
 	ctx := context.Background()
 
-	storageClientNamespace, isSet := os.LookupEnv(utils.StorageClientNamespaceEnvVar)
-	if !isSet {
-		klog.Exitf("%s env var not set", utils.StorageClientNamespaceEnvVar)
-	}
-
 	storageClientName, isSet := os.LookupEnv(utils.StorageClientNameEnvVar)
 	if !isSet {
 		klog.Exitf("%s env var not set", utils.StorageClientNameEnvVar)
@@ -86,15 +85,14 @@ func main() {
 	}
 	storageClient := &v1alpha1.StorageClient{}
 	storageClient.Name = storageClientName
-	storageClient.Namespace = storageClientNamespace
 
-	if err = cl.Get(ctx, types.NamespacedName{Name: storageClient.Name, Namespace: storageClient.Namespace}, storageClient); err != nil {
+	if err = cl.Get(ctx, client.ObjectKeyFromObject(storageClient), storageClient); err != nil {
 		klog.Exitf("Failed to get storageClient %q/%q: %v", storageClient.Namespace, storageClient.Name, err)
 	}
 
 	var oprVersion string
 	csvList := opv1a1.ClusterServiceVersionList{}
-	if err = cl.List(ctx, &csvList, client.InNamespace(storageClientNamespace)); err != nil {
+	if err = cl.List(ctx, &csvList, client.InNamespace(operatorNamespace)); err != nil {
 		klog.Warningf("Failed to list csv resources: %v", err)
 	} else {
 		item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
@@ -127,9 +125,27 @@ func main() {
 		klog.Warningf("Unable to find ocp version with completed update")
 	}
 
-	namespacedName := types.NamespacedName{
-		Namespace: storageClient.Namespace,
-		Name:      storageClient.Name,
+	clusterConfig := &corev1.ConfigMap{}
+	clusterConfig.Name = clusterConfigName
+	clusterConfig.Namespace = clusterConfigNamespace
+
+	if err = cl.Get(ctx, client.ObjectKeyFromObject(clusterConfig), clusterConfig); err != nil {
+		klog.Warningf("Failed to get clusterConfig %q/%q: %v", clusterConfig.Namespace, clusterConfig.Name, err)
+	}
+
+	clusterMetadataYAML := clusterConfig.Data["install-config"]
+	clusterMetadata := struct {
+		Metadata struct {
+			Name string `yaml:"name"`
+		} `yaml:"metadata"`
+	}{}
+	err = yaml.Unmarshal([]byte(clusterMetadataYAML), &clusterMetadata)
+	if err != nil {
+		klog.Warningf("Fatal error, %v", err)
+	}
+	clusterName := ""
+	if len(clusterMetadata.Metadata.Name) > 0 {
+		clusterName = clusterMetadata.Metadata.Name
 	}
 
 	providerClient, err := providerclient.NewProviderClient(
@@ -146,7 +162,8 @@ func main() {
 		SetPlatformVersion(pltVersion).
 		SetOperatorVersion(oprVersion).
 		SetClusterID(string(clusterID)).
-		SetNamespacedName(namespacedName.String())
+		SetClusterName(clusterName).
+		SetClientName(storageClientName)
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)

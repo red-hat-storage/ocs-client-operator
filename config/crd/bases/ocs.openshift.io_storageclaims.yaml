@@ -22,11 +22,8 @@ spec:
     - jsonPath: .spec.storageProfile
       name: StorageProfile
       type: string
-    - jsonPath: .spec.storageClient.name
+    - jsonPath: .spec.storageClient
       name: StorageClientName
-      type: string
-    - jsonPath: .spec.storageClient.namespace
-      name: StorageClientNamespace
       type: string
     - jsonPath: .status.phase
       name: Phase
@@ -54,22 +51,14 @@ spec:
               encryptionMethod:
                 type: string
               storageClient:
-                properties:
-                  name:
-                    type: string
-                  namespace:
-                    type: string
-                required:
-                - name
-                - namespace
-                type: object
+                type: string
               storageProfile:
                 type: string
               type:
-                enum:
-                - block
-                - sharedfile
                 type: string
+                x-kubernetes-validations:
+                - message: value should be either 'sharedfile' or 'block'
+                  rule: self.lowerAscii()=='block'||self.lowerAscii()=='sharedfile'
             required:
             - storageClient
             - type

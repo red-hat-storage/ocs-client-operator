@@ -44,18 +44,13 @@ type StorageClaimStatus struct {
 	Phase storageClaimState `json:"phase,omitempty"`
 }
 
-type StorageClientNamespacedName struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-}
-
 // StorageClaimSpec defines the desired state of StorageClaim
 type StorageClaimSpec struct {
-	//+kubebuilder:validation:Enum=block;sharedfile
-	Type             string                       `json:"type"`
-	EncryptionMethod string                       `json:"encryptionMethod,omitempty"`
-	StorageProfile   string                       `json:"storageProfile,omitempty"`
-	StorageClient    *StorageClientNamespacedName `json:"storageClient"`
+	//+kubebuilder:validation:XValidation:rule="self.lowerAscii()=='block'||self.lowerAscii()=='sharedfile'",message="value should be either 'sharedfile' or 'block'"
+	Type             string `json:"type"`
+	EncryptionMethod string `json:"encryptionMethod,omitempty"`
+	StorageProfile   string `json:"storageProfile,omitempty"`
+	StorageClient    string `json:"storageClient"`
 }
 
 //+kubebuilder:object:root=true
@@ -63,8 +58,7 @@ type StorageClaimSpec struct {
 //+kubebuilder:resource:scope=Cluster
 //+kubebuilder:printcolumn:name="StorageType",type="string",JSONPath=".spec.type"
 //+kubebuilder:printcolumn:name="StorageProfile",type="string",JSONPath=".spec.storageProfile"
-//+kubebuilder:printcolumn:name="StorageClientName",type="string",JSONPath=".spec.storageClient.name"
-//+kubebuilder:printcolumn:name="StorageClientNamespace",type="string",JSONPath=".spec.storageClient.namespace"
+//+kubebuilder:printcolumn:name="StorageClientName",type="string",JSONPath=".spec.storageClient"
 //+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 
 // StorageClaim is the Schema for the storageclaims API
