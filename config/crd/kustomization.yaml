@@ -3,7 +3,6 @@
 # It should be run by config/default
 resources:
 - bases/ocs.openshift.io_storageclients.yaml
-- bases/ocs.openshift.io_storageclassclaims.yaml
 - bases/ocs.openshift.io_storageclaims.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
@@ -11,14 +10,12 @@ patchesStrategicMerge:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
 #- patches/webhook_in_storageclients.yaml
-#- patches/webhook_in_storageclassclaims.yaml
 #- patches/webhook_in_storageclaims.yaml
 #+kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable cert-manager, uncomment all the sections with [CERTMANAGER] prefix.
 # patches here are for enabling the CA injection for each CRD
 #- patches/cainjection_in_storageclients.yaml
-#- patches/cainjection_in_storageclassclaims.yaml
 #- patches/cainjection_in_storageclaims.yaml
 #+kubebuilder:scaffold:crdkustomizecainjectionpatch
 

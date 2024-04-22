@@ -246,13 +246,14 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				Name: r.storageClaim.Name,
 			},
 		}
+		var claimType string
 		if err = r.get(existing); err == nil {
-			sccType := r.storageClaim.Spec.Type
+			claimType = strings.ToLower(r.storageClaim.Spec.Type)
 			sccEncryptionMethod := r.storageClaim.Spec.EncryptionMethod
 			_, scIsFSType := existing.Parameters["fsName"]
 			scEncryptionMethod, scHasEncryptionMethod := existing.Parameters["encryptionMethod"]
-			if !((sccType == "sharedfile" && scIsFSType && !scHasEncryptionMethod) ||
-				(sccType == "block" && !scIsFSType && sccEncryptionMethod == scEncryptionMethod)) {
+			if !((claimType == "sharedfile" && scIsFSType && !scHasEncryptionMethod) ||
+				(claimType == "block" && !scIsFSType && sccEncryptionMethod == scEncryptionMethod)) {
 				r.log.Error(fmt.Errorf("storageClaim is not compatible with existing StorageClass"),
 					"StorageClaim validation failed.")
 				r.storageClaim.Status.Phase = v1alpha1.StorageClaimFailed
@@ -274,13 +275,13 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 
 		// storageClaimStorageType is the storage type of the StorageClaim
 		var storageClaimStorageType providerclient.StorageType
-		switch r.storageClaim.Spec.Type {
+		switch claimType {
 		case "block":
 			storageClaimStorageType = providerclient.StorageTypeBlock
 		case "sharedfile":
-			storageClaimStorageType = providerclient.StorageTypeSharedfile
+			storageClaimStorageType = providerclient.StorageTypeSharedFile
 		default:
-			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", r.storageClaim.Spec.Type)
+			return reconcile.Result{}, fmt.Errorf("unsupported storage type: %s", claimType)
 		}
 
 		// Call the `FulfillStorageClaim` service on the provider server with StorageClaim as a request message.
