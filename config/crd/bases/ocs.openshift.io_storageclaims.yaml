@@ -55,10 +55,10 @@ spec:
               storageProfile:
                 type: string
               type:
-                enum:
-                - block
-                - sharedfile
                 type: string
+                x-kubernetes-validations:
+                - message: value should be either 'sharedfile' or 'block'
+                  rule: self.lowerAscii()=='block'||self.lowerAscii()=='sharedfile'
             required:
             - storageClient
             - type
