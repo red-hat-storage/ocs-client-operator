@@ -246,9 +246,8 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				Name: r.storageClaim.Name,
 			},
 		}
-		var claimType string
+		claimType := strings.ToLower(r.storageClaim.Spec.Type)
 		if err = r.get(existing); err == nil {
-			claimType = strings.ToLower(r.storageClaim.Spec.Type)
 			sccEncryptionMethod := r.storageClaim.Spec.EncryptionMethod
 			_, scIsFSType := existing.Parameters["fsName"]
 			scEncryptionMethod, scHasEncryptionMethod := existing.Parameters["encryptionMethod"]
