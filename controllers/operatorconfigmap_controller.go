@@ -255,7 +255,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 			// create the monitor configmap for the csi drivers but never updates it.
 			// This is because the monitor configurations are added to the configmap
-			// when user creates storageclassclaims.
+			// when user creates storageclaims.
 			monConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      templates.MonConfigMapName,
@@ -276,7 +276,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 			// create the encryption configmap for the csi driver but never updates it.
 			// This is because the encryption configuration are added to the configmap
-			// by the users before they create the encryption storageclassclaims.
+			// by the users before they create the encryption storageclaims.
 			encConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      templates.EncryptionConfigMapName,
