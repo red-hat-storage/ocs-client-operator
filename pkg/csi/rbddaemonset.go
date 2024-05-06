@@ -110,7 +110,6 @@ func GetRBDDaemonSet(namespace string) *appsv1.DaemonSet {
 								fmt.Sprintf("--stagingpath=%s/plugins/kubernetes.io/csi/", templates.DefaultKubeletDirPath),
 								"--csi-addons-endpoint=$(CSIADDONS_ENDPOINT)",
 							},
-							Resources: templates.RBDPluginResourceRequirements,
 							Env: []corev1.EnvVar{
 								{
 									Name: "POD_IP",
