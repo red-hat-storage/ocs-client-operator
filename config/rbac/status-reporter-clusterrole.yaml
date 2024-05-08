@@ -15,10 +15,21 @@ rules:
       - ""
     resources:
       - configmaps
+    resourceNames:
+      - rook-ceph-mon-endpoints
     verbs:
       - get
       - list
       - update
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - cluster-config-v1
+    verbs:
+      - get
+      - list
   - apiGroups:
       - config.openshift.io
     resources:
