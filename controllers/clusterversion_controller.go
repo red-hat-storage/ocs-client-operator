@@ -16,6 +16,7 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	// The embed package is required for the prometheus rule files
@@ -28,6 +29,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -54,7 +56,9 @@ const (
 	operatorConfigMapName = "ocs-client-operator-config"
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
-	clusterVersionName = "version"
+	clusterVersionName               = "version"
+	csiAddonsSubscriptionPackageName = "odf-csi-addons-operator"
+	subPackageIndexName              = "index:subscriptionPackage"
 )
 
 // ClusterVersionReconciler reconciles a ClusterVersion object
@@ -77,6 +81,16 @@ type ClusterVersionReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctx := context.Background()
+	if err := mgr.GetCache().IndexField(ctx, &opv1a1.Subscription{}, subPackageIndexName, func(o client.Object) []string {
+		if sub := o.(*opv1a1.Subscription); sub != nil {
+			return []string{sub.Spec.Package}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for subscription package name: %v", err)
+	}
+
 	clusterVersionPredicates := builder.WithPredicates(
 		predicate.GenerationChangedPredicate{},
 	)
@@ -87,6 +101,14 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				namespace := client.GetNamespace()
 				name := client.GetName()
 				return ((namespace == c.OperatorNamespace) && (name == operatorConfigMapName))
+			},
+		),
+	)
+
+	subscriptionPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				return client.GetNamespace() == c.OperatorNamespace
 			},
 		),
 	)
@@ -104,6 +126,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1.ClusterVersion{}, clusterVersionPredicates).
 		Watches(&corev1.ConfigMap{}, enqueueClusterVersionRequest, configMapPredicates).
+		Watches(&opv1a1.Subscription{}, &handler.EnqueueRequestForObject{}, subscriptionPredicates).
 		Complete(c)
 }
 
@@ -120,6 +143,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscription,verbs=watch;get;list;update
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -131,6 +155,11 @@ func (c *ClusterVersionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if err := c.ensureConsolePlugin(); err != nil {
 		c.log.Error(err, "unable to deploy client console")
+		return ctrl.Result{}, err
+	}
+
+	if err := c.reconcileCSIAddonsSubscription(); err != nil {
+		c.log.Error(err, "unable to reconcile csi addons subscription")
 		return ctrl.Result{}, err
 	}
 
@@ -435,4 +464,41 @@ func (c *ClusterVersionReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
+}
+
+func (c *ClusterVersionReconciler) reconcileCSIAddonsSubscription() error {
+	csiAddonsSubscription, err := c.getSubscriptionByPackageName(csiAddonsSubscriptionPackageName)
+	if err != nil {
+		return err
+
+	}
+
+	// The channel of csiAddons subscription here is stable-4.15 because of a direct merge to release-4.15. This code shouldn't be backported, and from release-4.16, the logic has changed.
+	csiAddonsSubscription.Spec.Channel = "stable-4.15"
+	if err := c.Update(c.ctx, csiAddonsSubscription); err != nil {
+		return fmt.Errorf("failed to update csi-addons subscription: %v", err)
+	}
+
+	return nil
+}
+
+func (c *ClusterVersionReconciler) getSubscriptionByPackageName(packageName string) (*opv1a1.Subscription, error) {
+	subscriptions := &opv1a1.SubscriptionList{}
+	if err := c.List(
+		c.ctx,
+		subscriptions,
+		client.MatchingFields{subPackageIndexName: packageName},
+		client.InNamespace(c.OperatorNamespace),
+		client.Limit(1),
+	); err != nil {
+		return nil, fmt.Errorf("failed to list subscriptions: %v", err)
+	}
+
+	if len(subscriptions.Items) == 0 {
+		return nil, fmt.Errorf("no subscription found for package %s", packageName)
+	} else if len(subscriptions.Items) > 1 {
+		return nil, fmt.Errorf("multiple subscriptions found for package %s", packageName)
+	}
+
+	return &subscriptions.Items[0], nil
 }
