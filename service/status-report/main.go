@@ -18,12 +18,11 @@ package main
 
 import (
 	"context"
-	"github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
@@ -42,8 +41,7 @@ import (
 
 const (
 	csvPrefix              = "ocs-client-operator"
-	clusterConfigNamespace = "kube-system"
-	clusterConfigName      = "cluster-config-v1"
+	clusterDNSResourceName = "cluster"
 )
 
 func main() {
@@ -156,28 +154,16 @@ func setClusterInformation(ctx context.Context, cl client.Client, status interfa
 	}
 	status.SetClusterID(string(clusterID))
 
-	clusterConfig := &corev1.ConfigMap{}
-	clusterConfig.Name = clusterConfigName
-	clusterConfig.Namespace = clusterConfigNamespace
-
-	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterConfig), clusterConfig); err != nil {
-		klog.Warningf("Failed to get clusterConfig %q/%q: %v", clusterConfig.Namespace, clusterConfig.Name, err)
+	clusterDNS := &configv1.DNS{}
+	clusterDNS.Name = clusterDNSResourceName
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterDNS), clusterDNS); err != nil {
+		klog.Warningf("Failed to get clusterDNS %q: %v", clusterDNS.Name, err)
 	}
 
-	clusterMetadataYAML := clusterConfig.Data["install-config"]
-	clusterMetadata := struct {
-		Metadata struct {
-			Name string `yaml:"name"`
-		} `yaml:"metadata"`
-	}{}
-	err := yaml.Unmarshal([]byte(clusterMetadataYAML), &clusterMetadata)
-	if err != nil {
-		klog.Warningf("Failed to unmarshal cluster metadata, %v", err)
+	if len(clusterDNS.Spec.BaseDomain) == 0 {
+		klog.Warningf("Cluster Base Domain is empty.")
 	}
-	if len(clusterMetadata.Metadata.Name) == 0 {
-		klog.Warningf("Cluster name is empty, %v", err)
-	}
-	status.SetClusterName(clusterMetadata.Metadata.Name)
+	status.SetClusterName(clusterDNS.Spec.BaseDomain)
 
 }
 
