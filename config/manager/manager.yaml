@@ -52,6 +52,8 @@ spec:
               fieldPath: metadata.name
         - name: STATUS_REPORTER_IMAGE
           value: STATUS_REPORTER_IMAGE_VALUE
+        - name: NOOBAA_OPERATOR_CHANNEL
+          value: 4.17-stable
         securityContext:
           allowPrivilegeEscalation: false
         livenessProbe:

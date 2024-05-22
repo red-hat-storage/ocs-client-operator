@@ -15,6 +15,7 @@ package controller
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"strconv"
@@ -63,6 +64,7 @@ const (
 	// openshift cluster.
 	clusterVersionName     = "version"
 	deployCSIKey           = "DEPLOY_CSI"
+	manageNoobaaSubKey     = "manageNoobaaSubscription"
 	subscriptionLabelKey   = "managed-by"
 	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
 
@@ -225,6 +227,14 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err := c.reconcileClientOperatorSubscription(); err != nil {
 			c.log.Error(err, "unable to reconcile client operator subscription")
 			return ctrl.Result{}, err
+		}
+
+		//only reconcile noobaa-operator for remote clusters
+		if c.getNoobaaSubManagementConfig() {
+			if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
+				c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
+				return ctrl.Result{}, err
+			}
 		}
 
 		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
@@ -613,6 +623,14 @@ func (c *OperatorConfigMapReconciler) getDeployCSIConfig() (bool, error) {
 	return deployCSI, nil
 }
 
+func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
+	manageNoobaaSubAsString := cmp.Or(
+		c.operatorConfigMap.Data[manageNoobaaSubKey],
+		strconv.FormatBool(true),
+	)
+	return strings.ToLower(manageNoobaaSubAsString) != strconv.FormatBool(false)
+}
+
 func (c *OperatorConfigMapReconciler) get(obj client.Object, opts ...client.GetOption) error {
 	return c.Get(c.ctx, client.ObjectKeyFromObject(obj), obj, opts...)
 }
@@ -690,6 +708,18 @@ func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() erro
 		if err := c.update(clientSubscription); err != nil {
 			return fmt.Errorf("failed to update subscription channel to %v: %v", c.subscriptionChannel, err)
 		}
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileNoobaaOperatorSubscription() error {
+	noobaaSubscription, err := c.getSubscriptionByPackageName("noobaa-operator")
+	if err != nil {
+		return err
+	}
+	noobaaSubscription.Spec.Channel = utils.GetNoobaaOperatorChannel()
+	if err := c.update(noobaaSubscription); err != nil {
+		return fmt.Errorf("failed to update subscription channel of 'noobaa-operator' to %v: %v", c.subscriptionChannel, err)
 	}
 	return nil
 }
