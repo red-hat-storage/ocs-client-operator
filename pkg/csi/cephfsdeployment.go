@@ -98,7 +98,6 @@ func GetCephFSDeployment(namespace string) *appsv1.Deployment {
 								"--controllerserver=true",
 								fmt.Sprintf("--drivername=%s", GetCephFSDriverName()),
 							},
-							Resources: templates.CephFSPluginResourceRequirements,
 							Env: []corev1.EnvVar{
 								{
 									Name: "POD_IP",
