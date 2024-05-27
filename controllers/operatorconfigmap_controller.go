@@ -67,6 +67,7 @@ const (
 	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
+	subPackageIndexName        = "index:subscriptionPackage"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -76,19 +77,30 @@ type OperatorConfigMapReconciler struct {
 	ConsolePort       int32
 	Scheme            *runtime.Scheme
 
-	log               logr.Logger
-	ctx               context.Context
-	operatorConfigMap *corev1.ConfigMap
-	consoleDeployment *appsv1.Deployment
-	cephFSDeployment  *appsv1.Deployment
-	cephFSDaemonSet   *appsv1.DaemonSet
-	rbdDeployment     *appsv1.Deployment
-	rbdDaemonSet      *appsv1.DaemonSet
-	scc               *secv1.SecurityContextConstraints
+	log                 logr.Logger
+	ctx                 context.Context
+	operatorConfigMap   *corev1.ConfigMap
+	consoleDeployment   *appsv1.Deployment
+	cephFSDeployment    *appsv1.Deployment
+	cephFSDaemonSet     *appsv1.DaemonSet
+	rbdDeployment       *appsv1.Deployment
+	rbdDaemonSet        *appsv1.DaemonSet
+	scc                 *secv1.SecurityContextConstraints
+	subscriptionChannel string
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctx := context.Background()
+	if err := mgr.GetCache().IndexField(ctx, &opv1a1.Subscription{}, subPackageIndexName, func(o client.Object) []string {
+		if sub := o.(*opv1a1.Subscription); sub != nil {
+			return []string{sub.Spec.Package}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for subscription package name: %v", err)
+	}
+
 	clusterVersionPredicates := builder.WithPredicates(
 		predicate.GenerationChangedPredicate{},
 	)
@@ -185,6 +197,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
+	var err error
+	if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(); err != nil {
+		return reconcile.Result{}, err
+	}
+
 	if c.operatorConfigMap.GetDeletionTimestamp().IsZero() {
 
 		//ensure finalizer
@@ -205,13 +222,13 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		if err := c.reconcileClientOperatorSubscriptionLabel(); err != nil {
-			c.log.Error(err, "unable to label ocs client operator subscription")
+		if err := c.reconcileClientOperatorSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile client operator subscription")
 			return ctrl.Result{}, err
 		}
 
-		if err := c.reconcileSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile subscription")
+		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile CSI Addons subscription")
 			return ctrl.Result{}, err
 		}
 
@@ -653,85 +670,44 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscriptionLabel() error {
-	subscriptionList := &opv1a1.SubscriptionList{}
-	err := c.List(c.ctx, subscriptionList, client.InNamespace(c.OperatorNamespace))
+func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() error {
+
+	clientSubscription, err := c.getSubscriptionByPackageName("ocs-client-operator")
 	if err != nil {
-		return fmt.Errorf("failed to list subscriptions")
+		return err
 	}
 
-	sub := utils.Find(subscriptionList.Items, func(sub *opv1a1.Subscription) bool {
-		return sub.Spec.Package == "ocs-client-operator"
-	})
-
-	if sub == nil {
-		return fmt.Errorf("failed to find subscription with ocs-client-operator package")
+	updateRequired := utils.AddLabel(clientSubscription, subscriptionLabelKey, subscriptionLabelValue)
+	if c.subscriptionChannel != "" && c.subscriptionChannel != clientSubscription.Spec.Channel {
+		clientSubscription.Spec.Channel = c.subscriptionChannel
+		// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
+		// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
+		// without any side effects for already running workloads. However, this will be a silent failure and need to be fixed via above TODO issue.
+		updateRequired = true
 	}
 
-	if utils.AddLabel(sub, subscriptionLabelKey, subscriptionLabelValue) {
-		if err := c.Update(c.ctx, sub); err != nil {
-			return err
+	if updateRequired {
+		if err := c.update(clientSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel to %v: %v", c.subscriptionChannel, err)
 		}
 	}
-
-	c.log.Info("successfully labelled ocs-client-operator subscription")
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) reconcileSubscription() error {
-
-	storageClients := &v1alpha1.StorageClientList{}
-	if err := c.list(storageClients); err != nil {
-		return fmt.Errorf("failed to list storageclients: %v", err)
+func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() error {
+	addonsSubscription, err := c.getSubscriptionByPackageName("odf-csi-addons-operator")
+	if kerrors.IsNotFound(err) {
+		addonsSubscription, err = c.getSubscriptionByPackageName("csi-addons")
 	}
-
-	var desiredChannel string
-	for idx := range storageClients.Items {
-		// empty if annotation doesn't exist or else gets desired channel
-		channel := storageClients.
-			Items[idx].
-			GetAnnotations()[utils.DesiredSubscriptionChannelAnnotationKey]
-		// skip clients with no/empty desired channel annotation
-		if channel != "" {
-			// check if we already established a desired channel
-			if desiredChannel == "" {
-				desiredChannel = channel
-			}
-			// check for agreement between clients
-			if channel != desiredChannel {
-				desiredChannel = ""
-				// two clients didn't agree for a same channel and no need to continue further
-				break
-			}
+	if err != nil {
+		return err
+	}
+	if c.subscriptionChannel != "" && c.subscriptionChannel != addonsSubscription.Spec.Channel {
+		addonsSubscription.Spec.Channel = c.subscriptionChannel
+		if err := c.update(addonsSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel of 'csi-addons' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
-
-	if desiredChannel != "" {
-		subscriptions := &opv1a1.SubscriptionList{}
-		err := c.list(
-			subscriptions,
-			client.InNamespace(c.OperatorNamespace),
-			client.MatchingLabels{subscriptionLabelKey: subscriptionLabelValue},
-			client.Limit(1),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to list subscription for ocs-client-operator using labels: %v", err)
-		}
-
-		if len(subscriptions.Items) == 1 {
-			clientSubscription := &subscriptions.Items[0]
-			if desiredChannel != clientSubscription.Spec.Channel {
-				clientSubscription.Spec.Channel = desiredChannel
-				// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
-				// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
-				// without any side effects for already running workloads. However, this will be a silent failure and need to be fixed via above TODO issue.
-				if err := c.update(clientSubscription); err != nil {
-					return fmt.Errorf("failed to update subscription channel to %v: %v", desiredChannel, err)
-				}
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -767,4 +743,54 @@ func (c *OperatorConfigMapReconciler) delete(obj client.Object, opts ...client.D
 		return err
 	}
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) getSubscriptionByPackageName(pkgName string) (*opv1a1.Subscription, error) {
+	subList := &opv1a1.SubscriptionList{}
+	if err := c.list(
+		subList,
+		client.MatchingFields{subPackageIndexName: pkgName},
+		client.InNamespace(c.OperatorNamespace),
+		client.Limit(1),
+	); err != nil {
+		return nil, fmt.Errorf("failed to list subscriptions: %v", err)
+	}
+
+	if len(subList.Items) == 0 {
+		return nil, kerrors.NewNotFound(opv1a1.Resource("subscriptions"), pkgName)
+	} else if len(subList.Items) > 1 {
+		return nil, fmt.Errorf("more than one subscription found for %v", pkgName)
+	}
+
+	return &subList.Items[0], nil
+}
+
+func (c *OperatorConfigMapReconciler) getDesiredSubscriptionChannel() (string, error) {
+
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients); err != nil {
+		return "", fmt.Errorf("failed to list storageclients: %v", err)
+	}
+
+	var desiredChannel string
+	for idx := range storageClients.Items {
+		// empty if annotation doesn't exist or else gets desired channel
+		channel := storageClients.
+			Items[idx].
+			GetAnnotations()[utils.DesiredSubscriptionChannelAnnotationKey]
+		// skip clients with no/empty desired channel annotation
+		if channel != "" {
+			// check if we already established a desired channel
+			if desiredChannel == "" {
+				desiredChannel = channel
+			}
+			// check for agreement between clients
+			if channel != desiredChannel {
+				desiredChannel = ""
+				// two clients didn't agree for a same channel and no need to continue further
+				break
+			}
+		}
+	}
+	return desiredChannel, nil
 }
