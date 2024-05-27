@@ -22,19 +22,10 @@ rules:
       - list
       - update
   - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    resourceNames:
-      - cluster-config-v1
-    verbs:
-      - get
-      - list
-  - apiGroups:
       - config.openshift.io
     resources:
       - clusterversions
+      - dns
     verbs:
       - get
       - list
-      - watch
