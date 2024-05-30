@@ -16,7 +16,7 @@ rules:
     resources:
       - configmaps
     resourceNames:
-      - rook-ceph-mon-endpoints
+      - ceph-csi-configs
     verbs:
       - get
       - list
@@ -25,7 +25,7 @@ rules:
       - config.openshift.io
     resources:
       - clusterversions
-      - dns
+      - dnses
     verbs:
       - get
       - list
