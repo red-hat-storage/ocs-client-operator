@@ -351,6 +351,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		if c.AvailableCrds[volumeGroupSnapshotClassCrd] {
+			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
+		}
+
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
