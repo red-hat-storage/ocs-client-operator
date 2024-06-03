@@ -83,6 +83,7 @@ type OperatorConfigMapReconciler struct {
 	OperatorNamespace string
 	ConsolePort       int32
 	Scheme            *runtime.Scheme
+	AvailCrds         map[string]bool
 
 	log                 logr.Logger
 	ctx                 context.Context
@@ -594,7 +595,7 @@ func (c *OperatorConfigMapReconciler) reconcileCSI() error {
 		if err := c.own(c.rbdDeployment); err != nil {
 			return err
 		}
-		csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
+		csi.SetRBDDeploymentDesiredState(c.rbdDeployment, c.AvailCrds)
 		return nil
 	})
 	if err != nil {
