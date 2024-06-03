@@ -176,6 +176,22 @@ spec:
           - list
           - watch
         - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotclasses
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotcontents
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
           - monitoring.coreos.com
           resources:
           - prometheusrules
@@ -446,6 +462,31 @@ spec:
           verbs:
           - update
           - patch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotclasses
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotcontents
+          verbs:
+          - get
+          - list
+          - watch
+          - update
+          - patch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotcontents/status
+          verbs:
+          - update
+          - patch
         serviceAccountName: ocs-client-operator-csi-cephfs-provisioner-sa
       - rules:
         - apiGroups:
@@ -608,6 +649,31 @@ spec:
           - snapshot.storage.k8s.io
           resources:
           - volumesnapshotcontents/status
+          verbs:
+          - update
+          - patch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotclasses
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotcontents
+          verbs:
+          - get
+          - list
+          - watch
+          - update
+          - patch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotcontents/status
           verbs:
           - update
           - patch

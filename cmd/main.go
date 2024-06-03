@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -46,6 +47,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	apiclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -164,11 +166,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.StorageClaimReconciler{
+	// apiclient.New() returns a client without cache.
+	// cache is not initialized before mgr.Start()
+	apiClient, err := apiclient.New(mgr.GetConfig(), apiclient.Options{
+		Scheme: mgr.GetScheme(),
+	})
+	if err != nil {
+		setupLog.Error(err, "Unable to get Client")
+		os.Exit(1)
+	}
+
+	crds := []string{"VolumeGroupSnapshotClass"}
+	availCrds, err := utils.MapCRDAvailability(context.Background(), apiClient, crds...)
+	if err != nil {
+		setupLog.Error(err, "Unable to get CRD")
+		os.Exit(1)
+	}
+	storageClaimReconciler := &controller.StorageClaimReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
-	}).SetupWithManager(mgr); err != nil {
+		AvailableCrds:     availCrds,
+	}
+	if err = storageClaimReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClaim")
 		os.Exit(1)
 	}
@@ -187,6 +207,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
 		ConsolePort:       int32(consolePort),
+		AvailCrds:         availCrds,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
 		os.Exit(1)
