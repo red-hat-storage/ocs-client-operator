@@ -20,20 +20,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
+
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	"slices"
-	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 
 	replicationv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -52,8 +56,10 @@ const (
 	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
 	keyRotationAnnotation  = "keyrotation.csiaddons.openshift.io/schedule"
 
-	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
+	pvClusterIDIndexName            = "index:persistentVolumeClusterID"
+	vscClusterIDIndexName           = "index:volumeSnapshotContentCSIDriver"
+	vgscClusterIDIndexName          = "index:volumeGroupSnapshotContentCSIDriver"
+	VolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
 )
 
 // StorageClaimReconciler reconciles a StorageClaim object
@@ -62,6 +68,7 @@ type StorageClaimReconciler struct {
 	cache.Cache
 	Scheme            *runtime.Scheme
 	OperatorNamespace string
+	AvailableCrds     map[string]bool
 
 	log              logr.Logger
 	ctx              context.Context
@@ -104,13 +111,49 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
 
+	if r.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
+		if err := mgr.GetCache().IndexField(ctx, &groupsnapapi.VolumeGroupSnapshotContent{}, vgscClusterIDIndexName, func(o client.Object) []string {
+			vgsc := o.(*groupsnapapi.VolumeGroupSnapshotContent)
+			if vgsc != nil &&
+				slices.Contains(csiDrivers, vgsc.Spec.Driver) &&
+				vgsc.Status != nil &&
+				vgsc.Status.VolumeGroupSnapshotHandle != nil {
+				parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
+				if len(parts) == 9 {
+					// second entry in the volumeID is clusterID which is unique across the cluster
+					return []string{parts[2]}
+				}
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("unable to set up FieldIndexer for VGSC csi driver name: %v", err)
+		}
+	}
+
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{}).
 		Owns(&replicationv1alpha1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate))
+		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
+		Watches(
+			&extv1.CustomResourceDefinition{},
+			&handler.EnqueueRequestForObject{},
+			builder.WithPredicates(
+				utils.NamePredicate(VolumeGroupSnapshotClassCrdName),
+				utils.EventTypePredicate(
+					!r.AvailableCrds[VolumeGroupSnapshotClassCrdName],
+					false,
+					true,
+					false,
+				),
+			),
+			builder.OnlyMetadata,
+		)
+	if r.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
+		bldr = bldr.Owns(&groupsnapapi.VolumeGroupSnapshotClass{})
+	}
 
 	return bldr.Complete(r)
 }
@@ -121,8 +164,10 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=create;delete;get;list;watch
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete
 
@@ -140,6 +185,15 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.log = ctrllog.FromContext(ctx, "StorageClaim", req)
 	r.ctx = ctrllog.IntoContext(ctx, r.log)
 	r.log.Info("Reconciling StorageClaim.")
+
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = VolumeGroupSnapshotClassCrdName
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+		r.log.Error(err, "Failed to get CRD", "CRD", crd.Name)
+		return reconcile.Result{}, err
+	}
+	utils.AssertEqual(r.AvailableCrds[crd.Name], crd.UID != "", utils.ExitCodeThatShouldRestartTheProcess)
 
 	// Fetch the StorageClaim instance
 	r.storageClaim = &v1alpha1.StorageClaim{}
@@ -403,6 +457,35 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				if err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
 				}
+			case "VolumeGroupSnapshotClass":
+				// check for CRD availability
+				if r.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
+					volumeGroupSnapshotClass := &groupsnapapi.VolumeGroupSnapshotClass{}
+					volumeGroupSnapshotClass.Name = resource.Name
+					err = utils.CreateOrReplace(r.ctx, r.Client, volumeGroupSnapshotClass, func() error {
+						if err := r.own(volumeGroupSnapshotClass); err != nil {
+							return fmt.Errorf("failed to own VolumeGroupSnapshotClass resource: %v", err)
+						}
+
+						err = json.Unmarshal(resource.Data, &volumeGroupSnapshotClass.Parameters)
+						if err != nil {
+							return fmt.Errorf("failed to unmarshal VolumeGroupSnapshotClass configuration response: %v", err)
+						}
+						volumeGroupSnapshotClass.Parameters["csi.storage.k8s.io/group-snapshotter-secret-namespace"] = r.OperatorNamespace
+						volumeGroupSnapshotClass.DeletionPolicy = snapapi.VolumeSnapshotContentDelete
+						volumeGroupSnapshotClass.Driver = templates.CephFsDriverName
+						if strings.Contains(strings.ToLower(volumeGroupSnapshotClass.Name), "rbd") {
+							volumeGroupSnapshotClass.Driver = templates.RBDDriverName
+						}
+						utils.AddLabels(volumeGroupSnapshotClass, resource.Labels)
+						utils.AddAnnotations(volumeGroupSnapshotClass, resource.Annotations)
+						utils.AddAnnotation(volumeGroupSnapshotClass, storageClaimAnnotation, r.storageClaim.Name)
+						return nil
+					})
+					if err != nil {
+						return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeGroupSnapshotClass: %s", err)
+					}
+				}
 			case "VolumeReplicationClass":
 				vrc := &replicationv1alpha1.VolumeReplicationClass{}
 				vrc.Name = resource.Name
@@ -465,6 +548,11 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to verify volumesnapshotcontents dependent on storageclaim %q: %v", r.storageClaim.Name, err)
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclaim %s", r.storageClaim.Name)
+		}
+		if exist, err := r.hasVolumeGroupSnapshotContents(); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclaim %q: %v", r.storageClaim.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclaim %s", r.storageClaim.Name)
 		}
 
 		// Call `RevokeStorageClaim` service on the provider server with StorageClaim as a request message.
@@ -589,6 +677,20 @@ func (r *StorageClaimReconciler) hasVolumeSnapshotContents() (bool, error) {
 
 	if len(vscList.Items) != 0 {
 		r.log.Info(fmt.Sprintf("VolumeSnapshotContent referring storageclaim %q exists", r.storageClaim.Name))
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (r *StorageClaimReconciler) hasVolumeGroupSnapshotContents() (bool, error) {
+	vscList := &groupsnapapi.VolumeGroupSnapshotContentList{}
+	if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: r.storageClaimHash}); err != nil {
+		return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
+	}
+
+	if len(vscList.Items) != 0 {
+		r.log.Info(fmt.Sprintf("VolumeGroupSnapshotContent referring storageclaim %q exists", r.storageClaim.Name))
 		return true, nil
 	}
 
