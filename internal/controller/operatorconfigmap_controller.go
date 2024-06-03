@@ -83,6 +83,7 @@ type OperatorConfigMapReconciler struct {
 	OperatorNamespace string
 	ConsolePort       int32
 	Scheme            *runtime.Scheme
+	AvailCrds         map[string]bool
 
 	log                 logr.Logger
 	ctx                 context.Context
@@ -362,6 +363,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		if c.AvailCrds[volumeGroupSnapshotClassCrd] {
+			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
+		}
+
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
