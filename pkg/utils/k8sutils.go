@@ -17,13 +17,18 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"maps"
 	"os"
+	"reflect"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -112,4 +117,52 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 func GetMD5Hash(text string) string {
 	hash := md5.Sum([]byte(text))
 	return hex.EncodeToString(hash[:])
+}
+
+func CreateOrReplace(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) error {
+	key := client.ObjectKeyFromObject(obj)
+	if err := c.Get(ctx, key, obj); err != nil {
+		if !errors.IsNotFound(err) {
+			return err
+		}
+		if err := mutate(f, key, obj); err != nil {
+			return err
+		}
+		if err := c.Create(ctx, obj); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	existing := obj.DeepCopyObject()
+	if err := mutate(f, key, obj); err != nil {
+		return err
+	}
+
+	if reflect.DeepEqual(existing, obj) {
+		return nil
+	}
+
+	if err := c.Delete(ctx, obj); err != nil {
+		return err
+	}
+
+	// k8s doesn't allow us to create objects when resourceVersion is set, as we are DeepCopying the
+	// object, the resource version also gets copied, hence we need to set it to empty before creating it
+	obj.SetResourceVersion("")
+	if err := c.Create(ctx, obj); err != nil {
+		return err
+	}
+	return nil
+}
+
+// mutate wraps a MutateFn and applies validation to its result.
+func mutate(f controllerutil.MutateFn, key client.ObjectKey, obj client.Object) error {
+	if err := f(); err != nil {
+		return err
+	}
+	if newKey := client.ObjectKeyFromObject(obj); key != newKey {
+		return fmt.Errorf("MutateFn cannot mutate object name and/or object namespace")
+	}
+	return nil
 }

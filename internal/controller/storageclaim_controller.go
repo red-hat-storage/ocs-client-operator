@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -31,7 +30,8 @@ import (
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
-	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+
+	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	corev1 "k8s.io/api/core/v1"
@@ -40,7 +40,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -57,9 +56,8 @@ const (
 	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
 	keyRotationAnnotation  = "keyrotation.csiaddons.openshift.io/schedule"
 
-	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
-
+	pvClusterIDIndexName   = "index:persistentVolumeClusterID"
+	vscClusterIDIndexName  = "index:volumeSnapshotContentCSIDriver"
 	drClusterConfigCRDName = "drclusterconfigs.ramendr.openshift.io"
 )
 
@@ -117,6 +115,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{}).
+		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(
 			&extv1.CustomResourceDefinition{},
 			&handler.EnqueueRequestForObject{},
@@ -125,8 +124,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				utils.CrdCreateAndDeletePredicate(&r.log, drClusterConfigCRDName, r.AvailableCrds[drClusterConfigCRDName]),
 			),
 			builder.OnlyMetadata,
-		).
-		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate))
+		)
 
 	if r.AvailableCrds[drClusterConfigCRDName] {
 		bldr = bldr.Owns(&ramenv1alpha1.DRClusterConfig{}, builder.WithPredicates(generationChangePredicate))
@@ -387,12 +385,16 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				data["clusterID"] = r.storageClaimHash
 
 				if resource.Name == "cephfs" {
-					storageClass = r.getCephFSStorageClass(data)
+					storageClass = r.getCephFSStorageClass()
 				} else if resource.Name == "ceph-rbd" {
-					storageClass = r.getCephRBDStorageClass(data)
+					storageClass = r.getCephRBDStorageClass()
 				}
-				utils.AddAnnotation(storageClass, storageClaimAnnotation, r.storageClaim.Name)
-				err = r.createOrReplaceStorageClass(storageClass)
+				err = utils.CreateOrReplace(r.ctx, r.Client, storageClass, func() error {
+					utils.AddLabels(storageClass, resource.Labels)
+					utils.AddAnnotation(storageClass, storageClaimAnnotation, r.storageClaim.Name)
+					storageClass.Parameters = data
+					return nil
+				})
 				if err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update StorageClass: %s", err)
 				}
@@ -409,12 +411,17 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				// hash as the clusterID
 				data["clusterID"] = r.storageClaimHash
 				if resource.Name == "cephfs" {
-					volumeSnapshotClass = r.getCephFSVolumeSnapshotClass(data)
+					volumeSnapshotClass = r.getCephFSVolumeSnapshotClass()
 				} else if resource.Name == "ceph-rbd" {
-					volumeSnapshotClass = r.getCephRBDVolumeSnapshotClass(data)
+					volumeSnapshotClass = r.getCephRBDVolumeSnapshotClass()
 				}
-				utils.AddAnnotation(volumeSnapshotClass, storageClaimAnnotation, r.storageClaim.Name)
-				if err := r.createOrReplaceVolumeSnapshotClass(volumeSnapshotClass); err != nil {
+				err = utils.CreateOrReplace(r.ctx, r.Client, volumeSnapshotClass, func() error {
+					utils.AddLabels(volumeSnapshotClass, resource.Labels)
+					utils.AddAnnotation(volumeSnapshotClass, storageClaimAnnotation, r.storageClaim.Name)
+					volumeSnapshotClass.Parameters = data
+					return nil
+				})
+				if err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
 				}
 			case "ClientProfile":
@@ -482,7 +489,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 	return reconcile.Result{}, nil
 }
 
-func (r *StorageClaimReconciler) getCephFSStorageClass(data map[string]string) *storagev1.StorageClass {
+func (r *StorageClaimReconciler) getCephFSStorageClass() *storagev1.StorageClass {
 	pvReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	allowVolumeExpansion := true
 	storageClass := &storagev1.StorageClass{
@@ -495,12 +502,11 @@ func (r *StorageClaimReconciler) getCephFSStorageClass(data map[string]string) *
 		ReclaimPolicy:        &pvReclaimPolicy,
 		AllowVolumeExpansion: &allowVolumeExpansion,
 		Provisioner:          templates.CephFsDriverName,
-		Parameters:           data,
 	}
 	return storageClass
 }
 
-func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) *storagev1.StorageClass {
+func (r *StorageClaimReconciler) getCephRBDStorageClass() *storagev1.StorageClass {
 	pvReclaimPolicy := corev1.PersistentVolumeReclaimDelete
 	allowVolumeExpansion := true
 	storageClass := &storagev1.StorageClass{
@@ -514,7 +520,6 @@ func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) 
 		ReclaimPolicy:        &pvReclaimPolicy,
 		AllowVolumeExpansion: &allowVolumeExpansion,
 		Provisioner:          templates.RBDDriverName,
-		Parameters:           data,
 	}
 
 	if r.storageClaim.Spec.EncryptionMethod != "" {
@@ -523,66 +528,26 @@ func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) 
 	return storageClass
 }
 
-func (r *StorageClaimReconciler) getCephFSVolumeSnapshotClass(data map[string]string) *snapapi.VolumeSnapshotClass {
+func (r *StorageClaimReconciler) getCephFSVolumeSnapshotClass() *snapapi.VolumeSnapshotClass {
 	volumesnapshotclass := &snapapi.VolumeSnapshotClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.storageClaim.Name,
 		},
 		Driver:         templates.CephFsDriverName,
 		DeletionPolicy: snapapi.VolumeSnapshotContentDelete,
-		Parameters:     data,
 	}
 	return volumesnapshotclass
 }
 
-func (r *StorageClaimReconciler) getCephRBDVolumeSnapshotClass(data map[string]string) *snapapi.VolumeSnapshotClass {
+func (r *StorageClaimReconciler) getCephRBDVolumeSnapshotClass() *snapapi.VolumeSnapshotClass {
 	volumesnapshotclass := &snapapi.VolumeSnapshotClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.storageClaim.Name,
 		},
 		Driver:         templates.RBDDriverName,
 		DeletionPolicy: snapapi.VolumeSnapshotContentDelete,
-		Parameters:     data,
 	}
 	return volumesnapshotclass
-}
-
-func (r *StorageClaimReconciler) createOrReplaceStorageClass(storageClass *storagev1.StorageClass) error {
-	existing := &storagev1.StorageClass{}
-	existing.Name = r.storageClaim.Name
-
-	if err := r.own(storageClass); err != nil {
-		return fmt.Errorf("failed to own storageclass: %v", err)
-	}
-
-	if err := r.get(existing); err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to get StorageClass: %v", err)
-	}
-
-	// If present then compare the existing StorageClass with the received StorageClass, and only proceed if they differ.
-	if reflect.DeepEqual(existing.Parameters, storageClass.Parameters) {
-		return nil
-	}
-
-	// StorageClass already exists, but parameters have changed. Delete the existing StorageClass and create a new one.
-	if existing.UID != "" {
-
-		// Since we have to update the existing StorageClass, so we will delete the existing StorageClass and create a new one.
-		r.log.Info("StorageClass needs to be updated, deleting it.", "StorageClass", klog.KRef(storageClass.Namespace, existing.Name))
-
-		// Delete the StorageClass.
-		err := r.delete(existing)
-		if err != nil {
-			r.log.Error(err, "Failed to delete StorageClass.", "StorageClass", klog.KRef(storageClass.Namespace, existing.Name))
-			return fmt.Errorf("failed to delete StorageClass: %v", err)
-		}
-	}
-	r.log.Info("Creating StorageClass.", "StorageClass", klog.KRef(storageClass.Namespace, existing.Name))
-	err := r.Client.Create(r.ctx, storageClass)
-	if err != nil {
-		return fmt.Errorf("failed to create StorageClass: %v", err)
-	}
-	return nil
 }
 
 func (r *StorageClaimReconciler) get(obj client.Object) error {
@@ -598,51 +563,8 @@ func (r *StorageClaimReconciler) list(obj client.ObjectList, listOptions ...clie
 	return r.Client.List(r.ctx, obj, listOptions...)
 }
 
-func (r *StorageClaimReconciler) delete(obj client.Object) error {
-	if err := r.Client.Delete(r.ctx, obj); err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-	return nil
-}
-
 func (r *StorageClaimReconciler) own(resource metav1.Object) error {
 	return controllerutil.SetControllerReference(r.storageClaim, resource, r.Scheme)
-}
-
-func (r *StorageClaimReconciler) createOrReplaceVolumeSnapshotClass(volumeSnapshotClass *snapapi.VolumeSnapshotClass) error {
-	existing := &snapapi.VolumeSnapshotClass{}
-	existing.Name = r.storageClaim.Name
-
-	if err := r.own(volumeSnapshotClass); err != nil {
-		return fmt.Errorf("failed to own volumesnapshotclass: %v", err)
-	}
-
-	if err := r.get(existing); err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to get VolumeSnapshotClass: %v", err)
-	}
-
-	// If present then compare the existing VolumeSnapshotClass parameters with
-	// the received VolumeSnapshotClass parameters, and only proceed if they differ.
-	if reflect.DeepEqual(existing.Parameters, volumeSnapshotClass.Parameters) {
-		return nil
-	}
-
-	// VolumeSnapshotClass already exists, but parameters have changed. Delete the existing VolumeSnapshotClass and create a new one.
-	if existing.UID != "" {
-		// Since we have to update the existing VolumeSnapshotClass, so we will delete the existing VolumeSnapshotClass and create a new one.
-		r.log.Info("VolumeSnapshotClass needs to be updated, deleting it.", "Name", existing.Name)
-
-		// Delete the VolumeSnapshotClass.
-		if err := r.delete(existing); err != nil {
-			r.log.Error(err, "Failed to delete VolumeSnapshotClass.", "Name", existing.Name)
-			return fmt.Errorf("failed to delete VolumeSnapshotClass: %v", err)
-		}
-	}
-	r.log.Info("Creating VolumeSnapshotClass.", "Name", existing.Name)
-	if err := r.Client.Create(r.ctx, volumeSnapshotClass); err != nil {
-		return fmt.Errorf("failed to create VolumeSnapshotClass: %v", err)
-	}
-	return nil
 }
 
 func (r *StorageClaimReconciler) hasPersistentVolumes() (bool, error) {
