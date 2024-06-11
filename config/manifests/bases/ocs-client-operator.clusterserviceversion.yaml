@@ -11,6 +11,7 @@ metadata:
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
     operatorframework.io/suggested-namespace: openshift-storage
+    operators.operatorframework.io/internal-objects: '["storageclaims.ocs.openshift.io"]'
     operators.operatorframework.io/operator-type: standalone
     repository: https://github.com/red-hat-storage/ocs-client-operator
     support: Red Hat
