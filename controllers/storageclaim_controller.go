@@ -322,6 +322,24 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to extract monitor data: %v", err)
 				}
 				csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
+			} else if eResource.Kind == "ConfigMap" && eResource.Name == csiSidecarConfigMapName {
+				csiSideCarConfig := &corev1.ConfigMap{}
+				csiSideCarConfig.Name = eResource.Name
+				csiSideCarConfig.Namespace = r.OperatorNamespace
+
+				data := map[string]string{}
+				err = json.Unmarshal(eResource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal csi-sidecar-config configuration response: %v", err)
+				}
+
+				_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, csiSideCarConfig, func() error {
+					csiSideCarConfig.Data = data
+					return nil
+				})
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to create or update configMap %v: %s", csiSideCarConfig, err)
+				}
 			}
 		}
 		// Go over the received objects and operate on them accordingly.
