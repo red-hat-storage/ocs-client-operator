@@ -33,8 +33,8 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	"github.com/go-logr/logr"
-	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumegroupsnapshot/v1alpha1"
-	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1alpha1"
+	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -74,7 +74,7 @@ type StorageClaimReconciler struct {
 	storageClient    *v1alpha1.StorageClient
 	storageClaim     *v1alpha1.StorageClaim
 	storageClaimHash string
-	AvailableCRDs    map[string]bool
+	availableCRDs    map[string]bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -111,13 +111,13 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
 
-	r.AvailableCRDs = r.mapCRDAvailability(volumeGroupSnapshotClassCRD)
+	r.availableCRDs = r.mapCRDAvailability(volumeGroupSnapshotClassCRD)
 
 	storageClaimController := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{})
-	if r.AvailableCRDs[volumeGroupSnapshotClassCRD] {
+	if r.availableCRDs[volumeGroupSnapshotClassCRD] {
 		storageClaimController = storageClaimController.Owns(&groupsnapapi.VolumeGroupSnapshotClass{})
 	}
 	return storageClaimController.Complete(r)
@@ -219,7 +219,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *StorageClaimReconciler) mapCRDAvailability(crdNames ...string) map[string]bool {
-	CRDExist := map[string]bool{}
+	crdExist := map[string]bool{}
 	for _, crdName := range crdNames {
 		crd := &apiextensions.CustomResourceDefinition{}
 		crd.Name = crdName
@@ -227,9 +227,9 @@ func (r *StorageClaimReconciler) mapCRDAvailability(crdNames ...string) map[stri
 			r.log.Error(err, fmt.Sprintf("Error getting CRD  for %s", crdName))
 			os.Exit(1)
 		}
-		CRDExist[crdName] = crd.UID != ""
+		crdExist[crdName] = crd.UID != ""
 	}
-	return CRDExist
+	return crdExist
 }
 
 func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
@@ -435,7 +435,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				}
 			case "VolumeGroupSnapshotClass":
 				// check for CRD availability
-				if r.AvailableCRDs["VolumeGroupSnapshotClass"] {
+				if r.availableCRDs["VolumeGroupSnapshotClass"] {
 					var volumeGroupSnapshotClass *groupsnapapi.VolumeGroupSnapshotClass
 					data["csi.storage.k8s.io/group-snapshotter-secret-namespace"] = r.OperatorNamespace
 					// generate a new clusterID for cephfs subvolumegroup, as
@@ -546,9 +546,10 @@ func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) 
 func (r *StorageClaimReconciler) getCephDriverVolumeSnapshotClass(driverType string,
 	data map[string]string) *snapapi.VolumeSnapshotClass {
 	var driverName string
-	if driverType == "cephfs" {
+	switch driverType {
+	case "cephfs":
 		driverName = csi.GetCephFSDriverName()
-	} else {
+	case "rbd":
 		driverName = csi.GetRBDDriverName()
 	}
 	volumesnapshotclass := &snapapi.VolumeSnapshotClass{

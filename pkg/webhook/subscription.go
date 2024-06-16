@@ -24,7 +24,7 @@ func (s *SubscriptionAdmission) Handle(ctx context.Context, req admission.Reques
 
 	// review should be for a subscription
 	subscription := &opv1a1.Subscription{}
-	if err := s.Decoder.Decode(req, subscription); err != nil {
+	if err := (*s.Decoder).Decode(req, subscription); err != nil {
 		s.Log.Error(err, "failed to decode admission review as subscription")
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("only subscriptions admission reviews are supported: %v", err))
 	}

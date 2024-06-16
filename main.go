@@ -28,7 +28,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
 	secv1 "github.com/openshift/api/security/v1"
@@ -144,11 +144,12 @@ func main() {
 	setupLog.Info("setting up webhook server")
 	hookServer := mgr.GetWebhookServer()
 
+	decoder := admission.NewDecoder(mgr.GetScheme())
 	setupLog.Info("registering Subscription Channel validating webhook endpoint")
 	hookServer.Register("/validate-subscription", &webhook.Admission{
 		Handler: &admwebhook.SubscriptionAdmission{
 			Client:  mgr.GetClient(),
-			Decoder: admission.NewDecoder(mgr.GetScheme()),
+			Decoder: &decoder,
 			Log:     mgr.GetLogger().WithName("webhook.subscription"),
 		}},
 	)
