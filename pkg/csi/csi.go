@@ -39,17 +39,17 @@ type containerImages struct {
 	CSIADDONSImageURL       string `yaml:"csiaddonsImageURL"`
 }
 
-type SidecarImages struct {
+type sidecarImages struct {
 	Version         string          `yaml:"version"`
 	ContainerImages containerImages `yaml:"containerImages"`
 }
 
-var sidecarImages *SidecarImages
+var SidecarImages *sidecarImages
 
 func InitializeSidecars(log logr.Logger, ver string) error {
 	// ready yaml files and yaml unmarshal to SidecarImages
 	// and set to csiSidecarImages
-	si := []SidecarImages{}
+	si := []sidecarImages{}
 	yamlFile, err := os.ReadFile(sidecarsConfigPath)
 	if err != nil {
 		return err
@@ -70,7 +70,7 @@ func InitializeSidecars(log logr.Logger, ver string) error {
 		if siVersion.Major() == pltVersion.Major() && siVersion.Minor() <= pltVersion.Minor() {
 			// filter sidecar closest to platform version
 			if int64(siVersion.Minor()) > closestMinor {
-				sidecarImages = &si[idx]
+				SidecarImages = &si[idx]
 				closestMinor = int64(siVersion.Minor())
 			}
 			if closestMinor == int64(pltVersion.Minor()) { // exact match and early exit
@@ -80,12 +80,12 @@ func InitializeSidecars(log logr.Logger, ver string) error {
 			log.Info("skipping sidecar images: version greater than platform version")
 		}
 	}
-	if sidecarImages == nil {
+	if SidecarImages == nil {
 		// happens only if all sidecars image versions are greater than platform
 		return fmt.Errorf("failed to find container details suitable for %v platform version", pltVersion)
 	}
 
-	log.Info("selected sidecar images", "version", sidecarImages.Version)
+	log.Info("selected sidecar images", "version", SidecarImages.Version)
 
 	return nil
 }

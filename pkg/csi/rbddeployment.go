@@ -234,31 +234,31 @@ func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment) {
 		switch c.Name {
 		case templates.ProvisionerContainer.Name:
 			templates.ProvisionerContainer.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.ProvisionerImageURL
+			c.Image = SidecarImages.ContainerImages.ProvisionerImageURL
 			c.Args = append(c.Args, leaderElectionArg)
 
 		case templates.AttacherContainer.Name:
 			templates.AttacherContainer.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.AttacherImageURL
+			c.Image = SidecarImages.ContainerImages.AttacherImageURL
 			c.Args = append(c.Args, leaderElectionArg)
 
 		case templates.ResizerContainer.Name:
 			templates.ResizerContainer.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.ResizerImageURL
+			c.Image = SidecarImages.ContainerImages.ResizerImageURL
 			c.Args = append(c.Args, leaderElectionArg)
 
 		case templates.SnapshotterContainer.Name:
 			templates.SnapshotterContainer.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.SnapshotterImageURL
+			c.Image = SidecarImages.ContainerImages.SnapshotterImageURL
 			c.Args = append(c.Args, leaderElectionArg)
 
 		case templates.CSIAddonsContainer.Name:
 			templates.CSIAddonsContainer.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.CSIADDONSImageURL
+			c.Image = SidecarImages.ContainerImages.CSIADDONSImageURL
 			c.Args = append(c.Args, leaderElectionArg)
 
 		case rbdDeploymentContainerName:
-			c.Image = sidecarImages.ContainerImages.CephCSIImageURL
+			c.Image = SidecarImages.ContainerImages.CephCSIImageURL
 		}
 	}
 }

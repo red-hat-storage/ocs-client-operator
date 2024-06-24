@@ -265,7 +265,7 @@ func SetCephFSDaemonSetDesiredState(ds *appsv1.DaemonSet) {
 		switch c.Name {
 		case templates.DriverRegistrar.Name:
 			templates.DriverRegistrar.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.DriverRegistrarImageURL
+			c.Image = SidecarImages.ContainerImages.DriverRegistrarImageURL
 			c.Args = append(c.Args, fmt.Sprintf(
 				"--kubelet-registration-path=%s/plugins/%s/csi.sock",
 				templates.DefaultKubeletDirPath,
@@ -273,7 +273,7 @@ func SetCephFSDaemonSetDesiredState(ds *appsv1.DaemonSet) {
 			))
 
 		case cephFSDaemonSetContainerName:
-			c.Image = sidecarImages.ContainerImages.CephCSIImageURL
+			c.Image = SidecarImages.ContainerImages.CephCSIImageURL
 		}
 	}
 }

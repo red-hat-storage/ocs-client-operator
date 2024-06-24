@@ -20,11 +20,16 @@ import (
 	"fmt"
 
 	secv1 "github.com/openshift/api/security/v1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 )
 
 const (
 	SCCName = "ocs-csi-scc"
+)
+
+const (
+	SCCName_ = "ceph-csi-op-scc"
 )
 
 var (
@@ -33,6 +38,13 @@ var (
 	cephFSPluginServiceAccountName      = "ocs-client-operator-csi-cephfs-plugin-sa"
 	rbdProvisionerServiceAccountName    = "ocs-client-operator-csi-rbd-provisioner-sa"
 	rbdPluginServiceAccountName         = "ocs-client-operator-csi-rbd-plugin-sa"
+)
+
+var (
+	_cephFSProvisionerServiceAccountName = "ceph-csi-cephfs-provisioner-sa"
+	_cephFSPluginServiceAccountName      = "ceph-csi-cephfs-plugin-sa"
+	_rbdProvisionerServiceAccountName    = "ceph-csi-rbd-provisioner-sa"
+	_rbdPluginServiceAccountName         = "ceph-csi-rbd-plugin-sa"
 )
 
 var securityContext = secv1.SecurityContextConstraints{
@@ -77,6 +89,16 @@ func SetSecurityContextConstraintsDesiredState(scc *secv1.SecurityContextConstra
 	metadata := scc.ObjectMeta
 	securityContext.DeepCopyInto(scc)
 	scc.ObjectMeta = metadata
+
+	if utils.DelegateCSI {
+		scc.Users = []string{
+			fmt.Sprintf("system:serviceaccount:%s:%s", ns, _cephFSProvisionerServiceAccountName),
+			fmt.Sprintf("system:serviceaccount:%s:%s", ns, _cephFSPluginServiceAccountName),
+			fmt.Sprintf("system:serviceaccount:%s:%s", ns, _rbdProvisionerServiceAccountName),
+			fmt.Sprintf("system:serviceaccount:%s:%s", ns, _rbdPluginServiceAccountName),
+		}
+		return
+	}
 
 	// Adding users based on namespace
 	scc.Users = []string{
