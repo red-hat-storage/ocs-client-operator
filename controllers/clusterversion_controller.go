@@ -143,7 +143,7 @@ func (c *ClusterVersionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
-//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscription,verbs=watch;get;list;update
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=watch;get;list;update
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
