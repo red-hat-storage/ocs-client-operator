@@ -24,6 +24,7 @@ import (
 	_ "embed"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	cv1a1 "github.com/red-hat-storage/ocs-client-operator/csiop/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
@@ -34,6 +35,7 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"gopkg.in/yaml.v2"
 	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -253,6 +256,31 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				return ctrl.Result{}, err
 			}
 
+			prometheusRule := &monitoringv1.PrometheusRule{}
+			if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
+				c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+				return ctrl.Result{}, err
+			}
+			prometheusRule.SetNamespace(c.OperatorNamespace)
+
+			err = c.createOrUpdate(prometheusRule, func() error {
+				applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
+				return c.own(prometheusRule)
+			})
+			if err != nil {
+				c.log.Error(err, "failed to create/update prometheus rules")
+				return ctrl.Result{}, err
+			}
+
+			c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+
+			if utils.DelegateCSI {
+				if err := c.delegateCSI(); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
+
 			c.scc = &secv1.SecurityContextConstraints{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: csi.SCCName,
@@ -399,25 +427,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				c.log.Error(err, "unable to create rbd CSIDriver")
 				return ctrl.Result{}, err
 			}
-
-			prometheusRule := &monitoringv1.PrometheusRule{}
-			if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
-				c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
-				return ctrl.Result{}, err
-			}
-
-			prometheusRule.SetNamespace(c.OperatorNamespace)
-
-			err = c.createOrUpdate(prometheusRule, func() error {
-				applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
-				return c.own(prometheusRule)
-			})
-			if err != nil {
-				c.log.Error(err, "failed to create/update prometheus rules")
-				return ctrl.Result{}, err
-			}
-
-			c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
 		}
 	} else {
 		// deletion phase
@@ -434,6 +443,68 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (c *OperatorConfigMapReconciler) delegateCSI() error {
+	// SCC
+	scc := &secv1.SecurityContextConstraints{}
+	scc.Name = csi.SCCName_
+	if err := c.createOrUpdate(scc, func() error {
+		csi.SetSecurityContextConstraintsDesiredState(scc, c.OperatorNamespace)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// CSI OperatorConfig
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = clusterVersionName
+	if err := c.get(clusterVersion); err != nil {
+		return err
+	}
+
+	sidecarsConfigMap := &corev1.ConfigMap{}
+	sidecarsConfigMap.Name = fmt.Sprintf("csi-sidecars-%s", csi.SidecarImages.Version)
+	sidecarsConfigMap.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(sidecarsConfigMap, func() error {
+		return nil
+	}); err != nil {
+		data, err := yaml.Marshal(csi.SidecarImages.ContainerImages)
+		if err != nil {
+			return err
+		}
+		sidecarsConfigMap.Data = map[string]string{
+			"image": string(data),
+		}
+		return c.own(sidecarsConfigMap)
+	}
+
+	csiOperatorConfig := &cv1a1.OperatorConfig{}
+	csiOperatorConfig.Name = "operator-config"
+	csiOperatorConfig.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(csiOperatorConfig, func() error {
+		csiOperatorConfig.Spec.DriverSpecDefaults = &cv1a1.DriverSpec{
+			ImageSet:        ptr.To(corev1.LocalObjectReference{Name: sidecarsConfigMap.Name}),
+			ClusterName:     ptr.To(string(clusterVersion.Spec.ClusterID)),
+			DeployCsiAddons: ptr.To(true),
+			Plugin: &cv1a1.PluginSpec{
+				PodCommonSpec: cv1a1.PodCommonSpec{
+					Tolerations: []corev1.Toleration{{
+						Key:      "node-role.kubernetes.io/master",
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoSchedule,
+					}},
+				},
+			},
+		}
+		return c.own(csiOperatorConfig)
+	}); err != nil {
+		return err
+	}
+
+	// TODO: CephCluster CR
+
+	return nil
 }
 
 func (c *OperatorConfigMapReconciler) deletionPhase() error {

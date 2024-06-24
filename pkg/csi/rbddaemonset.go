@@ -326,7 +326,7 @@ func SetRBDDaemonSetDesiredState(ds *appsv1.DaemonSet) {
 		switch c.Name {
 		case templates.DriverRegistrar.Name:
 			templates.DriverRegistrar.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.DriverRegistrarImageURL
+			c.Image = SidecarImages.ContainerImages.DriverRegistrarImageURL
 			c.Args = append(c.Args, fmt.Sprintf(
 				"--kubelet-registration-path=%s/plugins/%s/csi.sock",
 				templates.DefaultKubeletDirPath,
@@ -335,14 +335,14 @@ func SetRBDDaemonSetDesiredState(ds *appsv1.DaemonSet) {
 
 		case templates.CSIAddonsContainer.Name:
 			templates.CSIAddonsContainer.DeepCopyInto(c)
-			c.Image = sidecarImages.ContainerImages.CSIADDONSImageURL
+			c.Image = SidecarImages.ContainerImages.CSIADDONSImageURL
 			vol := utils.Find(c.VolumeMounts, func(vol *corev1.VolumeMount) bool {
 				return vol.Name == "socket-dir"
 			})
 			vol.Name = "plugin-dir"
 
 		case rbdDaemonSetContainerName:
-			c.Image = sidecarImages.ContainerImages.CephCSIImageURL
+			c.Image = SidecarImages.ContainerImages.CephCSIImageURL
 		}
 	}
 }

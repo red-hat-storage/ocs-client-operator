@@ -24,6 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -156,6 +157,11 @@ func updateCsiClusterConfig(curr, clusterKey, storageClientID string, newCluster
 // The locker configMutex is typically a mutex and is used to prevent the config
 // map from being updated for multiple clusters simultaneously.
 func (c *ClusterConfig) UpdateMonConfigMap(clusterID, storageClientID string, newClusterConfigEntry *ClusterConfigEntry) error {
+	if utils.DelegateCSI {
+		// TODO: Ceph Cluster CR
+		// TODO: Ceph CSI Config CR?
+		return nil
+	}
 	ConfigKey := "config.json"
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

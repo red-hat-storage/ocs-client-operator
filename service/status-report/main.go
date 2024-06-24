@@ -137,6 +137,10 @@ func main() {
 		Namespace: operatorNamespace,
 		Ctx:       ctx,
 	}
+	if utils.DelegateCSI {
+		// TODO: Ceph Cluster CR
+		return
+	}
 	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
 	if err != nil {
 		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
