@@ -17,6 +17,9 @@ configMapGenerator:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
+- name: configmaps-creator
+  newName: quay.io/ocs-dev/ocs-client-operator
+  newTag: latest
 - name: controller
   newName: quay.io/ocs-dev/ocs-client-operator
   newTag: latest
