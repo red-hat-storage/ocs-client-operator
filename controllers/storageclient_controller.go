@@ -455,6 +455,10 @@ func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.
 											Name:  utils.OperatorNamespaceEnvVar,
 											Value: r.OperatorNamespace,
 										},
+										{
+											Name:  utils.CSIReconcileEnvVar,
+											Value: os.Getenv(utils.CSIReconcileEnvVar),
+										},
 									},
 								},
 							},

@@ -39,6 +39,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -241,162 +242,15 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			c.log.Error(err, "failed to perform precheck for deploying CSI")
 			return ctrl.Result{}, err
 		} else if deployCSI {
-			clusterVersion := &configv1.ClusterVersion{}
-			clusterVersion.Name = clusterVersionName
-			if err := c.get(clusterVersion); err != nil {
-				c.log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
-				return reconcile.Result{}, err
+
+			var err error
+			if utils.DelegateCSI {
+				err = c.reconcileDelegatedCSI()
+			} else {
+				err = c.reconcileCSI()
 			}
 
-			if err := csi.InitializeSidecars(c.log, clusterVersion.Status.Desired.Version); err != nil {
-				c.log.Error(err, "unable to initialize sidecars")
-				return ctrl.Result{}, err
-			}
-
-			c.scc = &secv1.SecurityContextConstraints{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: csi.SCCName,
-				},
-			}
-			err = c.createOrUpdate(c.scc, func() error {
-				// TODO: this is a hack to preserve the resourceVersion of the SCC
-				resourceVersion := c.scc.ResourceVersion
-				csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
-				c.scc.ResourceVersion = resourceVersion
-				return nil
-			})
 			if err != nil {
-				c.log.Error(err, "unable to create/update SCC")
-				return ctrl.Result{}, err
-			}
-
-			// create the monitor configmap for the csi drivers but never updates it.
-			// This is because the monitor configurations are added to the configmap
-			// when user creates storageclaims.
-			monConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      templates.MonConfigMapName,
-					Namespace: c.OperatorNamespace,
-				},
-				Data: map[string]string{
-					"config.json": "[]",
-				},
-			}
-			if err := c.own(monConfigMap); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			if err := c.create(monConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
-				c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
-				return ctrl.Result{}, err
-			}
-
-			// create the encryption configmap for the csi driver but never updates it.
-			// This is because the encryption configuration are added to the configmap
-			// by the users before they create the encryption storageclaims.
-			encConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      templates.EncryptionConfigMapName,
-					Namespace: c.OperatorNamespace,
-				},
-				Data: map[string]string{
-					"config.json": "[]",
-				},
-			}
-			if err := c.own(encConfigMap); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			if err := c.create(encConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
-				c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
-				return ctrl.Result{}, err
-			}
-
-			c.cephFSDeployment = &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      csi.CephFSDeploymentName,
-					Namespace: c.OperatorNamespace,
-				},
-			}
-			err = c.createOrUpdate(c.cephFSDeployment, func() error {
-				if err := c.own(c.cephFSDeployment); err != nil {
-					return err
-				}
-				csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
-				return nil
-			})
-			if err != nil {
-				c.log.Error(err, "failed to create/update cephfs deployment")
-				return ctrl.Result{}, err
-			}
-
-			c.cephFSDaemonSet = &appsv1.DaemonSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      csi.CephFSDaemonSetName,
-					Namespace: c.OperatorNamespace,
-				},
-			}
-			err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
-				if err := c.own(c.cephFSDaemonSet); err != nil {
-					return err
-				}
-				csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
-				return nil
-			})
-			if err != nil {
-				c.log.Error(err, "failed to create/update cephfs daemonset")
-				return ctrl.Result{}, err
-			}
-
-			c.rbdDeployment = &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      csi.RBDDeploymentName,
-					Namespace: c.OperatorNamespace,
-				},
-			}
-			err = c.createOrUpdate(c.rbdDeployment, func() error {
-				if err := c.own(c.rbdDeployment); err != nil {
-					return err
-				}
-				csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
-				return nil
-			})
-			if err != nil {
-				c.log.Error(err, "failed to create/update rbd deployment")
-				return ctrl.Result{}, err
-			}
-
-			c.rbdDaemonSet = &appsv1.DaemonSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      csi.RBDDaemonSetName,
-					Namespace: c.OperatorNamespace,
-				},
-			}
-			err = c.createOrUpdate(c.rbdDaemonSet, func() error {
-				if err := c.own(c.rbdDaemonSet); err != nil {
-					return err
-				}
-				csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
-				return nil
-			})
-			if err != nil {
-				c.log.Error(err, "failed to create/update rbd daemonset")
-				return ctrl.Result{}, err
-			}
-
-			// Need to handle deletion of the csiDriver object, we cannot set
-			// ownerReference on it as its cluster scoped resource
-			cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
-			cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
-			if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
-				c.log.Error(err, "unable to create cephfs CSIDriver")
-				return ctrl.Result{}, err
-			}
-
-			rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
-			rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
-			if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
-				c.log.Error(err, "unable to create rbd CSIDriver")
 				return ctrl.Result{}, err
 			}
 
@@ -434,6 +288,183 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
+	// scc
+	scc := &secv1.SecurityContextConstraints{}
+	scc.Name = templates.SCCName
+	if err := c.createOrUpdate(scc, func() error {
+		templates.SetSecurityContextConstraintsDesiredState(scc, c.OperatorNamespace)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile scc: %v", err)
+	}
+
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileCSI() error {
+
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = clusterVersionName
+	if err := c.get(clusterVersion); err != nil {
+		c.log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
+		return err
+	}
+
+	if err := csi.InitializeSidecars(c.log, clusterVersion.Status.Desired.Version); err != nil {
+		c.log.Error(err, "unable to initialize sidecars")
+		return err
+	}
+
+	c.scc = &secv1.SecurityContextConstraints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: csi.SCCName,
+		},
+	}
+	err := c.createOrUpdate(c.scc, func() error {
+		// TODO: this is a hack to preserve the resourceVersion of the SCC
+		resourceVersion := c.scc.ResourceVersion
+		csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
+		c.scc.ResourceVersion = resourceVersion
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "unable to create/update SCC")
+		return err
+	}
+
+	// create the monitor configmap for the csi drivers but never updates it.
+	// This is because the monitor configurations are added to the configmap
+	// when user creates storageclaims.
+	monConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      templates.MonConfigMapName,
+			Namespace: c.OperatorNamespace,
+		},
+		Data: map[string]string{
+			"config.json": "[]",
+		},
+	}
+	if err := c.own(monConfigMap); err != nil {
+		return err
+	}
+
+	if err := c.create(monConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
+		c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
+		return err
+	}
+
+	// create the encryption configmap for the csi driver but never updates it.
+	// This is because the encryption configuration are added to the configmap
+	// by the users before they create the encryption storageclaims.
+	encConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      templates.EncryptionConfigMapName,
+			Namespace: c.OperatorNamespace,
+		},
+		Data: map[string]string{
+			"config.json": "[]",
+		},
+	}
+	if err := c.own(encConfigMap); err != nil {
+		return err
+	}
+
+	if err := c.create(encConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
+		c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
+		return err
+	}
+
+	c.cephFSDeployment = &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      csi.CephFSDeploymentName,
+			Namespace: c.OperatorNamespace,
+		},
+	}
+	err = c.createOrUpdate(c.cephFSDeployment, func() error {
+		if err := c.own(c.cephFSDeployment); err != nil {
+			return err
+		}
+		csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update cephfs deployment")
+		return err
+	}
+
+	c.cephFSDaemonSet = &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      csi.CephFSDaemonSetName,
+			Namespace: c.OperatorNamespace,
+		},
+	}
+	err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
+		if err := c.own(c.cephFSDaemonSet); err != nil {
+			return err
+		}
+		csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update cephfs daemonset")
+		return err
+	}
+
+	c.rbdDeployment = &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      csi.RBDDeploymentName,
+			Namespace: c.OperatorNamespace,
+		},
+	}
+	err = c.createOrUpdate(c.rbdDeployment, func() error {
+		if err := c.own(c.rbdDeployment); err != nil {
+			return err
+		}
+		csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update rbd deployment")
+		return err
+	}
+
+	c.rbdDaemonSet = &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      csi.RBDDaemonSetName,
+			Namespace: c.OperatorNamespace,
+		},
+	}
+	err = c.createOrUpdate(c.rbdDaemonSet, func() error {
+		if err := c.own(c.rbdDaemonSet); err != nil {
+			return err
+		}
+		csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
+		return nil
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update rbd daemonset")
+		return err
+	}
+
+	// Need to handle deletion of the csiDriver object, we cannot set
+	// ownerReference on it as its cluster scoped resource
+	cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
+	cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
+	if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
+		c.log.Error(err, "unable to create cephfs CSIDriver")
+		return err
+	}
+
+	rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
+	rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
+	if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
+		c.log.Error(err, "unable to create rbd CSIDriver")
+		return err
+	}
+	return nil
 }
 
 func (c *OperatorConfigMapReconciler) deletionPhase() error {
