@@ -29,6 +29,19 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+      initContainers:
+      - name: configmaps-creator
+        image: controller:latest
+        command:
+          - /configmaps-creator
+        env:
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: csi-images
+          mountPath: /opt/config
       containers:
       - command:
         - /manager

@@ -115,7 +115,8 @@ remove-with-olm: ## Remove controller from the K8s cluster
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG) && \
+		$(KUSTOMIZE) edit set image configmaps-creator=$(IMG)
 	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
 		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/default && \

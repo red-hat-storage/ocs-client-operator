@@ -26,6 +26,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
@@ -93,6 +94,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClient{}).
 		Owns(&v1alpha1.StorageClaim{}).
 		Owns(&batchv1.CronJob{}).
+		Owns(&csiopv1a1.CephCluster{}).
 		Complete(r)
 }
 
@@ -184,6 +186,14 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		return r.acknowledgeOnboarding(externalClusterClient)
 	}
 
+	if utils.DelegateCSI {
+		if requeue, err := r.reconcileCephCluster(externalClusterClient); err != nil {
+			return reconcile.Result{}, err
+		} else if !requeue.IsZero() {
+			return requeue, nil
+		}
+	}
+
 	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
 		return res, err
 	}
@@ -204,6 +214,55 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func (r *StorageClientReconciler) reconcileCephCluster(rpcClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
+	response, err := rpcClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			r.logGrpcErrorAndReportEvent(GetStorageConfig, err, st.Code())
+			if st.Code() == codes.Unavailable {
+				r.Log.Info("Waiting for storageconsumer to be ready")
+				return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
+			}
+		}
+		return reconcile.Result{}, fmt.Errorf("failed to get storage config: %v", err)
+	}
+	var monitorIPs []string
+	for idx := range response.ExternalResource {
+		resource := response.ExternalResource[idx]
+		if resource.Kind == "ConfigMap" && resource.Name == "rook-ceph-mon-endpoints" {
+			ips, err := utils.ExtractMonitor(resource.Data)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to extract monitor IPs: %v", err)
+			}
+			monitorIPs = append(monitorIPs, ips...)
+			break
+		}
+	}
+	if len(monitorIPs) == 0 {
+		return reconcile.Result{}, fmt.Errorf("failed to find moinitor IPs")
+	}
+
+	cephCluster := &csiopv1a1.CephCluster{}
+	cephCluster.Name = r.storageClient.Name
+	cephCluster.Namespace = r.OperatorNamespace
+	if err := r.createOrUpdate(cephCluster, func() error {
+		cephCluster.Spec.Monitors = monitorIPs
+		return r.own(cephCluster)
+	}); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile csi ceph cluster: %v", err)
+	}
+	return reconcile.Result{}, nil
+}
+
+func (r *StorageClientReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
+	result, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, f)
+	if err != nil {
+		return err
+	}
+	r.Log.Info("successfully created or updated", "operation", result, "name", obj.GetName())
+	return nil
 }
 
 func (r *StorageClientReconciler) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
@@ -454,6 +513,10 @@ func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.
 										{
 											Name:  utils.OperatorNamespaceEnvVar,
 											Value: r.OperatorNamespace,
+										},
+										{
+											Name:  utils.CSIReconcileEnvVar,
+											Value: os.Getenv(utils.CSIReconcileEnvVar),
 										},
 									},
 								},
