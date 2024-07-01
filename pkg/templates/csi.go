@@ -96,7 +96,7 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 // Ceph RBD Driver config
 const RBDDriverName = "openshift-storage.rbd.csi.ceph.com"
 
-var RBDriverSpec = csiopv1a1.DriverSpec{
+var RBDDriverSpec = csiopv1a1.DriverSpec{
 	Provisioner: &csiopv1a1.ProvisionerSpec{
 		PodCommonSpec: csiopv1a1.PodCommonSpec{
 			Labels: map[string]string{
@@ -132,6 +132,3 @@ var CephFSDriverSpec = csiopv1a1.DriverSpec{
 		},
 	},
 }
-
-// Ceph Cluster config
-var CephClusterSpec = csiopv1a1.CephClusterSpec{}

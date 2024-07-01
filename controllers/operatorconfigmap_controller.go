@@ -29,6 +29,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
@@ -39,12 +40,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/version"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -301,6 +303,52 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile scc: %v", err)
 	}
 
+	// cluster version
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = clusterVersionName
+	if err := c.get(clusterVersion); err != nil {
+		return fmt.Errorf("failed to get cluster version: %v", err)
+	}
+
+	// csi operator config
+	cmName, err := c.getImageSetConfigMapName(clusterVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get desired imageset configmap name: %v", err)
+	}
+	csiOperatorConfig := &csiopv1a1.OperatorConfig{}
+	csiOperatorConfig.Name = templates.CSIOperatorConfigName
+	csiOperatorConfig.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(csiOperatorConfig, func() error {
+		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
+		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
+		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		return c.own(csiOperatorConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
+	}
+
+	// ceph rbd driver config
+	rbdDriver := &csiopv1a1.Driver{}
+	rbdDriver.Name = templates.RBDDriverName
+	rbdDriver.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(rbdDriver, func() error {
+		templates.RBDDriverSpec.DeepCopyInto(&rbdDriver.Spec)
+		return c.own(rbdDriver)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
+	}
+
+	// ceph fs driver config
+	cephFSDriver := &csiopv1a1.Driver{}
+	cephFSDriver.Name = templates.CephFSDriverName
+	cephFSDriver.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(cephFSDriver, func() error {
+		templates.CephFSDriverSpec.DeepCopyInto(&cephFSDriver.Spec)
+		return c.own(cephFSDriver)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
+	}
+
 	return nil
 }
 
@@ -477,19 +525,14 @@ func (c *OperatorConfigMapReconciler) deletionPhase() error {
 		c.log.Error(err, "Waiting for all storageClaims to be deleted.")
 		return err
 	}
-	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetCephFSDriverName()); err != nil && !kerrors.IsNotFound(err) {
-		c.log.Error(err, "unable to delete cephfs CSIDriver")
-		return err
-	}
-	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetRBDDriverName()); err != nil && !kerrors.IsNotFound(err) {
-		c.log.Error(err, "unable to delete rbd CSIDriver")
-		return err
-	}
 
-	c.scc = &secv1.SecurityContextConstraints{}
-	c.scc.Name = csi.SCCName
-	if err := c.delete(c.scc); err != nil {
-		c.log.Error(err, "unable to delete SCC")
+	var err error
+	if utils.DelegateCSI {
+		err = c.deleteDelegatedCSI()
+	} else {
+		err = c.deleteCSI()
+	}
+	if err != nil {
 		return err
 	}
 
@@ -824,4 +867,75 @@ func (c *OperatorConfigMapReconciler) getDesiredSubscriptionChannel() (string, e
 		}
 	}
 	return desiredChannel, nil
+}
+
+func (c *OperatorConfigMapReconciler) getImageSetConfigMapName(clusterVersion *configv1.ClusterVersion) (string, error) {
+	historyRecord := utils.Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
+		return record.State == configv1.CompletedUpdate
+	})
+	if historyRecord == nil {
+		return "", fmt.Errorf("unable to find the updated cluster version")
+	}
+
+	configMaps := &corev1.ConfigMapList{}
+	if err := c.list(configMaps, client.InNamespace(c.OperatorNamespace), client.HasLabels{"images.version"}); err != nil {
+		return "", err
+	}
+	platformVersion := version.MustParseGeneric(historyRecord.Version)
+	closestMinor := int64(-1)
+	var configMapName string
+	for idx := range configMaps.Items {
+		cm := &configMaps.Items[idx]
+		imageVersion := version.MustParseGeneric(cm.GetLabels()["images.version"])
+		c.log.Info("searching for the most compativle CSI image version", "CSI", imageVersion, "Platform", platformVersion)
+
+		// only check image versions that are not higher than platform
+		if imageVersion.Major() == platformVersion.Major() && imageVersion.Minor() <= platformVersion.Minor() {
+			// filter the images closes to platform version
+			if int64(imageVersion.Minor()) > closestMinor {
+				configMapName = cm.Name
+				closestMinor = int64(imageVersion.Minor())
+			}
+			// exact match and early exit
+			if closestMinor == int64(platformVersion.Minor()) {
+				break
+			}
+		} else {
+			c.log.Info("skipping imagesets with version greater than platform verison")
+		}
+	}
+
+	if configMapName == "" {
+		return "", fmt.Errorf("failed to find configmap containing images suitable for %v platform version", platformVersion)
+	}
+	return configMapName, nil
+}
+
+func (c *OperatorConfigMapReconciler) deleteDelegatedCSI() error {
+	// NOTE: csi operator config and driver CRs are garbage collected via ownerref
+	scc := &secv1.SecurityContextConstraints{}
+	scc.Name = templates.SCCName
+	if err := c.delete(scc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) deleteCSI() error {
+	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetCephFSDriverName()); err != nil && !kerrors.IsNotFound(err) {
+		c.log.Error(err, "unable to delete cephfs CSIDriver")
+		return err
+	}
+	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetRBDDriverName()); err != nil && !kerrors.IsNotFound(err) {
+		c.log.Error(err, "unable to delete rbd CSIDriver")
+		return err
+	}
+
+	c.scc = &secv1.SecurityContextConstraints{}
+	c.scc.Name = csi.SCCName
+	if err := c.delete(c.scc); err != nil {
+		c.log.Error(err, "unable to delete SCC")
+		return err
+	}
+	return nil
 }
