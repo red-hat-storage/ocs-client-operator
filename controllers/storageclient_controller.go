@@ -247,10 +247,12 @@ func (r *StorageClientReconciler) reconcileCephCluster(rpcClient *providerClient
 	cephCluster := &csiopv1a1.CephCluster{}
 	cephCluster.Name = r.storageClient.Name
 	cephCluster.Namespace = r.OperatorNamespace
-	err = r.createOrUpdate(cephCluster, func() error {
+	if err := r.createOrUpdate(cephCluster, func() error {
 		cephCluster.Spec.Monitors = monitorIPs
 		return r.own(cephCluster)
-	})
+	}); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile csi ceph cluster: %v", err)
+	}
 	return reconcile.Result{}, nil
 }
 

@@ -890,7 +890,7 @@ func (c *OperatorConfigMapReconciler) getImageSetConfigMapName(clusterVersion *c
 	for idx := range configMaps.Items {
 		cm := &configMaps.Items[idx]
 		imageVersion := version.MustParseGeneric(cm.GetLabels()["images.version"])
-		c.log.Info("searching for the most compativle CSI image version", "CSI", imageVersion, "Platform", platformVersion)
+		c.log.Info("searching for the most compatible CSI image version", "CSI", imageVersion, "Platform", platformVersion)
 
 		// only check image versions that are not higher than platform
 		if imageVersion.Major() == platformVersion.Major() && imageVersion.Minor() <= platformVersion.Minor() {
@@ -904,7 +904,7 @@ func (c *OperatorConfigMapReconciler) getImageSetConfigMapName(clusterVersion *c
 				break
 			}
 		} else {
-			c.log.Info("skipping imagesets with version greater than platform verison")
+			c.log.Info("skipping imagesets with version greater than platform version")
 		}
 	}
 

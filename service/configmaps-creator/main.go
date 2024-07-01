@@ -83,7 +83,7 @@ func main() {
 		cmNewFmt.Name = fmt.Sprintf("csi-images-%s", cmOldFmt.Version)
 		cmNewFmt.Namespace = operatorNS
 		opResult, err := controllerutil.CreateOrUpdate(ctx, cl, cmNewFmt, func() error {
-			// verison in config map name is for human identification and we
+			// version in config map name is for human identification and we
 			// use labels for programmatic listing/validation
 			utils.AddLabel(cmNewFmt, "images.version", cmOldFmt.Version)
 			imagesOld := cmOldFmt.ContainerImages
