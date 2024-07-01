@@ -94,6 +94,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClient{}).
 		Owns(&v1alpha1.StorageClaim{}).
 		Owns(&batchv1.CronJob{}).
+		Owns(&csiopv1a1.CephCluster{}).
 		Complete(r)
 }
 

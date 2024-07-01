@@ -157,6 +157,8 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}, configMapPredicates).
 		Owns(&corev1.Service{}, servicePredicate).
+		Owns(&csiopv1a1.OperatorConfig{}).
+		Owns(&csiopv1a1.Driver{}).
 		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
 		Watches(&extv1.CustomResourceDefinition{}, enqueueConfigMapRequest, builder.OnlyMetadata).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
@@ -180,6 +182,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=*,verbs=get;list;watch;create;update;delete
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
