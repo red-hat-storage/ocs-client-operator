@@ -17,13 +17,14 @@ limitations under the License.
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
+	"slices"
+	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -107,3 +108,23 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 }
 
 var DelegateCSI = os.Getenv(CSIReconcileEnvVar) == "delegate"
+
+func ExtractMonitor(monitorData []byte) ([]string, error) {
+	data := map[string]string{}
+	monitorIPs := []string{}
+	err := json.Unmarshal(monitorData, &data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
+	// Ip will be in the format of "b=172.30.60.238:6789","c=172.30.162.124:6789","a=172.30.1.100:6789"
+	monIPs := strings.Split(data["data"], ",")
+	for _, monIP := range monIPs {
+		ip := strings.Split(monIP, "=")
+		if len(ip) != 2 {
+			return nil, fmt.Errorf("invalid mon ips: %s", monIPs)
+		}
+		monitorIPs = append(monitorIPs, ip[1])
+	}
+	slices.Sort(monitorIPs)
+	return monitorIPs, nil
+}

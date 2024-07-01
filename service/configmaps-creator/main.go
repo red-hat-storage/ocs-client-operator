@@ -9,6 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,11 +35,15 @@ type csiImagesOldFormat struct {
 	} `yaml:"containerImages"`
 }
 
+var (
+	scheme = runtime.NewScheme()
+)
+
+func init() {
+	utilruntime.Must(kubescheme.AddToScheme(scheme))
+}
+
 func newClient() (client.Client, error) {
-	scheme := runtime.NewScheme()
-	if err := kubescheme.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("failed to add kubernetes scheme to runtime scheme: %v", err)
-	}
 	cfg, err := config.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rest config: %v", err)

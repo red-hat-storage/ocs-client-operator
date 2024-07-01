@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
@@ -60,6 +62,10 @@ func main() {
 
 	if err := configv1.AddToScheme(scheme); err != nil {
 		klog.Exitf("Failed to add configv1 to scheme: %v", err)
+	}
+
+	if err := csiopv1a1.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add csiopv1a1 to scheme: %v", err)
 	}
 
 	config, err := config.GetConfig()
@@ -118,28 +124,75 @@ func main() {
 		}
 	}
 
-	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
-	scResponse, err := providerClient.GetStorageConfig(ctx, storageClient.Status.ConsumerID)
+	if utils.DelegateCSI {
+		updateMonitorIPs(ctx, cl, providerClient, storageClient, operatorNamespace)
+	} else {
+		updateCSIConfigMap(ctx, cl, providerClient, storageClient.Status.ConsumerID, operatorNamespace)
+	}
+}
+
+func updateMonitorIPs(ctx context.Context, cl client.Client, providerClient *providerclient.OCSProviderClient, storageClient *v1alpha1.StorageClient, namespace string) {
+	response, err := providerClient.GetStorageConfig(ctx, storageClient.Status.ConsumerID)
 	if err != nil {
-		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+		klog.Exitf("Failed to get StorageConfig for storageclient %v: %v", storageClient.Name, err)
+	}
+	var monitorIPs []string
+	for idx := range response.ExternalResource {
+		resource := response.ExternalResource[idx]
+		if resource.Kind == "ConfigMap" && resource.Name == "rook-ceph-mon-endpoints" {
+			ips, err := utils.ExtractMonitor(resource.Data)
+			if err != nil {
+				klog.Exitf("Failed to extract monitors from storageconfig response: %v", err)
+			}
+			monitorIPs = append(monitorIPs, ips...)
+			break
+		}
+	}
+	if len(monitorIPs) == 0 {
+		klog.Exit("Monitor IPs are not found in storageconfig response")
+	}
+
+	cephCluster := &csiopv1a1.CephCluster{}
+	cephCluster.Name = storageClient.Name
+	cephCluster.Namespace = namespace
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(cephCluster), cephCluster); err != nil {
+		klog.Exitf("Failed to get csi cephcluster: %v", err)
+	}
+	// monitor ips are already sorted as strings and can be compared directly
+	if slices.Compare(cephCluster.Spec.Monitors, monitorIPs) != 0 {
+		cephClusterCopy := &csiopv1a1.CephCluster{}
+		cephCluster.DeepCopyInto(cephClusterCopy)
+		cephCluster.Spec.Monitors = monitorIPs
+		// patch is being used to ensure monitor IPs are accurate at this point of time even if there are reconciles happening which change resourceversion
+		if err := cl.Patch(ctx, cephCluster, client.MergeFrom(cephClusterCopy)); err != nil {
+			klog.Exitf("Failed to patch csi cephcluster with monitor IPs: %v", err)
+		}
+	}
+}
+
+func updateCSIConfigMap(ctx context.Context, cl client.Client, providerClient *providerclient.OCSProviderClient, consumerID, namespace string) {
+	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
+	scResponse, err := providerClient.GetStorageConfig(ctx, consumerID)
+	if err != nil {
+		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", consumerID, err)
 	}
 	for _, eResource := range scResponse.ExternalResource {
 		if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
 			monitorIps, err := csi.ExtractMonitor(eResource.Data)
 			if err != nil {
-				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", consumerID, err)
 			}
 			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
 		}
 	}
 	cc := csi.ClusterConfig{
 		Client:    cl,
-		Namespace: operatorNamespace,
+		Namespace: namespace,
 		Ctx:       ctx,
 	}
-	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
+	err = cc.UpdateMonConfigMap("", consumerID, csiClusterConfigEntry)
 	if err != nil {
-		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", consumerID, err)
 	}
 }
 
