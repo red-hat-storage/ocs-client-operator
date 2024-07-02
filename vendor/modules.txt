@@ -88,6 +88,11 @@ github.com/josharian/intern
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
+# github.com/kube-object-storage/lib-bucket-provisioner v0.0.0-20221122204822-d1a8c34382f1
+## explicit; go 1.13
+github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io
+github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io/v1alpha1
+github.com/kube-object-storage/lib-bucket-provisioner/pkg/provisioner/api
 # github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
 ## explicit; go 1.20
 github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1
@@ -108,6 +113,10 @@ github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
+# github.com/noobaa/noobaa-operator/v5 v5.15.4
+## explicit; go 1.20
+github.com/noobaa/noobaa-operator/v5/pkg/apis
+github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1
 # github.com/nxadm/tail v1.4.8
 ## explicit; go 1.13
 github.com/nxadm/tail
@@ -155,6 +164,9 @@ github.com/openshift/api/config/v1
 github.com/openshift/api/console/v1
 github.com/openshift/api/quota/v1
 github.com/openshift/api/security/v1
+# github.com/openshift/custom-resource-status v1.1.2
+## explicit; go 1.12
+github.com/openshift/custom-resource-status/conditions/v1
 # github.com/operator-framework/api v0.22.0
 ## explicit; go 1.21
 github.com/operator-framework/api/pkg/lib/version
@@ -685,6 +697,11 @@ k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/strings/slices
 k8s.io/utils/trace
+# sigs.k8s.io/container-object-storage-interface-api v0.1.0
+## explicit; go 1.18
+sigs.k8s.io/container-object-storage-interface-api/apis
+sigs.k8s.io/container-object-storage-interface-api/apis/objectstorage
+sigs.k8s.io/container-object-storage-interface-api/apis/objectstorage/v1alpha1
 # sigs.k8s.io/controller-runtime v0.18.4
 ## explicit; go 1.22.0
 sigs.k8s.io/controller-runtime
