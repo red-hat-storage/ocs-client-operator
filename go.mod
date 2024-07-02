@@ -5,6 +5,7 @@ go 1.22.7
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
 	github.com/red-hat-storage/ocs-client-operator/api => ./api
+	k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
 )
 
@@ -18,7 +19,7 @@ exclude (
 )
 
 require (
-	github.com/ceph/ceph-csi-operator/api v0.0.0-20241114115439-f325f74205d3
+	github.com/ceph/ceph-csi-operator/api v0.0.0-20241119082218-62dc94e55c32
 	github.com/csi-addons/kubernetes-csi-addons v0.10.0
 	github.com/go-logr/logr v1.4.2
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.0.0
@@ -26,12 +27,14 @@ require (
 	github.com/onsi/gomega v1.34.2
 	github.com/openshift/api v0.0.0-20240828125535-01b3675ba7b3
 	github.com/operator-framework/api v0.27.0
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
-	github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237
+	github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
 	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241120160011-2e7cf0127dd4
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.68.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/api v0.31.1
 	k8s.io/apiextensions-apiserver v0.31.0
 	k8s.io/apimachinery v0.31.1
@@ -46,10 +49,8 @@ require (
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kube-object-storage/lib-bucket-provisioner v0.0.0-20221122204822-d1a8c34382f1 // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/component-base v0.31.0 // indirect
 	sigs.k8s.io/container-object-storage-interface-api v0.1.0 // indirect
 )
