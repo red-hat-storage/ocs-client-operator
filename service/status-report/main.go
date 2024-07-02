@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -31,6 +33,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -123,6 +126,7 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
+	var noobaaAuthToken, noobaaMgmtAddress string
 	for _, eResource := range scResponse.ExternalResource {
 		if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
 			monitorIps, err := csi.ExtractMonitor(eResource.Data)
@@ -130,6 +134,12 @@ func main() {
 				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
 			}
 			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
+		}
+		if eResource.Kind == "Secret" && eResource.Name == "noobaa-join-secret" {
+			noobaaAuthToken, noobaaMgmtAddress, err = extractNoobaaResouces(eResource.Data)
+			if err != nil {
+				klog.Exitf("Failed to extract  data for remote noobaa secret %v", err)
+			}
 		}
 	}
 	cc := csi.ClusterConfig{
@@ -140,6 +150,16 @@ func main() {
 	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
 	if err != nil {
 		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+	}
+	joinSecret := &corev1.Secret{}
+	joinSecret.Name = "noobaa-remote-join-secret"
+	joinSecret.Namespace = operatorNamespace
+	joinSecret.Data = map[string][]byte{
+		"auth_token": []byte(noobaaAuthToken),
+		"mgmt_addr":  []byte(noobaaMgmtAddress),
+	}
+	if err = cl.Create(ctx, joinSecret); err != nil {
+		klog.Exitf("Failed to create join secret %s in namespace %s: %v", joinSecret.Name, joinSecret.Namespace, err)
 	}
 }
 
@@ -205,4 +225,22 @@ func setPlatformInformation(ctx context.Context, cl client.Client, status interf
 		klog.Warningf("Unable to find ocp version with completed update")
 	}
 	status.SetPlatformVersion(platformVersion)
+}
+
+func extractNoobaaResouces(noobaaData []byte) (string, string, error) {
+	data := map[string]string{}
+	err := json.Unmarshal(noobaaData, &data)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to unmarshall data: %v", err)
+	}
+	noobaaAuthToken, ok := data["auth-token"]
+	if !ok {
+		return "", "", fmt.Errorf("noobaa auth token not found")
+	}
+	noobaaMgmtAddress, ok := data["mgmt-address"]
+	if !ok {
+		return "", "", fmt.Errorf("noobaa mgmt address not found")
+	}
+
+	return noobaaAuthToken, noobaaMgmtAddress, nil
 }
