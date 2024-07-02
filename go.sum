@@ -4,6 +4,8 @@ github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
 github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj44=
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
+github.com/csi-addons/kubernetes-csi-addons v0.8.0 h1:zvYGp4DM6KdQzEX3dQSYKykqJdLZlxpVBJjtpbaqFjs=
+github.com/csi-addons/kubernetes-csi-addons v0.8.0/go.mod h1:dvinzoiXlqdOGDpKkYx8Jxl507BzVEEEO+SI0OmBaRI=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
@@ -120,6 +122,8 @@ github.com/prometheus/common v0.45.0 h1:2BGz0eBc2hdMDLnO/8n0jeB3oPrt2D08CekT0lne
 github.com/prometheus/common v0.45.0/go.mod h1:YJmSTw9BoKxJplESWWxlbyttQR4uaEcGyv9MZjVOJsY=
 github.com/prometheus/procfs v0.12.0 h1:jluTpSng7V9hY0O2R9DzzJHYb2xULk9VTR1V1R/k6Bo=
 github.com/prometheus/procfs v0.12.0/go.mod h1:pcuDEFsWDnvcgNzo4EEweacyhjeA9Zk3cnaOZAZEfOo=
+github.com/ramendr/ramen/api v0.0.0-20240726141352-b1af569f057c h1:xyqg9mYztsSZYWmmr+CvJ2gzPoDiuwCpzM0OA/Xax40=
+github.com/ramendr/ramen/api v0.0.0-20240726141352-b1af569f057c/go.mod h1:/g3Jrr9U/itqpRA1NN/bLxSRrKP1ja5U5tfdOtRspGU=
 github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240422111920-faced96485bc h1:bV/ttKjR3nn9jIrOSt5UOttDE6iQ6l+bzLEFPWw335M=
 github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240422111920-faced96485bc/go.mod h1:e4AElguwRgtyGEW7JtfJvphjYbcYG4hlpvwDYrQFGi8=
 github.com/rogpeppe/go-internal v1.11.0 h1:cWPaGQEPrBb5/AsnsZesgZZ9yb1OQ+GOISoDNXVBh4M=
@@ -252,6 +256,8 @@ k8s.io/apimachinery v0.30.1 h1:ZQStsEfo4n65yAdlGTfP/uSHMQSoYzU/oeEbkmF7P2U=
 k8s.io/apimachinery v0.30.1/go.mod h1:iexa2somDaxdnj7bha06bhb43Zpa6eWH8N8dbqVjTUc=
 k8s.io/client-go v0.30.1 h1:uC/Ir6A3R46wdkgCV3vbLyNOYyCJ8oZnjtJGKfytl/Q=
 k8s.io/client-go v0.30.1/go.mod h1:wrAqLNs2trwiCH/wxxmT/x3hKVH9PuV0GGW0oDoHVqc=
+k8s.io/component-base v0.30.1 h1:bvAtlPh1UrdaZL20D9+sWxsJljMi0QZ3Lmw+kmZAaxQ=
+k8s.io/component-base v0.30.1/go.mod h1:e/X9kDiOebwlI41AvBHuWdqFriSRrX50CdwA9TFaHLI=
 k8s.io/klog/v2 v2.120.1 h1:QXU6cPEOIslTGvZaXvFWiP9VKyeet3sawzTOvdXb4Vw=
 k8s.io/klog/v2 v2.120.1/go.mod h1:3Jpz1GvMt720eyJH1ckRHK1EDfpxISzJ7I9OYgaDtPE=
 k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 h1:BZqlfIlq5YbRMFko6/PM7FjZpUb45WallggurYhKGag=
