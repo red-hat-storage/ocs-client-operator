@@ -3,7 +3,7 @@ package console
 import (
 	"fmt"
 
-	consolev1alpha1 "github.com/openshift/api/console/v1alpha1"
+	consolev1 "github.com/openshift/api/console/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -51,18 +51,24 @@ func GetService(port int32, namespace string) *apiv1.Service {
 	}
 }
 
-func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1alpha1.ConsolePlugin {
-	return &consolev1alpha1.ConsolePlugin{
+func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.ConsolePlugin {
+	return &consolev1.ConsolePlugin{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: pluginName,
 		},
-		Spec: consolev1alpha1.ConsolePluginSpec{
+		Spec: consolev1.ConsolePluginSpec{
 			DisplayName: pluginDisplayName,
-			Service: consolev1alpha1.ConsolePluginService{
-				Name:      DeploymentName,
-				Namespace: serviceNamespace,
-				Port:      int32(consolePort),
-				BasePath:  pluginBasePath,
+			I18n: consolev1.ConsolePluginI18n{
+				LoadType: consolev1.Empty,
+			},
+			Backend: consolev1.ConsolePluginBackend{
+				Type: consolev1.Service,
+				Service: &consolev1.ConsolePluginService{
+					Name:      DeploymentName,
+					Namespace: serviceNamespace,
+					Port:      int32(consolePort),
+					BasePath:  pluginBasePath,
+				},
 			},
 		},
 	}
