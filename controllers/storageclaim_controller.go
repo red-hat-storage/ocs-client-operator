@@ -491,6 +491,7 @@ func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) 
 			Name: r.storageClaim.Name,
 			Annotations: map[string]string{
 				"description": "Provides RWO Filesystem volumes, and RWO and RWX Block volumes",
+				"reclaimspace.csiaddons.openshift.io/schedule": "@weekly",
 			},
 		},
 		ReclaimPolicy:        &pvReclaimPolicy,
