@@ -54,6 +54,8 @@ const (
 
 	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
 	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
+
+	kernelMountOptionsKey = "kernelmountoptions"
 )
 
 // StorageClaimReconciler reconciles a StorageClaim object
@@ -380,6 +382,9 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					csiClusterConfigEntry.CephFS.SubvolumeGroup = data["subvolumegroupname"]
 					// delete groupname from data as its not required in storageclass
 					delete(data, "subvolumegroupname")
+					csiClusterConfigEntry.CephFS.KernelMountOptions = data[kernelMountOptionsKey]
+					// delete kernelmountoptions from data as its not required in storageclass
+					delete(data, kernelMountOptionsKey)
 					storageClass = r.getCephFSStorageClass(data)
 				} else if resource.Name == "ceph-rbd" {
 					storageClass = r.getCephRBDStorageClass(data)

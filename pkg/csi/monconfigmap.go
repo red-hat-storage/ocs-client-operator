@@ -50,7 +50,8 @@ type CephRBDSpec struct {
 }
 
 type CephFSSpec struct {
-	SubvolumeGroup string `json:"subvolumeGroup,omitempty"`
+	SubvolumeGroup     string `json:"subvolumeGroup,omitempty"`
+	KernelMountOptions string `json:"kernelMountOptions,omitempty"`
 }
 
 type ClusterConfig struct {
