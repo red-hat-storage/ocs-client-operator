@@ -43,6 +43,8 @@ const DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.c
 
 const runCSIDaemonsetOnMaster = "RUN_CSI_DAEMONSET_ON_MASTER"
 
+const CronScheduleWeekly = "@weekly"
+
 // GetOperatorNamespace returns the namespace where the operator is deployed.
 func GetOperatorNamespace() string {
 	return os.Getenv(OperatorNamespaceEnvVar)
