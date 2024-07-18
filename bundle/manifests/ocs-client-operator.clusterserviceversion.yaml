@@ -7,13 +7,12 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2024-07-19T10:26:00Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
     olm.skipRange: ""
     operatorframework.io/suggested-namespace: openshift-storage
-    operators.operatorframework.io/builder: operator-sdk-v1.34.1
+    operators.operatorframework.io/builder: operator-sdk-v1.19.0+git
     operators.operatorframework.io/internal-objects: '["storageclaims.ocs.openshift.io"]'
     operators.operatorframework.io/operator-type: standalone
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
@@ -250,6 +249,16 @@ spec:
           resources:
           - subscriptions
           verbs:
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - quota.openshift.io
+          resources:
+          - clusterresourcequotas
+          verbs:
+          - create
           - get
           - list
           - update

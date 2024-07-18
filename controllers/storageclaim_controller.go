@@ -18,8 +18,6 @@ package controllers
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -150,7 +148,7 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return reconcile.Result{}, err
 	}
 
-	r.storageClaimHash = getMD5Hash(r.storageClaim.Name)
+	r.storageClaimHash = utils.GetMD5Hash(r.storageClaim.Name)
 	r.storageClaim.Status.Phase = v1alpha1.StorageClaimInitializing
 
 	if r.storageClaim.Spec.StorageClient == "" {
@@ -650,9 +648,4 @@ func (r *StorageClaimReconciler) hasVolumeSnapshotContents() (bool, error) {
 	}
 
 	return false, nil
-}
-
-func getMD5Hash(text string) string {
-	hash := md5.Sum([]byte(text))
-	return hex.EncodeToString(hash[:])
 }
