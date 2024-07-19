@@ -7,8 +7,8 @@ on:
         required: true
         default: ocs-dev
       IMAGE_TAG:
-        required: true
-        default: latest
+        required: false
+        default: ""
 
 jobs:
   docker-push:
@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - uses: actions/setup-go@v5
       with:
@@ -34,7 +32,10 @@ jobs:
       env:
         REGISTRY_NAMESPACE: ${{ github.event.inputs.REGISTRY_NAMESPACE }}
         IMAGE_TAG: ${{ github.event.inputs.IMAGE_TAG }}
+        IMAGE_TAG_SHA: ${{ github.ref_name }}-${{ github.sha }}
       run: |
-        make docker-build docker-push
+        # Set IMAGE_TAG to a calculated <branch>-<sha> if not specified
+        export IMAGE_TAG=${IMAGE_TAG:-${IMAGE_TAG_SHA:0:-33}}
+        make container-build container-push
         make bundle-build bundle-push
         make catalog-build catalog-push
