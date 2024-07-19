@@ -18,12 +18,16 @@ jobs:
         with:
             go-version-file: go.mod
 
+      - name: Source build env variables
+        run: |
+          grep -v '^#' hack/build.env >> $GITHUB_ENV
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v4
         with:
           # Optional: version of golangci-lint to use in form of v1.2 or
           # v1.2.3 or `latest` to use the latest version
-          version: latest
+          version: ${{ env.GO_LINT_IMG_TAG }}
 
           # Optional: working directory, useful for monorepos
           # working-directory: somedir
