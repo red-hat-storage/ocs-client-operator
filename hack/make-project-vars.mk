@@ -7,7 +7,7 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
 GO_LINT_IMG_LOCATION ?= golangci/golangci-lint
-GO_LINT_IMG_TAG ?= v1.56.2
+GO_LINT_IMG_TAG ?= v1.59.2
 GO_LINT_IMG ?= $(GO_LINT_IMG_LOCATION):$(GO_LINT_IMG_TAG)
 
 ENVTEST_K8S_VERSION?=1.26
