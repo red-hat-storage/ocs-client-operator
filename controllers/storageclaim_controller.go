@@ -258,7 +258,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				r.storageClaim.Status.Phase = v1alpha1.StorageClaimFailed
 				return reconcile.Result{}, nil
 			}
-		} else if err != nil && !errors.IsNotFound(err) {
+		} else if !errors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to get StorageClass [%v]: %s", existing.ObjectMeta, err)
 		}
 

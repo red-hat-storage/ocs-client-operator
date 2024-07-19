@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2024-06-11T05:34:18Z"
+    createdAt: "2024-07-19T10:26:00Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -21,7 +21,7 @@ metadata:
     support: Red Hat
   labels:
     operatorframework.io/arch.amd64: supported
-  name: ocs-client-operator.v4.16.0
+  name: ocs-client-operator.v4.17.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -922,4 +922,4 @@ spec:
   maturity: alpha
   provider:
     name: Red Hat
-  version: 4.16.0
+  version: 4.17.0
