@@ -31,6 +31,7 @@ import (
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	consolev1 "github.com/openshift/api/console/v1"
+	quotav1 "github.com/openshift/api/quota/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -69,6 +70,7 @@ func init() {
 	utilruntime.Must(consolev1.AddToScheme(scheme))
 	utilruntime.Must(opv1a1.AddToScheme(scheme))
 	utilruntime.Must(extv1.AddToScheme(scheme))
+	utilruntime.Must(quotav1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

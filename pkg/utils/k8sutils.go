@@ -17,6 +17,8 @@ limitations under the License.
 package utils
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"os"
@@ -100,4 +102,9 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 		return true
 	}
 	return false
+}
+
+func GetMD5Hash(text string) string {
+	hash := md5.Sum([]byte(text))
+	return hex.EncodeToString(hash[:])
 }
