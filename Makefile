@@ -79,7 +79,7 @@ go-build: ## Run go build against code.
 	@GOBIN=${GOBIN} ./hack/go-build.sh
 
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run ./cmd/main.go
 
 container-build: test ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
