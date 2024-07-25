@@ -46,7 +46,6 @@ verify-csi-images-manifest: csi-images-manifest ## Verify csi-images-manifest ha
 		git diff -u $${CSI_IMAGES_MANIFEST}; \
 		exit 1; \
 	fi
-
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
@@ -58,6 +57,10 @@ lint: ## Run golangci-lint against code.
 
 godeps-update:  ## Run go mod tidy & vendor
 	go mod tidy && go mod vendor
+
+godeps-verify: godeps-update
+	@echo "Verifying go-deps"
+	./hack/godeps-verify.sh
 
 test-setup: godeps-update generate fmt vet envtest ## Run setup targets for tests
 
