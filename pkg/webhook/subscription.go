@@ -15,7 +15,7 @@ import (
 
 type SubscriptionAdmission struct {
 	Client  client.Client
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 	Log     logr.Logger
 }
 
