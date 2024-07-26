@@ -8,16 +8,22 @@ on:
       - hack/**
       - Makefile
       - config/manager/csi-images.yaml
+      - go.mod
+      - go.sum
+      - vendor
   pull_request:
     branches: ['*']
     paths:
       - hack/**
       - Makefile
       - config/manager/csi-images.yaml
+      - go.mod
+      - go.sum
+      - vendor
 
 jobs:
   csi-images-manifest:
-    name: verify-csi-images-manifest
+    name: verify-generated-changes
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -25,5 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - name: Verify changes to CSI images manifest
         run: make verify-csi-images-manifest
+
+      - name: Verify go deps
+        run: make godeps-verify
