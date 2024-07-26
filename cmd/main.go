@@ -21,7 +21,7 @@ import (
 	"os"
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/controllers"
+	"github.com/red-hat-storage/ocs-client-operator/internal/controller"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
@@ -155,7 +155,7 @@ func main() {
 		}},
 	)
 
-	if err = (&controllers.StorageClientReconciler{
+	if err = (&controller.StorageClientReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
@@ -164,7 +164,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.StorageClaimReconciler{
+	if err = (&controller.StorageClaimReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
@@ -182,7 +182,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.OperatorConfigMapReconciler{
+	if err = (&controller.OperatorConfigMapReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
