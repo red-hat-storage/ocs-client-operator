@@ -1,3 +1,7 @@
+# all env from this file can be overwritten from command line if required
+# with "make <target> VAR=VALUE"
+include hack/build.env
+
 PROJECT_DIR := $(PWD)
 BIN_DIR := $(PROJECT_DIR)/bin
 
@@ -7,7 +11,6 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
 GO_LINT_IMG_LOCATION ?= golangci/golangci-lint
-GO_LINT_IMG_TAG ?= v1.56.2
 GO_LINT_IMG ?= $(GO_LINT_IMG_LOCATION):$(GO_LINT_IMG_TAG)
 
 ENVTEST_K8S_VERSION?=1.26

@@ -18,11 +18,13 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	quotav1 "github.com/openshift/api/quota/v1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
@@ -38,9 +40,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -93,9 +97,11 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClient{}).
 		Owns(&v1alpha1.StorageClaim{}).
 		Owns(&batchv1.CronJob{}).
+		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }
 
+//+kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/finalizers,verbs=update
@@ -184,8 +190,27 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		return r.acknowledgeOnboarding(externalClusterClient)
 	}
 
+	storageClientResponse, err := externalClusterClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
+	}
+
 	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
 		return res, err
+	}
+
+	for _, eResource := range storageClientResponse.ExternalResource {
+		// Create the received resources, if necessary.
+		switch eResource.Kind {
+		case "ClusterResourceQuota":
+			var clusterResourceQuotaSpec *quotav1.ClusterResourceQuotaSpec
+			if err := json.Unmarshal(eResource.Data, &clusterResourceQuotaSpec); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall clusterResourceQuotaSpec error: %v", err)
+			}
+			if err := r.reconcileClusterResourceQuota(clusterResourceQuotaSpec); err != nil {
+				return reconcile.Result{}, err
+			}
+		}
 	}
 
 	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] != "true" {
@@ -204,6 +229,25 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func (r *StorageClientReconciler) reconcileClusterResourceQuota(spec *quotav1.ClusterResourceQuotaSpec) error {
+	clusterResourceQuota := &quotav1.ClusterResourceQuota{}
+	clusterResourceQuota.Name = fmt.Sprintf("storage-client-%s-resourceqouta", utils.GetMD5Hash(r.storageClient.Name))
+	_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clusterResourceQuota, func() error {
+
+		if err := r.own(clusterResourceQuota); err != nil {
+			return err
+		}
+
+		clusterResourceQuota.Spec = *spec
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create or update clusterResourceQuota %v: %s", &clusterResourceQuota, err)
+	}
+	return nil
 }
 
 func (r *StorageClientReconciler) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
@@ -414,7 +458,7 @@ func (r *StorageClientReconciler) logGrpcErrorAndReportEvent(grpcCallName string
 func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.Result, error) {
 	cronJob := &batchv1.CronJob{}
 	// maximum characters allowed for cronjob name is 52 and below interpolation creates 47 characters
-	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", getMD5Hash(r.storageClient.Name)[:16])
+	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", utils.GetMD5Hash(r.storageClient.Name)[:16])
 	cronJob.Namespace = r.OperatorNamespace
 
 	var podDeadLineSeconds int64 = 120
