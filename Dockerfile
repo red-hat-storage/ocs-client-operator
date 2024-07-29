@@ -28,6 +28,7 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/status-reporter .
+COPY --from=builder /workspace/bin/deployment-guard .
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]
