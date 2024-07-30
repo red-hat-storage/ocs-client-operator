@@ -102,7 +102,8 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && \
 		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	cd config/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
-	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG)
+	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
+		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	$(KUSTOMIZE) build config/default | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}' | kubectl apply -f -
 
 remove: ## Remove controller from the K8s cluster specified in ~/.kube/config.
@@ -122,6 +123,7 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG) && \
 		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
+		$(KUSTOMIZE) edit set image deployment-guard=$(IMG) && \
 		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/default && \
 		$(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG) && \

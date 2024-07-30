@@ -11,6 +11,16 @@ spec:
       labels:
         app.kubernetes.io/name: ocs-client-operator-console
     spec:
+      initContainers:
+      - name: deployment-guard
+        image: deployment-guard:latest
+        command:
+          - /deployment-guard
+        env:
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
       containers:
         - name: ocs-client-operator-console
           image: ocs-client-operator-console:latest
@@ -54,9 +64,11 @@ spec:
         - name: ocs-client-operator-console-nginx-conf
           configMap:
             name: ocs-client-operator-console-nginx-conf
+            optional: true
         - name: ocs-client-operator-console-nginx-log
           emptyDir: {}
         - name: ocs-client-operator-console-nginx-tmp
           emptyDir: {}
       securityContext:
         runAsNonRoot: true
+      serviceAccountName: ocs-client-operator-controller-manager
