@@ -20,3 +20,6 @@ images:
 - name: controller
   newName: quay.io/ocs-dev/ocs-client-operator
   newTag: latest
+- name: deployment-guard
+  newName: quay.io/ocs-dev/ocs-client-operator
+  newTag: latest
