@@ -36,12 +36,6 @@ func main() {
 	}
 	ctx := context.Background()
 
-	storageClusterCRD := &metav1.PartialObjectMetadata{}
-	storageClusterCRD.SetGroupVersionKind(
-		extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"),
-	)
-	storageClusterCRD.Name = "storageclusters.ocs.openshift.io"
-
 	// delay exponentially from half a sec and cap at 2 minutes
 	delayFunc := wait.Backoff{
 		Duration: 500 * time.Millisecond,
