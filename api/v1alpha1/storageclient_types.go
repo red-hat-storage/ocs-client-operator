@@ -52,6 +52,10 @@ type StorageClientStatus struct {
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
+
+	// hash of ClusterResourceQuotaSpec
+	// +optional
+	ClusterResourceQuotaSpecHash string `json:"clusterResourceQuotaSpecHash,omitempty"`
 }
 
 //+kubebuilder:object:root=true
