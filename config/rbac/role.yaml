@@ -196,6 +196,13 @@ rules:
   - patch
   - update
 - apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageclusters
+  verbs:
+  - get
+  - list
+- apiGroups:
   - operators.coreos.com
   resources:
   - clusterserviceversions

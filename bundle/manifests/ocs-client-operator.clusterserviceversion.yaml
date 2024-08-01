@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2024-06-11T05:34:18Z"
+    createdAt: "2024-07-31T09:49:01Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -237,6 +237,13 @@ spec:
           - get
           - patch
           - update
+        - apiGroups:
+          - ocs.openshift.io
+          resources:
+          - storageclusters
+          verbs:
+          - get
+          - list
         - apiGroups:
           - operators.coreos.com
           resources:
@@ -742,6 +749,17 @@ spec:
                   name: csi-images
                 - mountPath: /etc/tls/private
                   name: webhook-cert-secret
+              initContainers:
+              - command:
+                - /deployment-guard
+                env:
+                - name: OPERATOR_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                image: quay.io/ocs-dev/ocs-client-operator:latest
+                name: deployment-guard
+                resources: {}
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
@@ -802,14 +820,27 @@ spec:
                   name: ocs-client-operator-console-nginx-log
                 - mountPath: /var/lib/nginx/tmp
                   name: ocs-client-operator-console-nginx-tmp
+              initContainers:
+              - command:
+                - /deployment-guard
+                env:
+                - name: OPERATOR_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                image: quay.io/ocs-dev/ocs-client-operator:latest
+                name: deployment-guard
+                resources: {}
               securityContext:
                 runAsNonRoot: true
+              serviceAccountName: ocs-client-operator-controller-manager
               volumes:
               - name: ocs-client-operator-console-serving-cert
                 secret:
                   secretName: ocs-client-operator-console-serving-cert
               - configMap:
                   name: ocs-client-operator-console-nginx-conf
+                  optional: true
                 name: ocs-client-operator-console-nginx-conf
               - emptyDir: {}
                 name: ocs-client-operator-console-nginx-log
