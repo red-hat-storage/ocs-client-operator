@@ -40,3 +40,9 @@ jobs:
 
       - name: Verify go deps
         run: make godeps-verify
+
+      - name: Verify bundle
+        run: |
+          make bundle
+          msg='Uncommitted bundle changes. Run `make bundle` and commit results.'
+          git diff --exit-code bundle || (echo -e '\e[31m'"$msg"; exit 1)
