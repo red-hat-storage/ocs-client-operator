@@ -10,10 +10,11 @@ COPY go.mod go.sum ./
 COPY vendor/ vendor/
 
 # Copy the project source
-COPY main.go Makefile ./
+COPY Makefile ./
+COPY cmd/main.go cmd/main.go
 COPY hack/ hack/
 COPY api/ api/
-COPY controllers/ controllers/
+COPY internal/controller/ internal/controller/
 COPY config/ config/
 COPY pkg/ pkg/
 COPY service/ service/
@@ -27,6 +28,7 @@ FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/status-reporter .
+COPY --from=builder /workspace/bin/deployment-guard .
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]

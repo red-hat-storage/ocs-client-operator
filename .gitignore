@@ -90,4 +90,7 @@ tags
 
 # Support for Project snippet scope
 
+# Created by Mac
+*.DS_Store
+
 # End of https://www.toptal.com/developers/gitignore/api/go,vim,visualstudiocode,git

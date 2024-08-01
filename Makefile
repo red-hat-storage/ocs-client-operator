@@ -46,7 +46,6 @@ verify-csi-images-manifest: csi-images-manifest ## Verify csi-images-manifest ha
 		git diff -u $${CSI_IMAGES_MANIFEST}; \
 		exit 1; \
 	fi
-
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
@@ -58,6 +57,10 @@ lint: ## Run golangci-lint against code.
 
 godeps-update:  ## Run go mod tidy & vendor
 	go mod tidy && go mod vendor
+
+godeps-verify: godeps-update
+	@echo "Verifying go-deps"
+	./hack/godeps-verify.sh
 
 test-setup: godeps-update generate fmt vet envtest ## Run setup targets for tests
 
@@ -79,7 +82,7 @@ go-build: ## Run go build against code.
 	@GOBIN=${GOBIN} ./hack/go-build.sh
 
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run ./cmd/main.go
 
 container-build: test ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
@@ -96,9 +99,11 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | kubectl delete -f -
 
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && \
+		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	cd config/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
-	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG)
+	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
+		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	$(KUSTOMIZE) build config/default | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}' | kubectl apply -f -
 
 remove: ## Remove controller from the K8s cluster specified in ~/.kube/config.
@@ -115,8 +120,10 @@ remove-with-olm: ## Remove controller from the K8s cluster
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG) && \
+		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
+		$(KUSTOMIZE) edit set image deployment-guard=$(IMG) && \
 		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/default && \
 		$(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG) && \

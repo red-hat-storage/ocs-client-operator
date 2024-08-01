@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package controller
 
 import (
 	"context"
@@ -51,6 +51,7 @@ import (
 const (
 	storageClaimFinalizer  = "storageclaim.ocs.openshift.io"
 	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
+	keyRotationAnnotation  = "keyrotation.csiaddons.openshift.io/schedule"
 
 	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
 	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
@@ -496,6 +497,10 @@ func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) 
 		AllowVolumeExpansion: &allowVolumeExpansion,
 		Provisioner:          csi.GetRBDDriverName(),
 		Parameters:           data,
+	}
+
+	if r.storageClaim.Spec.EncryptionMethod != "" {
+		utils.AddAnnotation(storageClass, keyRotationAnnotation, utils.CronScheduleWeekly)
 	}
 	return storageClass
 }
