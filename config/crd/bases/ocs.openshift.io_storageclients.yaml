@@ -61,6 +61,10 @@ spec:
           status:
             description: StorageClientStatus defines the observed state of StorageClient
             properties:
+              desiredClientConfigHash:
+                description: DesiredClientConfigHash will hold the hash of desired
+                  state of client
+                type: string
               id:
                 description: ConsumerID will hold the identity of this cluster inside
                   the attached provider cluster

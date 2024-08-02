@@ -52,6 +52,9 @@ type StorageClientStatus struct {
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
+
+	// DesiredClientConfigHash will hold the hash of desired state of client
+	DesiredClientConfigHash string `json:"desiredClientConfigHash,omitempty"`
 }
 
 //+kubebuilder:object:root=true
