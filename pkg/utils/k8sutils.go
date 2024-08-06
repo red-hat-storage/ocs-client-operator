@@ -17,13 +17,16 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"maps"
 	"os"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
@@ -109,4 +112,17 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 func GetMD5Hash(text string) string {
 	hash := md5.Sum([]byte(text))
 	return hex.EncodeToString(hash[:])
+}
+
+func MapCRDAvailability(ctx context.Context, clnt client.Client, crdNames ...string) (map[string]bool, error) {
+	crdExist := map[string]bool{}
+	for _, crdName := range crdNames {
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		crd.Name = crdName
+		if err := clnt.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+			return nil, fmt.Errorf("error getting CRD, %v", err)
+		}
+		crdExist[crdName] = crd.UID != ""
+	}
+	return crdExist, nil
 }
