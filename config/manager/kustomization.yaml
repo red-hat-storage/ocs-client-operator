@@ -1,6 +1,7 @@
 resources:
 - manager.yaml
 - webhook_service.yaml
+- csi-images-multiple.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
