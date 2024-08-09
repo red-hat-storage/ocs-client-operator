@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: $NAME
+  labels:
+    ocs.openshift.io/images.version: $VERSION
+data:
+  provisioner: "$PROVISIONER"
+  attacher: "$ATTACHER"
+  resizer: "$RESIZER"
+  snapshotter: "$SNAPSHOTTER"
+  registrar: "$REGISTRAR"
+  plugin: "$PLUGIN"
+  addons: "$ADDONS"
+---
