@@ -18,7 +18,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -28,6 +31,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
@@ -60,6 +64,10 @@ func main() {
 
 	if err := configv1.AddToScheme(scheme); err != nil {
 		klog.Exitf("Failed to add configv1 to scheme: %v", err)
+	}
+
+	if err := csiopv1a1.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add csiopv1a1 to scheme: %v", err)
 	}
 
 	config, err := config.GetConfig()
@@ -118,29 +126,63 @@ func main() {
 		}
 	}
 
-	var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
+	if err := updateCSIConfig(ctx, cl, providerClient, storageClient, operatorNamespace); err != nil {
+		klog.Exitf("Failed to update csi config: %v", err)
+	}
+}
+
+func updateCSIConfig(ctx context.Context,
+	cl client.Client,
+	providerClient *providerclient.OCSProviderClient,
+	storageClient *v1alpha1.StorageClient,
+	operatorNamespace string) error {
 	scResponse, err := providerClient.GetStorageConfig(ctx, storageClient.Status.ConsumerID)
 	if err != nil {
-		klog.Exitf("Failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
+		return fmt.Errorf("failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
 	for _, eResource := range scResponse.ExternalResource {
-		if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
+		if !utils.DelegateCSI && eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
 			monitorIps, err := csi.ExtractMonitor(eResource.Data)
 			if err != nil {
-				klog.Exitf("Failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+				return fmt.Errorf("failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
 			}
+			var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
 			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
+			cc := csi.ClusterConfig{
+				Client:    cl,
+				Namespace: operatorNamespace,
+				Ctx:       ctx,
+			}
+			err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
+			if err != nil {
+				return fmt.Errorf("failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
+			}
+		} else if utils.DelegateCSI && eResource.Kind == "CephConnection" {
+			desiredCephConnectionSpec := &csiopv1a1.CephConnectionSpec{}
+			if err := json.Unmarshal(eResource.Data, &desiredCephConnectionSpec); err != nil {
+				return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)
+			}
+
+			cephConnection := &csiopv1a1.CephConnection{}
+			cephConnection.Name = storageClient.Name
+			cephConnection.Namespace = operatorNamespace
+			if err := cl.Get(ctx, client.ObjectKeyFromObject(cephConnection), cephConnection); err != nil {
+				return fmt.Errorf("failed to get csi cephConnection resource: %v", err)
+			}
+
+			if !reflect.DeepEqual(cephConnection.Spec, desiredCephConnectionSpec) {
+				cephConnectionCopy := &csiopv1a1.CephConnection{}
+				cephConnection.ObjectMeta.DeepCopyInto(&cephConnectionCopy.ObjectMeta)
+				desiredCephConnectionSpec.DeepCopyInto(&cephConnectionCopy.Spec)
+				// patch is being used to ensure spec is accurate at this point of time even if there are reconciles happening which change resourceversion
+				if err := cl.Patch(ctx, cephConnection, client.MergeFrom(cephConnectionCopy)); err != nil {
+					return fmt.Errorf("failed to patch csi cephConnectionSpec: %v", err)
+				}
+			}
 		}
 	}
-	cc := csi.ClusterConfig{
-		Client:    cl,
-		Namespace: operatorNamespace,
-		Ctx:       ctx,
-	}
-	err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
-	if err != nil {
-		klog.Exitf("Failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
-	}
+
+	return nil
 }
 
 func setClusterInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
