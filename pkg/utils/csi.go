@@ -9,7 +9,7 @@ import (
 )
 
 var DelegateCSI = func() bool {
-	return strings.ToLower(os.Getenv(CSIReconcileEnvVar)) == "delegate"
+	return strings.ToLower(os.Getenv(CSIReconcileEnvVar)) != "self"
 }()
 
 func ExtractMonitor(monitorData []byte) ([]string, error) {
