@@ -28,6 +28,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
@@ -93,12 +94,18 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	r.recorder = utils.NewEventReporter(mgr.GetEventRecorderFor("controller_storageclient"))
-	return ctrl.NewControllerManagedBy(mgr).
+	generationChangePredicate := predicate.GenerationChangedPredicate{}
+	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
 		Owns(&v1alpha1.StorageClaim{}).
 		Owns(&batchv1.CronJob{}).
-		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Complete(r)
+		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate))
+
+	if utils.DelegateCSI {
+		bldr = bldr.Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate))
+	}
+
+	return bldr.Complete(r)
 }
 
 //+kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas,verbs=get;list;watch;create;update
@@ -108,6 +115,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -210,6 +218,23 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			if err := r.reconcileClusterResourceQuota(clusterResourceQuotaSpec); err != nil {
 				return reconcile.Result{}, err
 			}
+		case "CephConnection":
+			if utils.DelegateCSI {
+				cephConnection := &csiopv1a1.CephConnection{}
+				cephConnection.Name = r.storageClient.Name
+				cephConnection.Namespace = r.OperatorNamespace
+				if err := r.createOrUpdate(cephConnection, func() error {
+					if err := r.own(cephConnection); err != nil {
+						return fmt.Errorf("failed to own cephConnection resource: %v", err)
+					}
+					if err := json.Unmarshal(eResource.Data, &cephConnection.Spec); err != nil {
+						return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)
+					}
+					return nil
+				}); err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
+				}
+			}
 		}
 	}
 
@@ -247,6 +272,15 @@ func (r *StorageClientReconciler) reconcileClusterResourceQuota(spec *quotav1.Cl
 	if err != nil {
 		return fmt.Errorf("failed to create or update clusterResourceQuota %v: %s", &clusterResourceQuota, err)
 	}
+	return nil
+}
+
+func (r *StorageClientReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
+	result, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, f)
+	if err != nil {
+		return err
+	}
+	r.Log.Info(fmt.Sprintf("%s successfully %s", obj.GetObjectKind(), result), "name", obj.GetName())
 	return nil
 }
 
@@ -498,6 +532,10 @@ func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.
 										{
 											Name:  utils.OperatorNamespaceEnvVar,
 											Value: r.OperatorNamespace,
+										},
+										{
+											Name:  utils.CSIReconcileEnvVar,
+											Value: os.Getenv(utils.CSIReconcileEnvVar),
 										},
 									},
 								},

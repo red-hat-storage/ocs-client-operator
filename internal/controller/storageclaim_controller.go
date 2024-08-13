@@ -29,6 +29,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
@@ -105,11 +106,17 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+	generationChangePredicate := predicate.GenerationChangedPredicate{}
+	bldr := ctrl.NewControllerManagedBy(mgr).
+		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
-		Owns(&snapapi.VolumeSnapshotClass{}).
-		Complete(r)
+		Owns(&snapapi.VolumeSnapshotClass{})
+
+	if utils.DelegateCSI {
+		bldr = bldr.Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate))
+	}
+
+	return bldr.Complete(r)
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;create;update;patch;delete
@@ -120,6 +127,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -325,15 +333,15 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		}
 		// Go over the received objects and operate on them accordingly.
 		for _, resource := range resources {
-			data := map[string]string{}
-			err = json.Unmarshal(resource.Data, &data)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
-			}
 
 			// Create the received resources, if necessary.
 			switch resource.Kind {
 			case "Secret":
+				data := map[string]string{}
+				err = json.Unmarshal(resource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
+				}
 				secret := &corev1.Secret{}
 				secret.Name = resource.Name
 				secret.Namespace = r.OperatorNamespace
@@ -355,6 +363,11 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update secret %v: %s", secret, err)
 				}
 			case "StorageClass":
+				data := map[string]string{}
+				err = json.Unmarshal(resource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
+				}
 				if rns, ok := data["radosnamespace"]; ok {
 					csiClusterConfigEntry.CephRBD = new(csi.CephRBDSpec)
 					csiClusterConfigEntry.CephRBD.RadosNamespace = rns
@@ -391,6 +404,11 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update StorageClass: %s", err)
 				}
 			case "VolumeSnapshotClass":
+				data := map[string]string{}
+				err = json.Unmarshal(resource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
+				}
 				var volumeSnapshotClass *snapapi.VolumeSnapshotClass
 				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
 				// generate a new clusterID for cephfs subvolumegroup, as
@@ -406,13 +424,35 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				if err := r.createOrReplaceVolumeSnapshotClass(volumeSnapshotClass); err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
 				}
+			case "ClientProfile":
+				if utils.DelegateCSI {
+					clientProfile := &csiopv1a1.ClientProfile{}
+					clientProfile.Name = r.storageClaimHash
+					clientProfile.Namespace = r.OperatorNamespace
+					if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfile, func() error {
+						if err := r.own(clientProfile); err != nil {
+							return fmt.Errorf("failed to own clientProfile resource: %v", err)
+						}
+						if err := json.Unmarshal(resource.Data, &clientProfile.Spec); err != nil {
+							return fmt.Errorf("failed to unmarshall clientProfile spec: %v", err)
+						}
+						clientProfile.Spec.CephConnectionRef = corev1.LocalObjectReference{
+							Name: r.storageClient.Name,
+						}
+						return nil
+					}); err != nil {
+						return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfile: %v", err)
+					}
+				}
 			}
 		}
 
 		// update monitor configuration for cephcsi
-		err = cc.UpdateMonConfigMap(csiClusterConfigEntry.ClusterID, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
+		if !utils.DelegateCSI {
+			err = cc.UpdateMonConfigMap(csiClusterConfigEntry.ClusterID, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
+			}
 		}
 		// Readiness phase.
 		// Update the StorageClaim status.
@@ -437,9 +477,11 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		}
 
 		// Delete configmap entry for cephcsi
-		err = cc.UpdateMonConfigMap(r.storageClaimHash, r.storageClient.Status.ConsumerID, nil)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
+		if !utils.DelegateCSI {
+			err = cc.UpdateMonConfigMap(r.storageClaimHash, r.storageClient.Status.ConsumerID, nil)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
+			}
 		}
 
 		// Call `RevokeStorageClaim` service on the provider server with StorageClaim as a request message.
