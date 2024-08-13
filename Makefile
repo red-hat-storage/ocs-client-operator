@@ -138,6 +138,7 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	yq -i '.dependencies[0].value.packageName = "'${CSI_ADDONS_PACKAGE_NAME}'"' config/metadata/dependencies.yaml
 	yq -i '.dependencies[0].value.version = "'${CSI_ADDONS_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
 	cp config/metadata/* bundle/metadata/
+	./hack/create-csi-images-manifest.sh
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build

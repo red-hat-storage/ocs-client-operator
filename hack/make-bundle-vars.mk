@@ -155,4 +155,5 @@ CSI_IMG_CEPH_CSI ?= $(IMAGE_LOCATION_CEPH_CSI)/$(DEFAULT_CSI_IMG_CEPH_CSI_NAME):
 #   CSI_IMG_ADDONS_v4_x ?= quay.io/csiaddons/k8s-sidecar:v3
 #   CSI_IMG_CEPH_CSI_v4_x ?= cephcsi:v0.1
 
-CSI_OCP_VERSIONS ?= v4.14 v4.15 v4.16
+# we will maintain N (VERSION var in this file) through and including N-2 versions
+CSI_OCP_VERSIONS ?= v4.15 v4.16 v4.17
