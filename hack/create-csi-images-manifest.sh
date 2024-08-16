@@ -10,7 +10,7 @@ for version in ${CSI_OCP_VERSIONS}; do
   provisioner="CSI_IMG_PROVISIONER_${VER}"
   PROVISIONER=${!provisioner:-${CSI_IMG_PROVISIONER}}
 
-  attacher="CSI_IMG_PROVISIONER_${VER}"
+  attacher="CSI_IMG_ATTACHER_${VER}"
   ATTACHER=${!attacher:-${CSI_IMG_ATTACHER}}
 
   resizer="CSI_IMG_RESIZER_${VER}"
