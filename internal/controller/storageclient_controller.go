@@ -121,6 +121,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -283,6 +284,24 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
 			}
+		case "Subscription":
+			var subscriptionSpec *opv1a1.SubscriptionSpec
+			if err := json.Unmarshal(eResource.Data, &subscriptionSpec); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall subscriptionSpec error: %v", err)
+			}
+
+			clientSubscription, err := r.getSubscriptionByPackageName("ocs-client-operator")
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to get ocs-client-operator subscription: %v", err)
+			}
+			clientSubscription.Spec = subscriptionSpec
+
+			subscriptionCopy := &opv1a1.Subscription{}
+			clientSubscription.DeepCopyInto(subscriptionCopy)
+			if err := r.Client.Patch(r.ctx, clientSubscription, client.MergeFrom(subscriptionCopy)); err != nil {
+				klog.Exitf("Failed to update ocs-client-operator subscription with channel %q: %v", clientSubscription.Spec.Channel, err)
+			}
+
 		}
 	}
 	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] != "true" {
@@ -301,6 +320,26 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func (r *StorageClientReconciler) getSubscriptionByPackageName(pkgName string) (*opv1a1.Subscription, error) {
+	subList := &opv1a1.SubscriptionList{}
+	if err := r.list(
+		subList,
+		client.MatchingFields{subPackageIndexName: pkgName},
+		client.InNamespace(r.OperatorNamespace),
+		client.Limit(1),
+	); err != nil {
+		return nil, fmt.Errorf("failed to list subscriptions: %v", err)
+	}
+
+	if len(subList.Items) == 0 {
+		return nil, kerrors.NewNotFound(opv1a1.Resource("subscriptions"), pkgName)
+	} else if len(subList.Items) > 1 {
+		return nil, fmt.Errorf("more than one subscription found for %v", pkgName)
+	}
+
+	return &subList.Items[0], nil
 }
 
 func (r *StorageClientReconciler) reconcileClusterResourceQuota(spec *quotav1.ClusterResourceQuotaSpec) error {

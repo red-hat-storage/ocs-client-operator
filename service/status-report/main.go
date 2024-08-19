@@ -112,19 +112,6 @@ func main() {
 	setPlatformInformation(ctx, cl, status)
 	setOperatorInformation(ctx, cl, status, operatorNamespace)
 	setClusterInformation(ctx, cl, status)
-	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
-	if err != nil {
-		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
-	}
-
-	storageClientCopy := &v1alpha1.StorageClient{}
-	storageClient.DeepCopyInto(storageClientCopy)
-	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
-		// patch is being used here as to not have any conflicts over storageclient cr changes as this annotation value doesn't depend on storageclient spec
-		if err := cl.Patch(ctx, storageClient, client.MergeFrom(storageClientCopy)); err != nil {
-			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
-		}
-	}
 
 	if err := updateCSIConfig(ctx, cl, providerClient, storageClient, operatorNamespace); err != nil {
 		klog.Exitf("Failed to update csi config: %v", err)
