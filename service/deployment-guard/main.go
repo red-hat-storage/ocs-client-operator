@@ -36,6 +36,20 @@ func main() {
 	}
 	ctx := context.Background()
 
+	// NOTE: when we are running alongside odf-operator the CRDs corresponding
+	// to an operator is installed first however it isn't guaranteed that CRDs
+	// of all dependent operators are installed first before deploying any CSV.
+	//
+	// Due to above, StorageCluster CRD is sometimes created after we check for
+	// it's existence and 1 min is the delay observed when client-op is listed
+	// first and ocs-op listed last in the install plan for deploying CSVs.
+	//
+	// Please note this should be temporary upto when we develop new operator
+	// which directly installs other operators based on runtime requirements
+	// outside of OLM.
+	klog.Info("Waiting for 90 sec before checking to allow operator to run")
+	time.Sleep(90 * time.Second)
+
 	// delay exponentially from half a sec and cap at 2 minutes
 	delayFunc := wait.Backoff{
 		Duration: 500 * time.Millisecond,
