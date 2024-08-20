@@ -7,6 +7,7 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 )
 
@@ -73,10 +74,27 @@ const CSIOperatorConfigName = "ceph-csi-operator-config"
 
 var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 	DriverSpecDefaults: &csiopv1a1.DriverSpec{
+		Log: &csiopv1a1.LogSpec{
+			Rotation: &csiopv1a1.LogRotationSpec{
+				Periodicity: csiopv1a1.DailyPeriod,
+				MaxLogSize:  resource.MustParse("500M"),
+				MaxFiles:    7,
+				LogHostPath: "/var/lib/cephcsi",
+			},
+		},
 		AttachRequired:  ptr.To(true),
 		DeployCsiAddons: ptr.To(true),
 		FsGroupPolicy:   storagev1.FileFSGroupPolicy,
 		ControllerPlugin: &csiopv1a1.ControllerPluginSpec{
+			Privileged: ptr.To(true),
+			Resources: csiopv1a1.ControllerPluginResourcesSpec{
+				LogRotator: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			},
 			PodCommonSpec: csiopv1a1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-cluster-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
@@ -84,6 +102,14 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			Replicas: ptr.To(int32(2)),
 		},
 		NodePlugin: &csiopv1a1.NodePluginSpec{
+			Resources: csiopv1a1.NodePluginResourcesSpec{
+				LogRotator: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			},
 			KubeletDirPath: "/var/lib/kubelet",
 			PodCommonSpec: csiopv1a1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-node-critical"),
