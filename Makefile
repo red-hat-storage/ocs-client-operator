@@ -136,7 +136,7 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	$(KUSTOMIZE) build $(MANIFEST_PATH) | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}'| \
 		$(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts="$$($(KUSTOMIZE) build $(MANIFEST_PATH) | $(YQ) 'select(.kind == "ServiceAccount") | .metadata.name' -N | paste -sd "," -)"
 	yq -i '.dependencies[0].value.packageName = "'${CSI_ADDONS_PACKAGE_NAME}'"' config/metadata/dependencies.yaml
-	yq -i '.dependencies[0].value.version = "'${CSI_ADDONS_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
+	yq -i '.dependencies[0].value.version = ">='${CSI_ADDONS_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
 	cp config/metadata/* bundle/metadata/
 	./hack/create-csi-images-manifest.sh
 	$(OPERATOR_SDK) bundle validate ./bundle
