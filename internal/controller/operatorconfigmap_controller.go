@@ -801,6 +801,24 @@ func (c *OperatorConfigMapReconciler) getDeployCSIConfig() (bool, error) {
 	return deployCSI, nil
 }
 
+func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
+	valAsString, ok := c.operatorConfigMap.Data[manageNoobaaSubKey]
+	if !ok {
+		//while feature in dev preview returning false to disable feature by default.
+		return false
+	}
+	val, err := strconv.ParseBool(valAsString)
+	if err != nil {
+		c.log.Error(
+			err,
+			"Unsupported value under manageNoobaaSubscription key",
+		)
+		//while feature in dev preview returning false to disable feature by default.
+		return false
+	}
+	return val
+}
+
 func (c *OperatorConfigMapReconciler) get(obj client.Object, opts ...client.GetOption) error {
 	return c.Get(c.ctx, client.ObjectKeyFromObject(obj), obj, opts...)
 }
