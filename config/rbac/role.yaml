@@ -187,6 +187,17 @@ rules:
   - update
   - watch
 - apiGroups:
+  - noobaa.io
+  resources:
+  - noobaas
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
   - ocs.openshift.io
   resources:
   - storageclaims

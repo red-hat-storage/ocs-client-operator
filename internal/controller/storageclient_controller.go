@@ -29,6 +29,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
@@ -99,7 +100,9 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClient{}).
 		Owns(&v1alpha1.StorageClaim{}).
 		Owns(&batchv1.CronJob{}).
-		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate))
+		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Owns(&corev1.Secret{})
 
 	if utils.DelegateCSI {
 		bldr = bldr.Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate))
@@ -116,6 +119,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -235,9 +240,51 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
 				}
 			}
+		case "Secret":
+			data := map[string][]byte{}
+			if err := json.Unmarshal(eResource.Data, &data); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall secret: %v", err)
+			}
+			secret := &corev1.Secret{}
+			secret.Name = eResource.Name
+			secret.Namespace = r.storageClient.Namespace
+			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
+				if err := r.own(secret); err != nil {
+					return err
+				}
+				secret.Data = data
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf(
+					"failed to create or update secret %v: %v",
+					client.ObjectKeyFromObject(secret),
+					err,
+				)
+			}
+		case "Noobaa":
+			noobaaSpec := &nbv1.NooBaaSpec{}
+			if err := json.Unmarshal(eResource.Data, &noobaaSpec); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall noobaa spec data: %v", err)
+			}
+			nb := &nbv1.NooBaa{}
+			nb.Name = eResource.Name
+			nb.Namespace = r.storageClient.Namespace
+
+			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, nb, func() error {
+				if err := r.own(nb); err != nil {
+					return err
+				}
+				utils.AddAnnotation(nb, "remote-client-noobaa", "true")
+				noobaaSpec.JoinSecret.Namespace = r.storageClient.Namespace
+				nb.Spec = *noobaaSpec
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
+			}
 		}
 	}
-
 	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] != "true" {
 		if err := r.reconcileBlockStorageClaim(); err != nil {
 			return reconcile.Result{}, err
