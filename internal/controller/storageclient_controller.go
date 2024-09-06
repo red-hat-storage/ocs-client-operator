@@ -367,7 +367,7 @@ func (r *StorageClientReconciler) newExternalClusterClient() (*providerClient.OC
 	ocsProviderClient, err := providerClient.NewProviderClient(
 		r.ctx, r.storageClient.Spec.StorageProviderEndpoint, time.Second*10)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a new provider client: %v", err)
+		return nil, fmt.Errorf("failed to create a new provider client with endpoint %v: %v", r.storageClient.Spec.StorageProviderEndpoint, err)
 	}
 
 	return ocsProviderClient, nil
