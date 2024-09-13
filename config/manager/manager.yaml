@@ -94,3 +94,8 @@ spec:
           secretName: webhook-cert-secret
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+      tolerations:
+      - effect: NoSchedule
+        key: node.ocs.openshift.io/storage
+        operator: Equal
+        value: "true"
