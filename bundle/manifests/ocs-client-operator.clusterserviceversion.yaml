@@ -3,11 +3,11 @@ kind: ClusterServiceVersion
 metadata:
   annotations:
     alm-examples: '[]'
-    capabilities: Basic Install
+    capabilities: Deep Insights
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2024-08-30T13:24:10Z"
+    createdAt: "2024-09-13T04:59:06Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -225,6 +225,17 @@ spec:
           - prometheusrules
           verbs:
           - create
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - noobaa.io
+          resources:
+          - noobaas
+          verbs:
+          - create
+          - delete
           - get
           - list
           - update
@@ -775,6 +786,8 @@ spec:
                       fieldPath: metadata.name
                 - name: STATUS_REPORTER_IMAGE
                   value: quay.io/ocs-dev/ocs-client-operator:latest
+                - name: NOOBAA_OPERATOR_CHANNEL
+                  value: stable-4.17
                 image: quay.io/ocs-dev/ocs-client-operator:latest
                 livenessProbe:
                   httpGet:
