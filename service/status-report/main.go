@@ -119,6 +119,7 @@ func main() {
 
 	storageClientCopy := &v1alpha1.StorageClient{}
 	storageClient.DeepCopyInto(storageClientCopy)
+	// TODO: once the use of DesiredClientOperatorChannel is removed, remove "SA1019" in .golangci.yaml
 	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
 		// patch is being used here as to not have any conflicts over storageclient cr changes as this annotation value doesn't depend on storageclient spec
 		if err := cl.Patch(ctx, storageClient, client.MergeFrom(storageClientCopy)); err != nil {
