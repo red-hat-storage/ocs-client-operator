@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces"
+	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
@@ -34,7 +34,7 @@ import (
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
+	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
