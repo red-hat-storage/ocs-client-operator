@@ -13,7 +13,3 @@ linters:
     - staticcheck
     - unused
     - revive
-issues:
-  exclude-rules:
-    - text: "SA1019: statusResponse.DesiredClientOperatorChannel is deprecated: Do not use."
-      path: service/status-report/main.go

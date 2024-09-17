@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"net"
 	"net/http"
 	"strconv"
@@ -39,12 +38,12 @@ import (
 	"google.golang.org/grpc/internal/grpcutil"
 	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/internal/syscall"
-	"google.golang.org/grpc/mem"
 	"google.golang.org/protobuf/proto"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/internal/channelz"
+	"google.golang.org/grpc/internal/grpcrand"
 	"google.golang.org/grpc/internal/grpcsync"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -119,8 +118,9 @@ type http2Server struct {
 	idle time.Time
 
 	// Fields below are for channelz metric collection.
-	channelz   *channelz.Socket
-	bufferPool mem.BufferPool
+	channelzID *channelz.Identifier
+	czData     *channelzData
+	bufferPool *bufferPool
 
 	connectionID uint64
 
@@ -262,24 +262,9 @@ func NewServerTransport(conn net.Conn, config *ServerConfig) (_ ServerTransport,
 		idle:              time.Now(),
 		kep:               kep,
 		initialWindowSize: iwz,
-		bufferPool:        config.BufferPool,
+		czData:            new(channelzData),
+		bufferPool:        newBufferPool(),
 	}
-	var czSecurity credentials.ChannelzSecurityValue
-	if au, ok := authInfo.(credentials.ChannelzSecurityInfo); ok {
-		czSecurity = au.GetSecurityValue()
-	}
-	t.channelz = channelz.RegisterSocket(
-		&channelz.Socket{
-			SocketType:       channelz.SocketTypeNormal,
-			Parent:           config.ChannelzParent,
-			SocketMetrics:    channelz.SocketMetrics{},
-			EphemeralMetrics: t.socketMetrics,
-			LocalAddr:        t.peer.LocalAddr,
-			RemoteAddr:       t.peer.Addr,
-			SocketOptions:    channelz.GetSocketOption(t.conn),
-			Security:         czSecurity,
-		},
-	)
 	t.logger = prefixLoggerForServerTransport(t)
 
 	t.controlBuf = newControlBuffer(t.done)
@@ -288,6 +273,10 @@ func NewServerTransport(conn net.Conn, config *ServerConfig) (_ ServerTransport,
 			bdp:               initialWindowSize,
 			updateFlowControl: t.updateFlowControl,
 		}
+	}
+	t.channelzID, err = channelz.RegisterNormalSocket(t, config.ChannelzParentID, fmt.Sprintf("%s -> %s", t.peer.Addr, t.peer.LocalAddr))
+	if err != nil {
+		return nil, err
 	}
 
 	t.connectionID = atomic.AddUint64(&serverConnectionCounter, 1)
@@ -331,7 +320,8 @@ func NewServerTransport(conn net.Conn, config *ServerConfig) (_ ServerTransport,
 	t.handleSettings(sf)
 
 	go func() {
-		t.loopy = newLoopyWriter(serverSide, t.framer, t.controlBuf, t.bdpEst, t.conn, t.logger, t.outgoingGoAwayHandler, t.bufferPool)
+		t.loopy = newLoopyWriter(serverSide, t.framer, t.controlBuf, t.bdpEst, t.conn, t.logger)
+		t.loopy.ssGoAwayHandler = t.outgoingGoAwayHandler
 		err := t.loopy.run()
 		close(t.loopyWriterDone)
 		if !isIOError(err) {
@@ -344,11 +334,9 @@ func NewServerTransport(conn net.Conn, config *ServerConfig) (_ ServerTransport,
 			// closed, would lead to a TCP RST instead of FIN, and the client
 			// encountering errors.  For more info:
 			// https://github.com/grpc/grpc-go/issues/5358
-			timer := time.NewTimer(time.Second)
-			defer timer.Stop()
 			select {
 			case <-t.readerDone:
-			case <-timer.C:
+			case <-time.After(time.Second):
 			}
 			t.conn.Close()
 		}
@@ -604,8 +592,8 @@ func (t *http2Server) operateHeaders(ctx context.Context, frame *http2.MetaHeade
 	}
 	t.mu.Unlock()
 	if channelz.IsOn() {
-		t.channelz.SocketMetrics.StreamsStarted.Add(1)
-		t.channelz.SocketMetrics.LastRemoteStreamCreatedTimestamp.Store(time.Now().UnixNano())
+		atomic.AddInt64(&t.czData.streamsStarted, 1)
+		atomic.StoreInt64(&t.czData.lastStreamCreatedTime, time.Now().UnixNano())
 	}
 	s.requestRead = func(n int) {
 		t.adjustWindow(s, uint32(n))
@@ -614,9 +602,10 @@ func (t *http2Server) operateHeaders(ctx context.Context, frame *http2.MetaHeade
 	s.wq = newWriteQuota(defaultWriteQuota, s.ctxDone)
 	s.trReader = &transportReader{
 		reader: &recvBufferReader{
-			ctx:     s.ctx,
-			ctxDone: s.ctxDone,
-			recv:    s.buf,
+			ctx:        s.ctx,
+			ctxDone:    s.ctxDone,
+			recv:       s.buf,
+			freeBuffer: t.bufferPool.put,
 		},
 		windowHandler: func(n int) {
 			t.updateWindow(s, uint32(n))
@@ -669,14 +658,8 @@ func (t *http2Server) HandleStreams(ctx context.Context, handle func(*Stream)) {
 		switch frame := frame.(type) {
 		case *http2.MetaHeadersFrame:
 			if err := t.operateHeaders(ctx, frame, handle); err != nil {
-				// Any error processing client headers, e.g. invalid stream ID,
-				// is considered a protocol violation.
-				t.controlBuf.put(&goAway{
-					code:      http2.ErrCodeProtocol,
-					debugData: []byte(err.Error()),
-					closeConn: err,
-				})
-				continue
+				t.Close(err)
+				break
 			}
 		case *http2.DataFrame:
 			t.handleData(frame)
@@ -813,13 +796,10 @@ func (t *http2Server) handleData(f *http2.DataFrame) {
 		// guarantee f.Data() is consumed before the arrival of next frame.
 		// Can this copy be eliminated?
 		if len(f.Data()) > 0 {
-			pool := t.bufferPool
-			if pool == nil {
-				// Note that this is only supposed to be nil in tests. Otherwise, stream is
-				// always initialized with a BufferPool.
-				pool = mem.DefaultBufferPool()
-			}
-			s.write(recvMsg{buffer: mem.Copy(f.Data(), pool)})
+			buffer := t.bufferPool.get()
+			buffer.Reset()
+			buffer.Write(f.Data())
+			s.write(recvMsg{buffer: buffer})
 		}
 	}
 	if f.StreamEnded() {
@@ -862,7 +842,7 @@ func (t *http2Server) handleSettings(f *http2.SettingsFrame) {
 		}
 		return nil
 	})
-	t.controlBuf.executeAndPut(func() bool {
+	t.controlBuf.executeAndPut(func(any) bool {
 		for _, f := range updateFuncs {
 			f()
 		}
@@ -1016,13 +996,12 @@ func (t *http2Server) writeHeaderLocked(s *Stream) error {
 		headerFields = append(headerFields, hpack.HeaderField{Name: "grpc-encoding", Value: s.sendCompress})
 	}
 	headerFields = appendHeaderFieldsFromMD(headerFields, s.header)
-	hf := &headerFrame{
+	success, err := t.controlBuf.executeAndPut(t.checkForHeaderListSize, &headerFrame{
 		streamID:  s.id,
 		hf:        headerFields,
 		endStream: false,
 		onWrite:   t.setResetPingStrikes,
-	}
-	success, err := t.controlBuf.executeAndPut(func() bool { return t.checkForHeaderListSize(hf) }, hf)
+	})
 	if !success {
 		if err != nil {
 			return err
@@ -1092,9 +1071,7 @@ func (t *http2Server) WriteStatus(s *Stream, st *status.Status) error {
 		onWrite:   t.setResetPingStrikes,
 	}
 
-	success, err := t.controlBuf.executeAndPut(func() bool {
-		return t.checkForHeaderListSize(trailingHeader)
-	}, nil)
+	success, err := t.controlBuf.execute(t.checkForHeaderListSize, trailingHeader)
 	if !success {
 		if err != nil {
 			return err
@@ -1117,37 +1094,27 @@ func (t *http2Server) WriteStatus(s *Stream, st *status.Status) error {
 
 // Write converts the data into HTTP2 data frame and sends it out. Non-nil error
 // is returns if it fails (e.g., framing error, transport error).
-func (t *http2Server) Write(s *Stream, hdr []byte, data mem.BufferSlice, opts *Options) error {
-	reader := data.Reader()
-
+func (t *http2Server) Write(s *Stream, hdr []byte, data []byte, opts *Options) error {
 	if !s.isHeaderSent() { // Headers haven't been written yet.
 		if err := t.WriteHeader(s, nil); err != nil {
-			_ = reader.Close()
 			return err
 		}
 	} else {
 		// Writing headers checks for this condition.
 		if s.getState() == streamDone {
-			_ = reader.Close()
 			return t.streamContextErr(s)
 		}
 	}
-
 	df := &dataFrame{
 		streamID:    s.id,
 		h:           hdr,
-		reader:      reader,
+		d:           data,
 		onEachWrite: t.setResetPingStrikes,
 	}
-	if err := s.wq.get(int32(len(hdr) + df.reader.Remaining())); err != nil {
-		_ = reader.Close()
+	if err := s.wq.get(int32(len(hdr) + len(data))); err != nil {
 		return t.streamContextErr(s)
 	}
-	if err := t.controlBuf.put(df); err != nil {
-		_ = reader.Close()
-		return err
-	}
-	return nil
+	return t.controlBuf.put(df)
 }
 
 // keepalive running in a separate goroutine does the following:
@@ -1223,12 +1190,12 @@ func (t *http2Server) keepalive() {
 				continue
 			}
 			if outstandingPing && kpTimeoutLeft <= 0 {
-				t.Close(fmt.Errorf("keepalive ping not acked within timeout %s", t.kp.Timeout))
+				t.Close(fmt.Errorf("keepalive ping not acked within timeout %s", t.kp.Time))
 				return
 			}
 			if !outstandingPing {
 				if channelz.IsOn() {
-					t.channelz.SocketMetrics.KeepAlivesSent.Add(1)
+					atomic.AddInt64(&t.czData.kpCount, 1)
 				}
 				t.controlBuf.put(p)
 				kpTimeoutLeft = t.kp.Timeout
@@ -1268,7 +1235,7 @@ func (t *http2Server) Close(err error) {
 	if err := t.conn.Close(); err != nil && t.logger.V(logLevel) {
 		t.logger.Infof("Error closing underlying net.Conn during Close: %v", err)
 	}
-	channelz.RemoveEntry(t.channelz.ID)
+	channelz.RemoveEntry(t.channelzID)
 	// Cancel all active streams.
 	for _, s := range streams {
 		s.cancel()
@@ -1289,9 +1256,9 @@ func (t *http2Server) deleteStream(s *Stream, eosReceived bool) {
 
 	if channelz.IsOn() {
 		if eosReceived {
-			t.channelz.SocketMetrics.StreamsSucceeded.Add(1)
+			atomic.AddInt64(&t.czData.streamsSucceeded, 1)
 		} else {
-			t.channelz.SocketMetrics.StreamsFailed.Add(1)
+			atomic.AddInt64(&t.czData.streamsFailed, 1)
 		}
 	}
 }
@@ -1408,21 +1375,38 @@ func (t *http2Server) outgoingGoAwayHandler(g *goAway) (bool, error) {
 	return false, nil
 }
 
-func (t *http2Server) socketMetrics() *channelz.EphemeralSocketMetrics {
-	return &channelz.EphemeralSocketMetrics{
-		LocalFlowControlWindow:  int64(t.fc.getSize()),
-		RemoteFlowControlWindow: t.getOutFlowWindow(),
+func (t *http2Server) ChannelzMetric() *channelz.SocketInternalMetric {
+	s := channelz.SocketInternalMetric{
+		StreamsStarted:                   atomic.LoadInt64(&t.czData.streamsStarted),
+		StreamsSucceeded:                 atomic.LoadInt64(&t.czData.streamsSucceeded),
+		StreamsFailed:                    atomic.LoadInt64(&t.czData.streamsFailed),
+		MessagesSent:                     atomic.LoadInt64(&t.czData.msgSent),
+		MessagesReceived:                 atomic.LoadInt64(&t.czData.msgRecv),
+		KeepAlivesSent:                   atomic.LoadInt64(&t.czData.kpCount),
+		LastRemoteStreamCreatedTimestamp: time.Unix(0, atomic.LoadInt64(&t.czData.lastStreamCreatedTime)),
+		LastMessageSentTimestamp:         time.Unix(0, atomic.LoadInt64(&t.czData.lastMsgSentTime)),
+		LastMessageReceivedTimestamp:     time.Unix(0, atomic.LoadInt64(&t.czData.lastMsgRecvTime)),
+		LocalFlowControlWindow:           int64(t.fc.getSize()),
+		SocketOptions:                    channelz.GetSocketOption(t.conn),
+		LocalAddr:                        t.peer.LocalAddr,
+		RemoteAddr:                       t.peer.Addr,
+		// RemoteName :
 	}
+	if au, ok := t.peer.AuthInfo.(credentials.ChannelzSecurityInfo); ok {
+		s.Security = au.GetSecurityValue()
+	}
+	s.RemoteFlowControlWindow = t.getOutFlowWindow()
+	return &s
 }
 
 func (t *http2Server) IncrMsgSent() {
-	t.channelz.SocketMetrics.MessagesSent.Add(1)
-	t.channelz.SocketMetrics.LastMessageSentTimestamp.Add(1)
+	atomic.AddInt64(&t.czData.msgSent, 1)
+	atomic.StoreInt64(&t.czData.lastMsgSentTime, time.Now().UnixNano())
 }
 
 func (t *http2Server) IncrMsgRecv() {
-	t.channelz.SocketMetrics.MessagesReceived.Add(1)
-	t.channelz.SocketMetrics.LastMessageReceivedTimestamp.Add(1)
+	atomic.AddInt64(&t.czData.msgRecv, 1)
+	atomic.StoreInt64(&t.czData.lastMsgRecvTime, time.Now().UnixNano())
 }
 
 func (t *http2Server) getOutFlowWindow() int64 {
@@ -1455,7 +1439,7 @@ func getJitter(v time.Duration) time.Duration {
 	}
 	// Generate a jitter between +/- 10% of the value.
 	r := int64(v / 10)
-	j := rand.Int63n(2*r) - r
+	j := grpcrand.Int63n(2*r) - r
 	return time.Duration(j)
 }
 
