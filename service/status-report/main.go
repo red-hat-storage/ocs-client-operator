@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
+	"github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
@@ -34,7 +34,7 @@ import (
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -119,7 +119,6 @@ func main() {
 
 	storageClientCopy := &v1alpha1.StorageClient{}
 	storageClient.DeepCopyInto(storageClientCopy)
-	// TODO: once the use of DesiredClientOperatorChannel is removed, remove "SA1019" in .golangci.yaml
 	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
 		// patch is being used here as to not have any conflicts over storageclient cr changes as this annotation value doesn't depend on storageclient spec
 		if err := cl.Patch(ctx, storageClient, client.MergeFrom(storageClientCopy)); err != nil {
