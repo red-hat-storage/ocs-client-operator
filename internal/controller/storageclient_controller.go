@@ -589,6 +589,14 @@ func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.
 							},
 							RestartPolicy:      corev1.RestartPolicyOnFailure,
 							ServiceAccountName: "ocs-client-operator-status-reporter",
+							Tolerations: []corev1.Toleration{
+								{
+									Effect:   corev1.TaintEffectNoSchedule,
+									Key:      "node.ocs.openshift.io/storage",
+									Operator: corev1.TolerationOpEqual,
+									Value:    "true",
+								},
+							},
 						},
 					},
 				},
