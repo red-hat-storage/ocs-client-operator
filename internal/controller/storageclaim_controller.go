@@ -20,7 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"slices"
 	"strings"
 	"time"
@@ -30,8 +33,10 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	replicationv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/v4/services/provider/client"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -106,9 +111,44 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
 
+	enqueueVolumeReplicationClass := handler.EnqueueRequestsFromMapFunc(
+		func(context context.Context, obj client.Object) []reconcile.Request {
+			vrcs := &replicationv1alpha1.VolumeReplicationClassList{}
+			err := r.Client.List(context, vrcs, &client.ListOptions{Namespace: obj.GetNamespace()})
+			if err != nil {
+				r.log.Error(err, "Unable to list VolumeReplicationClass objects")
+				return []reconcile.Request{}
+			}
+
+			// Return name and namespace of the VolumeReplicationClass object
+			request := []reconcile.Request{}
+			for _, vrc := range vrcs.Items {
+				request = append(request, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: vrc.Namespace,
+						Name:      vrc.Name,
+					},
+				})
+			}
+			return request
+		},
+	)
+
+	drClusterConfigPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			oldObj := e.ObjectOld.(*ramenv1alpha1.DRClusterConfig)
+			newObj := e.ObjectNew.(*ramenv1alpha1.DRClusterConfig)
+			return !reflect.DeepEqual(oldObj.Spec, newObj.Spec)
+		},
+	}
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(generationChangePredicate)).
+		Watches(&ramenv1alpha1.DRClusterConfig{}, enqueueVolumeReplicationClass,
+			builder.WithPredicates(drClusterConfigPredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{})
 
@@ -127,6 +167,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusterconfigs,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to

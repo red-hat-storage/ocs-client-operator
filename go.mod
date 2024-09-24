@@ -6,6 +6,7 @@ toolchain go1.22.3
 
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
+	k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
 )
 
@@ -13,6 +14,7 @@ exclude github.com/kubernetes-incubator/external-storage v0.20.4-openstorage-rc2
 
 require (
 	github.com/ceph/ceph-csi-operator/api v0.0.0-20240807110810-f92ddf7cc527
+	github.com/csi-addons/kubernetes-csi-addons v0.8.0
 	github.com/go-logr/logr v1.4.1
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
 	github.com/onsi/ginkgo v1.16.5
@@ -21,6 +23,7 @@ require (
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.72.0
+	github.com/ramendr/ramen/api v0.0.0-20240726141352-b1af569f057c
 	github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240422111920-faced96485bc
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.62.1
@@ -93,6 +96,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/component-base v0.30.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
