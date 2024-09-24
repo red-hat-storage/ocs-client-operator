@@ -247,7 +247,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			}
 			secret := &corev1.Secret{}
 			secret.Name = eResource.Name
-			secret.Namespace = r.storageClient.Namespace
+			secret.Namespace = r.OperatorNamespace
 			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
 				if err := r.own(secret); err != nil {
 					return err
@@ -269,14 +269,14 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			}
 			nb := &nbv1.NooBaa{}
 			nb.Name = eResource.Name
-			nb.Namespace = r.storageClient.Namespace
+			nb.Namespace = r.OperatorNamespace
 
 			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, nb, func() error {
 				if err := r.own(nb); err != nil {
 					return err
 				}
 				utils.AddAnnotation(nb, "remote-client-noobaa", "true")
-				noobaaSpec.JoinSecret.Namespace = r.storageClient.Namespace
+				noobaaSpec.JoinSecret.Namespace = r.OperatorNamespace
 				nb.Spec = *noobaaSpec
 				return nil
 			})
