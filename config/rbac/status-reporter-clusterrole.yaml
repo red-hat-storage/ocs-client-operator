@@ -10,7 +10,7 @@ rules:
     verbs:
       - get
       - list
-      - patch
+      - update
   - apiGroups:
       - ""
     resources:

@@ -300,6 +300,12 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	if utils.AddAnnotation(r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredConfigHash) {
+		if err := r.update(r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+		}
+	}
+
 	return reconcile.Result{}, nil
 }
 
