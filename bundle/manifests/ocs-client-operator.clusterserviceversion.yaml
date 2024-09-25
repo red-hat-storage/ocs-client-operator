@@ -3,11 +3,11 @@ kind: ClusterServiceVersion
 metadata:
   annotations:
     alm-examples: '[]'
-    capabilities: Basic Install
+    capabilities: Deep Insights
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2024-08-13T05:06:37Z"
+    createdAt: "2024-09-25T06:50:59Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -225,6 +225,17 @@ spec:
           - prometheusrules
           verbs:
           - create
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - noobaa.io
+          resources:
+          - noobaas
+          verbs:
+          - create
+          - delete
           - get
           - list
           - update
@@ -698,7 +709,7 @@ spec:
           verbs:
           - get
           - list
-          - patch
+          - update
         - apiGroups:
           - ""
           resourceNames:
@@ -775,6 +786,8 @@ spec:
                       fieldPath: metadata.name
                 - name: STATUS_REPORTER_IMAGE
                   value: quay.io/ocs-dev/ocs-client-operator:latest
+                - name: NOOBAA_OPERATOR_CHANNEL
+                  value: stable-4.17
                 image: quay.io/ocs-dev/ocs-client-operator:latest
                 livenessProbe:
                   httpGet:
@@ -818,6 +831,11 @@ spec:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
               terminationGracePeriodSeconds: 10
+              tolerations:
+              - effect: NoSchedule
+                key: node.ocs.openshift.io/storage
+                operator: Equal
+                value: "true"
               volumes:
               - configMap:
                   name: ocs-client-operator-csi-images
@@ -888,6 +906,11 @@ spec:
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
+              tolerations:
+              - effect: NoSchedule
+                key: node.ocs.openshift.io/storage
+                operator: Equal
+                value: "true"
               volumes:
               - name: ocs-client-operator-console-serving-cert
                 secret:
