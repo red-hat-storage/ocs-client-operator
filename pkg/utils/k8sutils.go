@@ -41,6 +41,9 @@ const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
 // Value corresponding to annotation key has subscription channel
 const DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
 
+// Value corresponding to annotation key has desired client hash
+const DesiredConfigHashAnnotationKey = "ocs.openshift.io/provider-side-state"
+
 const runCSIDaemonsetOnMaster = "RUN_CSI_DAEMONSET_ON_MASTER"
 
 const CronScheduleWeekly = "@weekly"

@@ -117,11 +117,17 @@ func main() {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
 
-	storageClientCopy := &v1alpha1.StorageClient{}
-	storageClient.DeepCopyInto(storageClientCopy)
+	updated := false
 	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
-		// patch is being used here as to not have any conflicts over storageclient cr changes as this annotation value doesn't depend on storageclient spec
-		if err := cl.Patch(ctx, storageClient, client.MergeFrom(storageClientCopy)); err != nil {
+		updated = true
+	}
+
+	if utils.AddAnnotation(storageClient, utils.DesiredConfigHashAnnotationKey, statusResponse.DesiredConfigHash) {
+		updated = true
+	}
+
+	if updated {
+		if err := cl.Update(ctx, storageClient); err != nil {
 			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
 		}
 	}
