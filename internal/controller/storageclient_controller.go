@@ -241,7 +241,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				}
 			}
 		case "Secret":
-			data := map[string][]byte{}
+			data := map[string]string{}
 			if err := json.Unmarshal(eResource.Data, &data); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to unmarshall secret: %v", err)
 			}
@@ -252,7 +252,12 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				if err := r.own(secret); err != nil {
 					return err
 				}
-				secret.Data = data
+				if secret.Data == nil {
+					secret.Data = map[string][]byte{}
+				}
+				for k, v := range data {
+					secret.Data[k] = []byte(v)
+				}
 				return nil
 			})
 			if err != nil {
