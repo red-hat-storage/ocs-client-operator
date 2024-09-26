@@ -140,6 +140,7 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	cp config/metadata/* bundle/metadata/
 	./hack/create-csi-images-manifest.sh
 	$(OPERATOR_SDK) bundle validate ./bundle
+	hack/update-csv-timestamp.sh
 
 .PHONY: bundle-build
 bundle-build: bundle ## Build the bundle image.
