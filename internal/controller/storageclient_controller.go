@@ -241,18 +241,23 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				}
 			}
 		case "Secret":
-			data := map[string][]byte{}
+			data := map[string]string{}
 			if err := json.Unmarshal(eResource.Data, &data); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to unmarshall secret: %v", err)
 			}
 			secret := &corev1.Secret{}
 			secret.Name = eResource.Name
-			secret.Namespace = r.storageClient.Namespace
+			secret.Namespace = r.OperatorNamespace
 			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
 				if err := r.own(secret); err != nil {
 					return err
 				}
-				secret.Data = data
+				if secret.Data == nil {
+					secret.Data = map[string][]byte{}
+				}
+				for k, v := range data {
+					secret.Data[k] = []byte(v)
+				}
 				return nil
 			})
 			if err != nil {
@@ -269,14 +274,14 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			}
 			nb := &nbv1.NooBaa{}
 			nb.Name = eResource.Name
-			nb.Namespace = r.storageClient.Namespace
+			nb.Namespace = r.OperatorNamespace
 
 			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, nb, func() error {
 				if err := r.own(nb); err != nil {
 					return err
 				}
 				utils.AddAnnotation(nb, "remote-client-noobaa", "true")
-				noobaaSpec.JoinSecret.Namespace = r.storageClient.Namespace
+				noobaaSpec.JoinSecret.Namespace = r.OperatorNamespace
 				nb.Spec = *noobaaSpec
 				return nil
 			})
@@ -297,6 +302,12 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		utils.AddAnnotation(r.storageClient, storageClaimProcessedAnnotationKey, "true")
 		if err := r.update(r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with claim processed annotation: %v", err)
+		}
+	}
+
+	if utils.AddAnnotation(r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredConfigHash) {
+		if err := r.update(r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
 		}
 	}
 

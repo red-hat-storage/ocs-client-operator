@@ -75,6 +75,7 @@ const CSIOperatorConfigName = "ceph-csi-operator-config"
 var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 	DriverSpecDefaults: &csiopv1a1.DriverSpec{
 		Log: &csiopv1a1.LogSpec{
+			Verbosity: 5,
 			Rotation: &csiopv1a1.LogRotationSpec{
 				Periodicity: csiopv1a1.DailyPeriod,
 				MaxLogSize:  resource.MustParse("500M"),
