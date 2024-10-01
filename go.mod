@@ -4,6 +4,7 @@ go 1.22.5
 
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
+	github.com/red-hat-storage/ocs-client-operator/api => ./api
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
 )
 
@@ -26,6 +27,7 @@ require (
 	github.com/operator-framework/api v0.27.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
+	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
 	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20240917115204-741b9d6f263d
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.66.0

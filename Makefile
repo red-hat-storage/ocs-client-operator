@@ -56,7 +56,10 @@ lint: ## Run golangci-lint against code.
 	$(IMAGE_BUILD_CMD) run --rm -v $(PROJECT_DIR):/app -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
 godeps-update:  ## Run go mod tidy & vendor
+	@echo "Running godeps-update"
 	go mod tidy && go mod vendor
+	@echo "Running godeps-update on api submodule"
+	cd api && go mod tidy && go mod vendor
 
 godeps-verify: godeps-update
 	@echo "Verifying go-deps"
