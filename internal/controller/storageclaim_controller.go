@@ -50,9 +50,10 @@ import (
 )
 
 const (
-	storageClaimFinalizer  = "storageclaim.ocs.openshift.io"
-	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
-	keyRotationAnnotation  = "keyrotation.csiaddons.openshift.io/schedule"
+	storageClaimFinalizer       = "storageclaim.ocs.openshift.io"
+	storageClaimAnnotation      = "ocs.openshift.io/storageclaim"
+	keyRotationAnnotation       = "keyrotation.csiaddons.openshift.io/schedule"
+	keyRotationEnableAnnotation = "keyrotation.csiaddons.openshift.io/enable"
 
 	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
 	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
@@ -397,6 +398,10 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					storageClass = r.getCephFSStorageClass(data)
 				} else if resource.Name == "ceph-rbd" {
 					storageClass = r.getCephRBDStorageClass(data)
+
+					if enable, ok := r.storageClaim.GetAnnotations()[keyRotationEnableAnnotation]; ok && enable != "true" {
+						utils.AddAnnotation(storageClass, keyRotationEnableAnnotation, "false")
+					}
 				}
 				utils.AddAnnotation(storageClass, storageClaimAnnotation, r.storageClaim.Name)
 				err = r.createOrReplaceStorageClass(storageClass)
@@ -584,7 +589,8 @@ func (r *StorageClaimReconciler) createOrReplaceStorageClass(storageClass *stora
 	}
 
 	// If present then compare the existing StorageClass with the received StorageClass, and only proceed if they differ.
-	if reflect.DeepEqual(existing.Parameters, storageClass.Parameters) {
+	if reflect.DeepEqual(existing.Parameters, storageClass.Parameters) &&
+		reflect.DeepEqual(existing.Annotations, storageClass.Annotations) {
 		return nil
 	}
 
