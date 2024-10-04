@@ -210,11 +210,14 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/red-hat-storage/ocs-operator/v4 v4.0.0-20240917170232-cc54c2a68620
+# github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000 => ./api
 ## explicit; go 1.22.5
-github.com/red-hat-storage/ocs-operator/v4/services/provider/client
-github.com/red-hat-storage/ocs-operator/v4/services/provider/interfaces
-github.com/red-hat-storage/ocs-operator/v4/services/provider/pb
+github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
+# github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20240917115204-741b9d6f263d
+## explicit; go 1.22.5
+github.com/red-hat-storage/ocs-operator/services/provider/api/v4
+github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client
+github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
@@ -914,4 +917,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 # github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3
+# github.com/red-hat-storage/ocs-client-operator/api => ./api
 # vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
