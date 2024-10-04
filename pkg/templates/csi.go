@@ -99,6 +99,14 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			PodCommonSpec: csiopv1a1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-cluster-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
+				Tolerations: []corev1.Toleration{
+					{
+						Effect:   corev1.TaintEffectNoSchedule,
+						Key:      "node.ocs.openshift.io/storage",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+					},
+				},
 			},
 			Replicas: ptr.To(int32(2)),
 		},
@@ -115,11 +123,19 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			PodCommonSpec: csiopv1a1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-node-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
-				Tolerations: []corev1.Toleration{{
-					Key:      "node-role.kubernetes.io/master",
-					Operator: corev1.TolerationOpExists,
-					Effect:   corev1.TaintEffectNoSchedule,
-				}},
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "node-role.kubernetes.io/master",
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+					{
+						Effect:   corev1.TaintEffectNoSchedule,
+						Key:      "node.ocs.openshift.io/storage",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+					},
+				},
 			},
 		},
 	},
