@@ -222,7 +222,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		10*time.Second,
 	)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to create provider client: %v", err)
+		return reconcile.Result{}, fmt.Errorf("failed to create provider client with endpoint %v: %v", r.storageClient.Spec.StorageProviderEndpoint, err)
 	}
 
 	// Close client-side connections.
