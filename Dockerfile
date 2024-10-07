@@ -29,6 +29,7 @@ WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/status-reporter .
 COPY --from=builder /workspace/bin/deployment-guard .
+COPY --from=builder /workspace/hack/entrypoint.sh entrypoint
 USER 65532:65532
 
-ENTRYPOINT ["/manager"]
+ENTRYPOINT ["/entrypoint"]
