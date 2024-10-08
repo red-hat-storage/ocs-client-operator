@@ -1,5 +1,5 @@
 /*
-Copyright 2023 Red Hat, Inc.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,23 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package utils
+// +k8s:deepcopy-gen=package
+// +k8s:conversion-gen=k8s.io/component-base/config
 
-import "os"
-
-// Find returns the first entry matching the function "f" or else return nil
-func Find[T any](list []T, f func(item *T) bool) *T {
-	for idx := range list {
-		ele := &list[idx]
-		if f(ele) {
-			return ele
-		}
-	}
-	return nil
-}
-
-func AssertEqual[T comparable](actual T, expected T, exitCode int) {
-	if actual != expected {
-		os.Exit(exitCode)
-	}
-}
+package v1alpha1 // import "k8s.io/component-base/config/v1alpha1"
