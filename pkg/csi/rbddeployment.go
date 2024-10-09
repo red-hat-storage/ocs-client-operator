@@ -218,7 +218,7 @@ var rbdDeploymentSpec = appsv1.DeploymentSpec{
 	},
 }
 
-func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment) {
+func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment, availCrds map[string]bool) {
 	// Copy required labels
 	utils.AddLabels(deploy, rbdDeploymentLabels)
 
@@ -251,6 +251,9 @@ func SetRBDDeploymentDesiredState(deploy *appsv1.Deployment) {
 			templates.SnapshotterContainer.DeepCopyInto(c)
 			c.Image = sidecarImages.ContainerImages.SnapshotterImageURL
 			c.Args = append(c.Args, leaderElectionArg)
+			if availCrds["VolumeGroupSnapshotClass"] {
+				c.Args = append(c.Args, "--enable-volume-group-snapshots=true")
+			}
 
 		case templates.CSIAddonsContainer.Name:
 			templates.CSIAddonsContainer.DeepCopyInto(c)
