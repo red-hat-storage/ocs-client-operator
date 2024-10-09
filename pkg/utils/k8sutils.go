@@ -50,6 +50,8 @@ const CronScheduleWeekly = "@weekly"
 
 const CSIReconcileEnvVar = "CSI_RECONCILE"
 
+const ExitCodeThatShouldRestartTheProcess = 42
+
 // GetOperatorNamespace returns the namespace where the operator is deployed.
 func GetOperatorNamespace() string {
 	return os.Getenv(OperatorNamespaceEnvVar)

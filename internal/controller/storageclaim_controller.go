@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"slices"
 	"strings"
 	"time"
@@ -32,9 +33,11 @@ import (
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,6 +59,8 @@ const (
 
 	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
 	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
+
+	drClusterConfigCRDName = "drclusterconfigs.ramendr.openshift.io"
 )
 
 // StorageClaimReconciler reconciles a StorageClaim object
@@ -64,6 +69,7 @@ type StorageClaimReconciler struct {
 	cache.Cache
 	Scheme            *runtime.Scheme
 	OperatorNamespace string
+	AvailableCrds     map[string]bool
 
 	log              logr.Logger
 	ctx              context.Context
@@ -110,10 +116,23 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
-		Owns(&snapapi.VolumeSnapshotClass{})
+		Owns(&snapapi.VolumeSnapshotClass{}).
+		Watches(
+			&extv1.CustomResourceDefinition{},
+			&handler.EnqueueRequestForObject{},
+			builder.WithPredicates(
+				utils.NamePredicate(drClusterConfigCRDName),
+				utils.CrdCreateAndDeletePredicate(&r.log, drClusterConfigCRDName, r.AvailableCrds[drClusterConfigCRDName]),
+			),
+			builder.OnlyMetadata,
+		)
 
 	if utils.DelegateCSI {
 		bldr = bldr.Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate))
+	}
+
+	if r.AvailableCrds[drClusterConfigCRDName] {
+		bldr = bldr.Owns(&ramenv1alpha1.DRClusterConfig{}, builder.WithPredicates(generationChangePredicate))
 	}
 
 	return bldr.Complete(r)
@@ -143,6 +162,15 @@ func (r *StorageClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.log = ctrllog.FromContext(ctx, "StorageClaim", req)
 	r.ctx = ctrllog.IntoContext(ctx, r.log)
 	r.log.Info("Reconciling StorageClaim.")
+
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = drClusterConfigCRDName
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+		r.log.Error(err, "Failed to get CRD", "CRD", drClusterConfigCRDName)
+		return reconcile.Result{}, err
+	}
+	utils.AssertEqual(r.AvailableCrds[drClusterConfigCRDName], crd.UID != "", utils.ExitCodeThatShouldRestartTheProcess)
 
 	// Fetch the StorageClaim instance
 	r.storageClaim = &v1alpha1.StorageClaim{}
