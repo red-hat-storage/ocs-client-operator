@@ -63,7 +63,11 @@ import (
 var pvcPrometheusRules string
 
 const (
-	operatorConfigMapName = "ocs-client-operator-config"
+	operatorConfigMapName   = "ocs-client-operator-config"
+	csiSidecarConfigMapName = "ceph-csi-sidecar-config"
+
+	csiOMAPGeneratorKey = "CSI_ENABLE_OMAP_GENERATOR"
+
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
 	clusterVersionName     = "version"
@@ -117,7 +121,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			func(client client.Object) bool {
 				namespace := client.GetNamespace()
 				name := client.GetName()
-				return ((namespace == c.OperatorNamespace) && (name == operatorConfigMapName))
+				return namespace == c.OperatorNamespace && (name == operatorConfigMapName || name == csiSidecarConfigMapName)
 			},
 		),
 	)
@@ -347,6 +351,26 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("unable to find the updated cluster version")
 	}
 
+	sideCarConfig := &corev1.ConfigMap{}
+	sideCarConfig.Name = csiSidecarConfigMapName
+	sideCarConfig.Namespace = c.OperatorNamespace
+
+	err := c.get(sideCarConfig)
+	if err != nil && !kerrors.IsNotFound(err) {
+		c.log.Error(err, "failed to get csi side car configmap", "name", sideCarConfig)
+		return err
+	}
+
+	var deployOMAP bool
+	if kerrors.IsNotFound(err) {
+		if value, ok := sideCarConfig.Data[csiOMAPGeneratorKey]; ok {
+			deployOMAP, err = strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("failed to parse value for %q in operator configmap as a boolean: %v", deployCSIKey, err)
+			}
+		}
+	}
+
 	// csi operator config
 	cmName, err := c.getImageSetConfigMapName(historyRecord.Version)
 	if err != nil {
@@ -362,6 +386,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		csiOperatorConfig.Spec.DriverSpecDefaults.GenerateOMapInfo = ptr.To(deployOMAP)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
