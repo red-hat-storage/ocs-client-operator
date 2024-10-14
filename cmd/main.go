@@ -104,7 +104,6 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	storageclustersSelector := fields.SelectorFromSet(fields.Set{"metadata.name": "storageclusters.ocs.openshift.io"})
 	subscriptionwebhookSelector := fields.SelectorFromSet(fields.Set{"metadata.name": templates.SubscriptionWebhookName})
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -114,10 +113,6 @@ func main() {
 		LeaderElectionID:       "7cb6f2e5.ocs.openshift.io",
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
-				&extv1.CustomResourceDefinition{}: {
-					// only cache storagecluster crd
-					Field: storageclustersSelector,
-				},
 				&admrv1.ValidatingWebhookConfiguration{}: {
 					// only cache our validation webhook
 					Field: subscriptionwebhookSelector,
