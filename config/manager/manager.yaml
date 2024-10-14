@@ -41,7 +41,7 @@ spec:
               fieldPath: metadata.namespace
       containers:
       - command:
-        - /manager
+        - /entrypoint
         args:
         - --leader-elect
         image: controller:latest

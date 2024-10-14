@@ -17,7 +17,9 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -37,9 +39,11 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -75,6 +79,7 @@ func init() {
 	utilruntime.Must(quotav1.AddToScheme(scheme))
 	utilruntime.Must(csiopv1a1.AddToScheme(scheme))
 	utilruntime.Must(nbapis.AddToScheme(scheme))
+	utilruntime.Must(ramenv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -129,11 +134,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err != nil {
-		setupLog.Error(err, "Unable to get Client")
-		os.Exit(1)
-	}
-
 	// set namespace
 	err = utils.ValidateOperatorNamespace()
 	if err != nil {
@@ -144,6 +144,22 @@ func main() {
 	err = utils.ValidateStausReporterImage()
 	if err != nil {
 		setupLog.Error(err, "unable to validate status reporter image")
+		os.Exit(1)
+	}
+
+	// apiclient.New() returns a client without cache. cache is not initialized before mgr.Start()
+	// we need this because we need to watch for CRDs the operator is dependent on
+	apiClient, err := client.New(mgr.GetConfig(), client.Options{
+		Scheme: mgr.GetScheme(),
+	})
+	if err != nil {
+		setupLog.Error(err, "Unable to get Client")
+		os.Exit(1)
+	}
+
+	availCrds, err := getAvailableCRDNames(context.Background(), apiClient)
+	if err != nil {
+		setupLog.Error(err, "Unable get a list of available CRD names")
 		os.Exit(1)
 	}
 
@@ -172,6 +188,7 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
+		AvailableCrds:     availCrds,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClaim")
 		os.Exit(1)
@@ -201,4 +218,18 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func getAvailableCRDNames(ctx context.Context, cl client.Client) (map[string]bool, error) {
+	crdExist := map[string]bool{}
+	crdList := &metav1.PartialObjectMetadataList{}
+	crdList.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinitionList"))
+	if err := cl.List(ctx, crdList); err != nil {
+		return nil, fmt.Errorf("error listing CRDs, %v", err)
+	}
+	// Iterate over the list and populate the map
+	for i := range crdList.Items {
+		crdExist[crdList.Items[i].Name] = true
+	}
+	return crdExist, nil
 }
