@@ -284,6 +284,17 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusterconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
   - security.openshift.io
   resources:
   - securitycontextconstraints

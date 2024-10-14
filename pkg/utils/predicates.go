@@ -19,13 +19,13 @@ func CrdCreateAndDeletePredicate(log *logr.Logger, crdName string, crdExists boo
 	return predicate.Funcs{
 		CreateFunc: func(_ event.CreateEvent) bool {
 			if !crdExists {
-				log.Info("CustomResourceDefinition %s was Created.", crdName)
+				log.Info("CustomResourceDefinition was Created.", "CustomResourceDefinition", crdName)
 			}
 			return !crdExists
 		},
 		DeleteFunc: func(_ event.DeleteEvent) bool {
 			if crdExists {
-				log.Info("CustomResourceDefinition %s was Deleted.", crdName)
+				log.Info("CustomResourceDefinition was Deleted.", "CustomResourceDefinition", crdName)
 			}
 			return crdExists
 		},
