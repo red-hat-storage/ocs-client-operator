@@ -24,7 +24,7 @@ RUN make go-build
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM registry.access.redhat.com/ubi9/ubi-minimal
 WORKDIR /
 COPY --from=builder /workspace/bin/manager .
 COPY --from=builder /workspace/bin/status-reporter .
