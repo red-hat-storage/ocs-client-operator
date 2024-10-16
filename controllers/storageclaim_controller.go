@@ -326,15 +326,15 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 		}
 		// Go over the received objects and operate on them accordingly.
 		for _, resource := range resources {
-			data := map[string]string{}
-			err = json.Unmarshal(resource.Data, &data)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
-			}
 
 			// Create the received resources, if necessary.
 			switch resource.Kind {
 			case "Secret":
+				data := map[string]string{}
+				err = json.Unmarshal(resource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response as Secret: %v", err)
+				}
 				secret := &corev1.Secret{}
 				secret.Name = resource.Name
 				secret.Namespace = r.OperatorNamespace
@@ -356,6 +356,11 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update secret %v: %s", secret, err)
 				}
 			case "StorageClass":
+				data := map[string]string{}
+				err = json.Unmarshal(resource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response as StorageClass: %v", err)
+				}
 				if rns, ok := data["radosnamespace"]; ok {
 					csiClusterConfigEntry.CephRBD = new(csi.CephRBDSpec)
 					csiClusterConfigEntry.CephRBD.RadosNamespace = rns
@@ -392,6 +397,11 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update StorageClass: %s", err)
 				}
 			case "VolumeSnapshotClass":
+				data := map[string]string{}
+				err = json.Unmarshal(resource.Data, &data)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response as VolumeSnapshotClass: %v", err)
+				}
 				var volumeSnapshotClass *snapapi.VolumeSnapshotClass
 				data["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
 				// generate a new clusterID for cephfs subvolumegroup, as
