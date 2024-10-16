@@ -325,8 +325,8 @@ github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0leargg
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
 github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237 h1:ig6ePD0yopC5Qi5BRmhsIsKaOkdsGXTSmG3HTYIpquo=
 github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237/go.mod h1:nO6VM/+PEhcPGyFIQJdhY6ip822cA61PAy/s6IjenAA=
-github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20240917115204-741b9d6f263d h1:RK/zCM6xRwyeJ06u6xSLEwl5Q1g/6EZRQmSgzbqleT0=
-github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20240917115204-741b9d6f263d/go.mod h1:t9GJk69TGXABBF8fFPB+ImpbA9mJyRS86wW6+Qn8xHo=
+github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241015071140-98c8184c6eec h1:M64BdwKMV3jKxcRsZiaGbRKsvlbhRGVZgcb4V/MFeWk=
+github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241015071140-98c8184c6eec/go.mod h1:t9GJk69TGXABBF8fFPB+ImpbA9mJyRS86wW6+Qn8xHo=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU5NdKM8=
 github.com/rogpeppe/go-internal v1.12.0/go.mod h1:E+RYuTGaKKdloAfM02xzb0FW3Paa99yedzYV+kq4uf4=

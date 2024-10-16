@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -33,6 +34,7 @@ import (
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
+	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,6 +70,10 @@ func main() {
 
 	if err := csiopv1a1.AddToScheme(scheme); err != nil {
 		klog.Exitf("Failed to add csiopv1a1 to scheme: %v", err)
+	}
+
+	if err := quotav1.AddToScheme(scheme); err != nil {
+		klog.Exitf("Failed to add quotav1 to scheme: %v", err)
 	}
 
 	config, err := config.GetConfig()
@@ -112,6 +118,7 @@ func main() {
 	setPlatformInformation(ctx, cl, status)
 	setOperatorInformation(ctx, cl, status, operatorNamespace)
 	setClusterInformation(ctx, cl, status)
+	setStorageQuotaUtilizationRatio(ctx, cl, status)
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
@@ -212,6 +219,26 @@ func setClusterInformation(ctx context.Context, cl client.Client, status interfa
 		klog.Warningf("Cluster Base Domain is empty.")
 	}
 	status.SetClusterName(clusterDNS.Spec.BaseDomain)
+
+}
+
+func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
+	clusterResourceQuota := &quotav1.ClusterResourceQuota{}
+	clusterResourceQuota.Name = status.GetClientName()
+
+	// No need to check for NotFound because unlimited quota client will not have CRQ resource
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterResourceQuota), clusterResourceQuota); client.IgnoreNotFound(err) != nil {
+		klog.Warningf("Failed to get clusterResourceQuota %q: %v", clusterResourceQuota.Name, err)
+	}
+
+	if clusterResourceQuota.Status.Total.Hard != nil {
+		total, totalExists := clusterResourceQuota.Status.Total.Hard["requests.storage"]
+		used, usedExists := clusterResourceQuota.Status.Total.Used["requests.storage"]
+		if totalExists && usedExists && total.AsApproximateFloat64() > 0 {
+			ratio := used.AsApproximateFloat64() / total.AsApproximateFloat64()
+			status.SetStorageQuotaUtilizationRatio(math.Min(ratio, 1.0))
+		}
+	}
 
 }
 
