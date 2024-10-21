@@ -16,7 +16,6 @@ package controller
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -26,7 +25,6 @@ import (
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
@@ -39,7 +37,6 @@ import (
 	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,7 +64,6 @@ const (
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
 	clusterVersionName     = "version"
-	deployCSIKey           = "DEPLOY_CSI"
 	manageNoobaaSubKey     = "manageNoobaaSubscription"
 	subscriptionLabelKey   = "managed-by"
 	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
@@ -88,11 +84,6 @@ type OperatorConfigMapReconciler struct {
 	ctx                 context.Context
 	operatorConfigMap   *corev1.ConfigMap
 	consoleDeployment   *appsv1.Deployment
-	cephFSDeployment    *appsv1.Deployment
-	cephFSDaemonSet     *appsv1.DaemonSet
-	rbdDeployment       *appsv1.Deployment
-	rbdDaemonSet        *appsv1.DaemonSet
-	scc                 *secv1.SecurityContextConstraints
 	subscriptionChannel string
 }
 
@@ -158,32 +149,25 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}, configMapPredicates).
 		Owns(&corev1.Service{}, servicePredicate).
+		Owns(&csiopv1a1.OperatorConfig{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1a1.Driver{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
 		Watches(&extv1.CustomResourceDefinition{}, enqueueConfigMapRequest, builder.OnlyMetadata).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
 		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
 
-	generationChangePredicate := predicate.GenerationChangedPredicate{}
-	if utils.DelegateCSI {
-		bldr = bldr.
-			Owns(&csiopv1a1.OperatorConfig{}, builder.WithPredicates(generationChangePredicate)).
-			Owns(&csiopv1a1.Driver{}, builder.WithPredicates(generationChangePredicate))
-	}
-
 	return bldr.Complete(c)
 }
 
 //+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
-//+kubebuilder:rbac:groups="apps",resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="apps",resources=deployments,verbs=get;list;watch
 //+kubebuilder:rbac:groups="apps",resources=deployments/finalizers,verbs=update
-//+kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="apps",resources=daemonsets/finalizers,verbs=update
-//+kubebuilder:rbac:groups="storage.k8s.io",resources=csidrivers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
@@ -263,41 +247,28 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		if deployCSI, err := c.getDeployCSIConfig(); err != nil {
-			c.log.Error(err, "failed to perform precheck for deploying CSI")
+		if err := c.reconcileDelegatedCSI(); err != nil {
 			return ctrl.Result{}, err
-		} else if deployCSI {
-
-			var err error
-			if utils.DelegateCSI {
-				err = c.reconcileDelegatedCSI()
-			} else {
-				err = c.reconcileCSI()
-			}
-
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			prometheusRule := &monitoringv1.PrometheusRule{}
-			if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
-				c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
-				return ctrl.Result{}, err
-			}
-
-			prometheusRule.SetNamespace(c.OperatorNamespace)
-
-			err = c.createOrUpdate(prometheusRule, func() error {
-				applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
-				return c.own(prometheusRule)
-			})
-			if err != nil {
-				c.log.Error(err, "failed to create/update prometheus rules")
-				return ctrl.Result{}, err
-			}
-
-			c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
 		}
+
+		prometheusRule := &monitoringv1.PrometheusRule{}
+		if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(pvcPrometheusRules)), 1000).Decode(prometheusRule); err != nil {
+			c.log.Error(err, "Unable to retrieve prometheus rules.", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+			return ctrl.Result{}, err
+		}
+
+		prometheusRule.SetNamespace(c.OperatorNamespace)
+
+		err = c.createOrUpdate(prometheusRule, func() error {
+			applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &prometheusRule.ObjectMeta)
+			return c.own(prometheusRule)
+		})
+		if err != nil {
+			c.log.Error(err, "failed to create/update prometheus rules")
+			return ctrl.Result{}, err
+		}
+
+		c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
 	} else {
 		// deletion phase
 		if err := c.deletionPhase(); err != nil {
@@ -316,12 +287,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 }
 
 func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
-	// remove older CSI deployments and daemonsets as the resources created by csi-operator is different.
-	// we are guaranteed to use kernel mounts removing daemonsts will not pose any risk
-	// NOTE: in next minor version this should be removed
-	if err := c.deleteOlderCSIResources(); err != nil {
-		return fmt.Errorf("failed to remove older csi resources: %v", err)
-	}
 
 	// scc
 	scc := &secv1.SecurityContextConstraints{}
@@ -372,22 +337,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 	rbdDriver.Name = templates.RBDDriverName
 	rbdDriver.Namespace = c.OperatorNamespace
 
-	// indicate csi-op to own RBD CSIDriver resource
-	ownerObjKey := client.ObjectKeyFromObject(rbdDriver)
-	bytes, err := json.Marshal(ownerObjKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal RBD Driver object key: %v", err)
-	}
-	rbdCsiDriver := &storagev1.CSIDriver{}
-	rbdCsiDriver.Name = templates.RBDDriverName
-	if err := c.get(rbdCsiDriver); client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get RBD CSIDriver resource: %v", err)
-	} else if rbdCsiDriver.UID != "" && utils.AddAnnotation(rbdCsiDriver, "csi.ceph.io/ownerref", string(bytes)) {
-		if err = c.update(rbdCsiDriver); err != nil {
-			return fmt.Errorf("failed to transfer ownership of RBD CSIDriver resource: %v", err)
-		}
-	}
-
 	if err := c.createOrUpdate(rbdDriver, func() error {
 		if err := c.own(rbdDriver); err != nil {
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
@@ -402,22 +351,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 	cephFsDriver.Name = templates.CephFsDriverName
 	cephFsDriver.Namespace = c.OperatorNamespace
 
-	// indicate csi-op to own CephFs CSIDriver resource
-	ownerObjKey = client.ObjectKeyFromObject(cephFsDriver)
-	bytes, err = json.Marshal(ownerObjKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal CephFs Driver object key: %v", err)
-	}
-	cephFsCsiDriver := &storagev1.CSIDriver{}
-	cephFsCsiDriver.Name = templates.CephFsDriverName
-	if err := c.get(cephFsCsiDriver); client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get CephFs CSIDriver resource: %v", err)
-	} else if cephFsCsiDriver.UID != "" && utils.AddAnnotation(cephFsCsiDriver, "csi.ceph.io/ownerref", string(bytes)) {
-		if err = c.update(cephFsCsiDriver); err != nil {
-			return fmt.Errorf("failed to transfer ownership of CephFs CSIDriver resource: %v", err)
-		}
-	}
-
 	if err := c.createOrUpdate(cephFsDriver, func() error {
 		if err := c.own(cephFsDriver); err != nil {
 			return fmt.Errorf("failed to own csi cephfs driver: %v", err)
@@ -427,214 +360,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
 	}
 
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) getAndDeleteResource(obj client.Object) error {
-	if err := c.get(obj); err == nil {
-		if err = c.delete(obj); err != nil {
-			return fmt.Errorf("failed to delete %s: %v", client.ObjectKeyFromObject(obj), err)
-		}
-	} else if client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get get %s: %v", client.ObjectKeyFromObject(obj), err)
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) deleteOlderCSIResources() error {
-	rbdDeployment := &appsv1.Deployment{}
-	rbdDeployment.Name = csi.RBDDeploymentName
-	rbdDeployment.Namespace = c.OperatorNamespace
-	// doing a get hits cache and reduces round trip to api server when trying
-	// to delete non existing resource in every reconcile
-	if err := c.getAndDeleteResource(rbdDeployment); err != nil {
-		return err
-	}
-
-	rbdDaemonSet := &appsv1.DaemonSet{}
-	rbdDaemonSet.Name = csi.RBDDaemonSetName
-	rbdDaemonSet.Namespace = c.OperatorNamespace
-	if err := c.getAndDeleteResource(rbdDaemonSet); err != nil {
-		return err
-	}
-
-	cephFsDeployment := &appsv1.Deployment{}
-	cephFsDeployment.Name = csi.CephFSDeploymentName
-	cephFsDeployment.Namespace = c.OperatorNamespace
-	if err := c.getAndDeleteResource(cephFsDeployment); err != nil {
-		return err
-	}
-
-	cephFsDaemonSet := &appsv1.DaemonSet{}
-	cephFsDaemonSet.Name = csi.CephFSDaemonSetName
-	cephFsDaemonSet.Namespace = c.OperatorNamespace
-	if err := c.getAndDeleteResource(cephFsDaemonSet); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileCSI() error {
-
-	clusterVersion := &configv1.ClusterVersion{}
-	clusterVersion.Name = clusterVersionName
-	if err := c.get(clusterVersion); err != nil {
-		c.log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
-		return err
-	}
-
-	if err := csi.InitializeSidecars(c.log, clusterVersion.Status.Desired.Version); err != nil {
-		c.log.Error(err, "unable to initialize sidecars")
-		return err
-	}
-
-	c.scc = &secv1.SecurityContextConstraints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: csi.SCCName,
-		},
-	}
-	err := c.createOrUpdate(c.scc, func() error {
-		// TODO: this is a hack to preserve the resourceVersion of the SCC
-		resourceVersion := c.scc.ResourceVersion
-		csi.SetSecurityContextConstraintsDesiredState(c.scc, c.OperatorNamespace)
-		c.scc.ResourceVersion = resourceVersion
-		return nil
-	})
-	if err != nil {
-		c.log.Error(err, "unable to create/update SCC")
-		return err
-	}
-
-	// create the monitor configmap for the csi drivers but never updates it.
-	// This is because the monitor configurations are added to the configmap
-	// when user creates storageclaims.
-	monConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      templates.MonConfigMapName,
-			Namespace: c.OperatorNamespace,
-		},
-		Data: map[string]string{
-			"config.json": "[]",
-		},
-	}
-	if err := c.own(monConfigMap); err != nil {
-		return err
-	}
-
-	if err := c.create(monConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
-		c.log.Error(err, "failed to create monitor configmap", "name", monConfigMap.Name)
-		return err
-	}
-
-	// create the encryption configmap for the csi driver but never updates it.
-	// This is because the encryption configuration are added to the configmap
-	// by the users before they create the encryption storageclaims.
-	encConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      templates.EncryptionConfigMapName,
-			Namespace: c.OperatorNamespace,
-		},
-		Data: map[string]string{
-			"config.json": "[]",
-		},
-	}
-	if err := c.own(encConfigMap); err != nil {
-		return err
-	}
-
-	if err := c.create(encConfigMap); err != nil && !kerrors.IsAlreadyExists(err) {
-		c.log.Error(err, "failed to create monitor configmap", "name", encConfigMap.Name)
-		return err
-	}
-
-	c.cephFSDeployment = &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.CephFSDeploymentName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.cephFSDeployment, func() error {
-		if err := c.own(c.cephFSDeployment); err != nil {
-			return err
-		}
-		csi.SetCephFSDeploymentDesiredState(c.cephFSDeployment)
-		return nil
-	})
-	if err != nil {
-		c.log.Error(err, "failed to create/update cephfs deployment")
-		return err
-	}
-
-	c.cephFSDaemonSet = &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.CephFSDaemonSetName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.cephFSDaemonSet, func() error {
-		if err := c.own(c.cephFSDaemonSet); err != nil {
-			return err
-		}
-		csi.SetCephFSDaemonSetDesiredState(c.cephFSDaemonSet)
-		return nil
-	})
-	if err != nil {
-		c.log.Error(err, "failed to create/update cephfs daemonset")
-		return err
-	}
-
-	c.rbdDeployment = &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.RBDDeploymentName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.rbdDeployment, func() error {
-		if err := c.own(c.rbdDeployment); err != nil {
-			return err
-		}
-		csi.SetRBDDeploymentDesiredState(c.rbdDeployment)
-		return nil
-	})
-	if err != nil {
-		c.log.Error(err, "failed to create/update rbd deployment")
-		return err
-	}
-
-	c.rbdDaemonSet = &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csi.RBDDaemonSetName,
-			Namespace: c.OperatorNamespace,
-		},
-	}
-	err = c.createOrUpdate(c.rbdDaemonSet, func() error {
-		if err := c.own(c.rbdDaemonSet); err != nil {
-			return err
-		}
-		csi.SetRBDDaemonSetDesiredState(c.rbdDaemonSet)
-		return nil
-	})
-	if err != nil {
-		c.log.Error(err, "failed to create/update rbd daemonset")
-		return err
-	}
-
-	// Need to handle deletion of the csiDriver object, we cannot set
-	// ownerReference on it as its cluster scoped resource
-	cephfsCSIDriver := templates.CephFSCSIDriver.DeepCopy()
-	cephfsCSIDriver.ObjectMeta.Name = csi.GetCephFSDriverName()
-	if err := csi.CreateCSIDriver(c.ctx, c.Client, cephfsCSIDriver); err != nil {
-		c.log.Error(err, "unable to create cephfs CSIDriver")
-		return err
-	}
-
-	rbdCSIDriver := templates.RbdCSIDriver.DeepCopy()
-	rbdCSIDriver.ObjectMeta.Name = csi.GetRBDDriverName()
-	if err := csi.CreateCSIDriver(c.ctx, c.Client, rbdCSIDriver); err != nil {
-		c.log.Error(err, "unable to create rbd CSIDriver")
-		return err
-	}
 	return nil
 }
 
@@ -649,13 +374,7 @@ func (c *OperatorConfigMapReconciler) deletionPhase() error {
 		return err
 	}
 
-	var err error
-	if utils.DelegateCSI {
-		err = c.deleteDelegatedCSI()
-	} else {
-		err = c.deleteCSI()
-	}
-	if err != nil {
+	if err := c.deleteDelegatedCSI(); err != nil {
 		return err
 	}
 
@@ -680,10 +399,6 @@ func (c *OperatorConfigMapReconciler) createOrUpdate(obj client.Object, f contro
 
 func (c *OperatorConfigMapReconciler) own(obj client.Object) error {
 	return controllerutil.SetControllerReference(c.operatorConfigMap, obj, c.Client.Scheme())
-}
-
-func (c *OperatorConfigMapReconciler) create(obj client.Object) error {
-	return c.Client.Create(c.ctx, obj)
 }
 
 // applyLabels adds labels to object meta, overwriting keys that are already defined.
@@ -772,42 +487,6 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
-}
-
-func (c *OperatorConfigMapReconciler) getDeployCSIConfig() (bool, error) {
-	data := c.operatorConfigMap.Data
-	if data == nil {
-		data = map[string]string{}
-	}
-
-	var deployCSI bool
-	var err error
-	if value, ok := data[deployCSIKey]; ok {
-		deployCSI, err = strconv.ParseBool(value)
-		if err != nil {
-			return false, fmt.Errorf("failed to parse value for %q in operator configmap as a boolean: %v", deployCSIKey, err)
-		}
-	} else {
-		// CSI installation is not specified explicitly in the configmap and
-		// behaviour is different in case we recognize the StorageCluster API on the cluster.
-		storageClusterCRD := &metav1.PartialObjectMetadata{}
-		storageClusterCRD.SetGroupVersionKind(
-			extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"),
-		)
-		storageClusterCRD.Name = "storageclusters.ocs.openshift.io"
-		if err = c.get(storageClusterCRD); err != nil {
-			if !kerrors.IsNotFound(err) {
-				return false, fmt.Errorf("failed to verify existence of storagecluster crd: %v", err)
-			}
-			// storagecluster CRD doesn't exist
-			deployCSI = true
-		} else {
-			// storagecluster CRD exists and don't deploy CSI until explicitly mentioned in the configmap
-			deployCSI = false
-		}
-	}
-
-	return deployCSI, nil
 }
 
 func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
@@ -1065,25 +744,6 @@ func (c *OperatorConfigMapReconciler) deleteDelegatedCSI() error {
 	scc := &secv1.SecurityContextConstraints{}
 	scc.Name = templates.SCCName
 	if err := c.delete(scc); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) deleteCSI() error {
-	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetCephFSDriverName()); err != nil && !kerrors.IsNotFound(err) {
-		c.log.Error(err, "unable to delete cephfs CSIDriver")
-		return err
-	}
-	if err := csi.DeleteCSIDriver(c.ctx, c.Client, csi.GetRBDDriverName()); err != nil && !kerrors.IsNotFound(err) {
-		c.log.Error(err, "unable to delete rbd CSIDriver")
-		return err
-	}
-
-	c.scc = &secv1.SecurityContextConstraints{}
-	c.scc.Name = csi.SCCName
-	if err := c.delete(c.scc); err != nil {
-		c.log.Error(err, "unable to delete SCC")
 		return err
 	}
 	return nil

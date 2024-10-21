@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2024-10-14T12:21:27Z"
+    createdAt: "2024-10-22T13:08:41Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -109,32 +109,10 @@ spec:
         - apiGroups:
           - apps
           resources:
-          - daemonsets
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - apps
-          resources:
-          - daemonsets/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - apps
-          resources:
           - deployments
           verbs:
-          - create
-          - delete
           - get
           - list
-          - patch
-          - update
           - watch
         - apiGroups:
           - apps
@@ -366,18 +344,6 @@ spec:
           verbs:
           - get
           - list
-          - watch
-        - apiGroups:
-          - storage.k8s.io
-          resources:
-          - csidrivers
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
           - watch
         - apiGroups:
           - storage.k8s.io
@@ -823,8 +789,6 @@ spec:
                 securityContext:
                   allowPrivilegeEscalation: false
                 volumeMounts:
-                - mountPath: /opt/config
-                  name: csi-images
                 - mountPath: /etc/tls/private
                   name: webhook-cert-secret
               initContainers:
@@ -848,9 +812,6 @@ spec:
                 operator: Equal
                 value: "true"
               volumes:
-              - configMap:
-                  name: ocs-client-operator-csi-images
-                name: csi-images
               - name: webhook-cert-secret
                 secret:
                   secretName: webhook-cert-secret

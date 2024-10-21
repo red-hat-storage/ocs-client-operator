@@ -44,11 +44,7 @@ const DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.c
 // Value corresponding to annotation key has desired client hash
 const DesiredConfigHashAnnotationKey = "ocs.openshift.io/provider-side-state"
 
-const runCSIDaemonsetOnMaster = "RUN_CSI_DAEMONSET_ON_MASTER"
-
 const CronScheduleWeekly = "@weekly"
-
-const CSIReconcileEnvVar = "CSI_RECONCILE"
 
 const ExitCodeThatShouldRestartTheProcess = 42
 

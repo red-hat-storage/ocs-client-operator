@@ -102,11 +102,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&corev1.Secret{})
-
-	if utils.DelegateCSI {
-		bldr = bldr.Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate))
-	}
+		Owns(&corev1.Secret{}).
+		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate))
 
 	return bldr.Complete(r)
 }
@@ -224,21 +221,19 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				return reconcile.Result{}, err
 			}
 		case "CephConnection":
-			if utils.DelegateCSI {
-				cephConnection := &csiopv1a1.CephConnection{}
-				cephConnection.Name = r.storageClient.Name
-				cephConnection.Namespace = r.OperatorNamespace
-				if err := r.createOrUpdate(cephConnection, func() error {
-					if err := r.own(cephConnection); err != nil {
-						return fmt.Errorf("failed to own cephConnection resource: %v", err)
-					}
-					if err := json.Unmarshal(eResource.Data, &cephConnection.Spec); err != nil {
-						return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)
-					}
-					return nil
-				}); err != nil {
-					return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
+			cephConnection := &csiopv1a1.CephConnection{}
+			cephConnection.Name = r.storageClient.Name
+			cephConnection.Namespace = r.OperatorNamespace
+			if err := r.createOrUpdate(cephConnection, func() error {
+				if err := r.own(cephConnection); err != nil {
+					return fmt.Errorf("failed to own cephConnection resource: %v", err)
 				}
+				if err := json.Unmarshal(eResource.Data, &cephConnection.Spec); err != nil {
+					return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)
+				}
+				return nil
+			}); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
 			}
 		case "Secret":
 			data := map[string]string{}
@@ -590,10 +585,6 @@ func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.
 										{
 											Name:  utils.OperatorNamespaceEnvVar,
 											Value: r.OperatorNamespace,
-										},
-										{
-											Name:  utils.CSIReconcileEnvVar,
-											Value: os.Getenv(utils.CSIReconcileEnvVar),
 										},
 									},
 								},

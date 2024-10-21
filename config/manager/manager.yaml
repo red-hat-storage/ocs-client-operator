@@ -47,8 +47,6 @@ spec:
         image: controller:latest
         name: manager
         volumeMounts:
-        - name: csi-images
-          mountPath: /opt/config
         - mountPath: /etc/tls/private
           name: webhook-cert-secret
         env:
@@ -88,9 +86,6 @@ spec:
             cpu: 10m
             memory: 256Mi
       volumes:
-      - name: csi-images
-        configMap:
-          name: csi-images
       - name: webhook-cert-secret
         secret:
           secretName: webhook-cert-secret
