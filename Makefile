@@ -37,15 +37,9 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-csi-images-manifest: ## Generates the YAML manifest of CSI images for each supported environment.
-	./hack/gen-csi-images-manifest.sh
+# TEMPORARY: this target will be removed after a successful verification of d/s build
+csi-images-manifest:
 
-verify-csi-images-manifest: csi-images-manifest ## Verify csi-images-manifest has been run, if required.
-	@if [[ -n "$$(git status --porcelain $${CSI_IMAGES_MANIFEST})" ]]; then \
-		echo -e "\n\033[1;31mError:\033[0m Uncommitted changes to CSI images manifest found. Run \033[1m'make csi-images-manifest'\033[0m and commit the results.\n"; \
-		git diff -u $${CSI_IMAGES_MANIFEST}; \
-		exit 1; \
-	fi
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
