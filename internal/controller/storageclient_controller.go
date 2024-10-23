@@ -283,6 +283,25 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
 			}
+		case "ConfigMap":
+			configMap := &corev1.ConfigMap{}
+			configMap.Name = eResource.Name
+			configMap.Namespace = r.OperatorNamespace
+
+			data := map[string]string{}
+			err = json.Unmarshal(eResource.Data, &data)
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshal csi-sidecar-config configuration response: %v", err)
+			}
+
+			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, configMap, func() error {
+				configMap.Data = data
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create or update configMap %v: %s", configMap.Name, err)
+			}
+
 		}
 	}
 	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] != "true" {
