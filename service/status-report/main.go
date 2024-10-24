@@ -28,7 +28,6 @@ import (
 	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
@@ -147,23 +146,7 @@ func updateCSIConfig(ctx context.Context,
 		return fmt.Errorf("failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
 	for _, eResource := range scResponse.ExternalResource {
-		if !utils.DelegateCSI && eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
-			monitorIps, err := csi.ExtractMonitor(eResource.Data)
-			if err != nil {
-				return fmt.Errorf("failed to extract monitor data for storageClient %v: %v", storageClient.Status.ConsumerID, err)
-			}
-			var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
-			csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
-			cc := csi.ClusterConfig{
-				Client:    cl,
-				Namespace: operatorNamespace,
-				Ctx:       ctx,
-			}
-			err = cc.UpdateMonConfigMap("", storageClient.Status.ConsumerID, csiClusterConfigEntry)
-			if err != nil {
-				return fmt.Errorf("failed to update mon configmap for storageClient %v: %v", storageClient.Status.ConsumerID, err)
-			}
-		} else if utils.DelegateCSI && eResource.Kind == "CephConnection" {
+		if eResource.Kind == "CephConnection" {
 			desiredCephConnectionSpec := &csiopv1a1.CephConnectionSpec{}
 			if err := json.Unmarshal(eResource.Data, &desiredCephConnectionSpec); err != nil {
 				return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)

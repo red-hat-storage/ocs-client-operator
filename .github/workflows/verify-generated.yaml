@@ -35,9 +35,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Verify changes to CSI images manifest
-        run: make verify-csi-images-manifest
-
       - name: Verify go deps
         run: make godeps-verify
 

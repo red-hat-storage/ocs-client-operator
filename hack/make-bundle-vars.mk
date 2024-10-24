@@ -108,11 +108,6 @@ endif
 CSI_ADDONS_PACKAGE_NAME ?= csi-addons
 CSI_ADDONS_PACKAGE_VERSION ?= 0.9.1
 
-## CSI driver images
-# The following variables define the default CSI container images to deploy
-# and the supported versions of OpenShift.
-CSI_IMAGES_MANIFEST ?= config/manager/csi-images.yaml
-
 # The following variables are here as a convenience for developers so we don't have
 # to retype things, because we're lazy.
 IMAGE_LOCATION_SIG_STORAGE ?= registry.k8s.io/sig-storage

@@ -21,13 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"slices"
 	"strings"
 	"time"
 
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/csi"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
@@ -47,6 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -81,7 +81,7 @@ type StorageClaimReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	ctx := context.Background()
-	csiDrivers := []string{csi.GetRBDDriverName(), csi.GetCephFSDriverName()}
+	csiDrivers := []string{templates.RBDDriverName, templates.CephFsDriverName}
 	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, pvClusterIDIndexName, func(o client.Object) []string {
 		pv := o.(*corev1.PersistentVolume)
 		if pv != nil &&
@@ -125,11 +125,8 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				utils.CrdCreateAndDeletePredicate(&r.log, drClusterConfigCRDName, r.AvailableCrds[drClusterConfigCRDName]),
 			),
 			builder.OnlyMetadata,
-		)
-
-	if utils.DelegateCSI {
-		bldr = bldr.Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate))
-	}
+		).
+		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate))
 
 	if r.AvailableCrds[drClusterConfigCRDName] {
 		bldr = bldr.Owns(&ramenv1alpha1.DRClusterConfig{}, builder.WithPredicates(generationChangePredicate))
@@ -257,12 +254,6 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 	// Close client-side connections.
 	defer providerClient.Close()
 
-	cc := csi.ClusterConfig{
-		Client:    r.Client,
-		Namespace: r.OperatorNamespace,
-		Ctx:       r.ctx,
-	}
-
 	if r.storageClaim.GetDeletionTimestamp().IsZero() {
 
 		// TODO: Phases do not have checks at the moment, in order to make them more predictable and less error-prone, at the expense of increased computation cost.
@@ -346,20 +337,6 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("no configuration data received")
 		}
 
-		var csiClusterConfigEntry = new(csi.ClusterConfigEntry)
-		scResponse, err := providerClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
-		}
-		for _, eResource := range scResponse.ExternalResource {
-			if eResource.Kind == "ConfigMap" && eResource.Name == "rook-ceph-mon-endpoints" {
-				monitorIps, err := csi.ExtractMonitor(eResource.Data)
-				if err != nil {
-					return reconcile.Result{}, fmt.Errorf("failed to extract monitor data: %v", err)
-				}
-				csiClusterConfigEntry.Monitors = append(csiClusterConfigEntry.Monitors, monitorIps...)
-			}
-		}
 		// Go over the received objects and operate on them accordingly.
 		for _, resource := range resources {
 
@@ -397,21 +374,12 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				if err != nil {
 					return reconcile.Result{}, fmt.Errorf("failed to unmarshal StorageClaim configuration response: %v", err)
 				}
-				if rns, ok := data["radosnamespace"]; ok {
-					csiClusterConfigEntry.CephRBD = new(csi.CephRBDSpec)
-					csiClusterConfigEntry.CephRBD.RadosNamespace = rns
-					delete(data, "radosnamespace")
-				}
+				// we are now using clientprofile from csi-operator for getting this info.
+				// until provider stops sending this info we'll just need to drop the field
+				// we'll make changes to provider at some version when all clients are dropping this field
+				delete(data, "radosnamespace")
+				delete(data, "subvolumegroupname")
 
-				// The clusterID is an opaque value used by the CSI driver
-				// to identify the cluster config (e.g. mon IPs) to use
-				// for a volume from a given StorageClass. We set it to
-				// the claim name for ease of identification.
-				//
-				// NOTE: This is distinct from the notion of a "clusterID"
-				// used within Ceph and Rook-Ceph, despite sharing the
-				// same name.
-				csiClusterConfigEntry.ClusterID = r.storageClaimHash
 				var storageClass *storagev1.StorageClass
 				data["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
 				data["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
@@ -419,10 +387,6 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				data["clusterID"] = r.storageClaimHash
 
 				if resource.Name == "cephfs" {
-					csiClusterConfigEntry.CephFS = new(csi.CephFSSpec)
-					csiClusterConfigEntry.CephFS.SubvolumeGroup = data["subvolumegroupname"]
-					// delete groupname from data as its not required in storageclass
-					delete(data, "subvolumegroupname")
 					storageClass = r.getCephFSStorageClass(data)
 				} else if resource.Name == "ceph-rbd" {
 					storageClass = r.getCephRBDStorageClass(data)
@@ -454,35 +418,26 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
 				}
 			case "ClientProfile":
-				if utils.DelegateCSI {
-					clientProfile := &csiopv1a1.ClientProfile{}
-					clientProfile.Name = r.storageClaimHash
-					clientProfile.Namespace = r.OperatorNamespace
-					if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfile, func() error {
-						if err := r.own(clientProfile); err != nil {
-							return fmt.Errorf("failed to own clientProfile resource: %v", err)
-						}
-						if err := json.Unmarshal(resource.Data, &clientProfile.Spec); err != nil {
-							return fmt.Errorf("failed to unmarshall clientProfile spec: %v", err)
-						}
-						clientProfile.Spec.CephConnectionRef = corev1.LocalObjectReference{
-							Name: r.storageClient.Name,
-						}
-						return nil
-					}); err != nil {
-						return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfile: %v", err)
+				clientProfile := &csiopv1a1.ClientProfile{}
+				clientProfile.Name = r.storageClaimHash
+				clientProfile.Namespace = r.OperatorNamespace
+				if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfile, func() error {
+					if err := r.own(clientProfile); err != nil {
+						return fmt.Errorf("failed to own clientProfile resource: %v", err)
 					}
+					if err := json.Unmarshal(resource.Data, &clientProfile.Spec); err != nil {
+						return fmt.Errorf("failed to unmarshall clientProfile spec: %v", err)
+					}
+					clientProfile.Spec.CephConnectionRef = corev1.LocalObjectReference{
+						Name: r.storageClient.Name,
+					}
+					return nil
+				}); err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfile: %v", err)
 				}
 			}
 		}
 
-		// update monitor configuration for cephcsi
-		if !utils.DelegateCSI {
-			err = cc.UpdateMonConfigMap(csiClusterConfigEntry.ClusterID, r.storageClient.Status.ConsumerID, csiClusterConfigEntry)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
-			}
-		}
 		// Readiness phase.
 		// Update the StorageClaim status.
 		r.storageClaim.Status.Phase = v1alpha1.StorageClaimReady
@@ -503,14 +458,6 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to verify volumesnapshotcontents dependent on storageclaim %q: %v", r.storageClaim.Name, err)
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclaim %s", r.storageClaim.Name)
-		}
-
-		// Delete configmap entry for cephcsi
-		if !utils.DelegateCSI {
-			err = cc.UpdateMonConfigMap(r.storageClaimHash, r.storageClient.Status.ConsumerID, nil)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to update mon configmap: %v", err)
-			}
 		}
 
 		// Call `RevokeStorageClaim` service on the provider server with StorageClaim as a request message.
@@ -547,7 +494,7 @@ func (r *StorageClaimReconciler) getCephFSStorageClass(data map[string]string) *
 		},
 		ReclaimPolicy:        &pvReclaimPolicy,
 		AllowVolumeExpansion: &allowVolumeExpansion,
-		Provisioner:          csi.GetCephFSDriverName(),
+		Provisioner:          templates.CephFsDriverName,
 		Parameters:           data,
 	}
 	return storageClass
@@ -566,7 +513,7 @@ func (r *StorageClaimReconciler) getCephRBDStorageClass(data map[string]string) 
 		},
 		ReclaimPolicy:        &pvReclaimPolicy,
 		AllowVolumeExpansion: &allowVolumeExpansion,
-		Provisioner:          csi.GetRBDDriverName(),
+		Provisioner:          templates.RBDDriverName,
 		Parameters:           data,
 	}
 
@@ -581,7 +528,7 @@ func (r *StorageClaimReconciler) getCephFSVolumeSnapshotClass(data map[string]st
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.storageClaim.Name,
 		},
-		Driver:         csi.GetCephFSDriverName(),
+		Driver:         templates.CephFsDriverName,
 		DeletionPolicy: snapapi.VolumeSnapshotContentDelete,
 		Parameters:     data,
 	}
@@ -593,7 +540,7 @@ func (r *StorageClaimReconciler) getCephRBDVolumeSnapshotClass(data map[string]s
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.storageClaim.Name,
 		},
-		Driver:         csi.GetRBDDriverName(),
+		Driver:         templates.RBDDriverName,
 		DeletionPolicy: snapapi.VolumeSnapshotContentDelete,
 		Parameters:     data,
 	}
