@@ -80,6 +80,7 @@ type OperatorConfigMapReconciler struct {
 	OperatorNamespace string
 	ConsolePort       int32
 	Scheme            *runtime.Scheme
+	AvailableCrds     map[string]bool
 
 	log                 logr.Logger
 	ctx                 context.Context
@@ -157,7 +158,20 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&csiopv1a1.OperatorConfig{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.Driver{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
-		Watches(&extv1.CustomResourceDefinition{}, enqueueConfigMapRequest, builder.OnlyMetadata).
+		Watches(
+			&extv1.CustomResourceDefinition{},
+			enqueueConfigMapRequest,
+			builder.WithPredicates(
+				utils.NamePredicate(MaintenanceModeCRDName),
+				utils.EventTypePredicate(
+					!c.AvailableCrds[MaintenanceModeCRDName],
+					false,
+					c.AvailableCrds[MaintenanceModeCRDName],
+					false,
+				),
+			),
+			builder.OnlyMetadata,
+		).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
 		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
@@ -187,6 +201,15 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	c.ctx = ctx
 	c.log = log.FromContext(ctx, "OperatorConfigMap", req)
 	c.log.Info("Reconciling OperatorConfigMap")
+
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = MaintenanceModeCRDName
+	if err := c.Client.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+		c.log.Error(err, "Failed to get CRD", "CRD", crd.Name)
+		return reconcile.Result{}, err
+	}
+	utils.AssertEqual(c.AvailableCrds[crd.Name], crd.UID != "", utils.ExitCodeThatShouldRestartTheProcess)
 
 	c.operatorConfigMap = &corev1.ConfigMap{}
 	c.operatorConfigMap.Name = req.Name

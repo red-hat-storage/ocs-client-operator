@@ -24,9 +24,6 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"time"
-
-	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
@@ -36,6 +33,7 @@ import (
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -105,7 +103,7 @@ func main() {
 	providerClient, err := providerclient.NewProviderClient(
 		ctx,
 		storageClient.Spec.StorageProviderEndpoint,
-		10*time.Second,
+		utils.OcsClientTimeout,
 	)
 	if err != nil {
 		klog.Exitf("Failed to create grpc client with endpoint %v: %v", storageClient.Spec.StorageProviderEndpoint, err)
