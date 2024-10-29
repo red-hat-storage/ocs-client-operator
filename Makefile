@@ -37,9 +37,6 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-# TEMPORARY: this target will be removed after a successful verification of d/s build
-csi-images-manifest:
-
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
