@@ -166,3 +166,7 @@ func mutate(f controllerutil.MutateFn, key client.ObjectKey, obj client.Object) 
 	}
 	return nil
 }
+
+func GetClusterResourceQuotaName(name string) string {
+	return fmt.Sprintf("storage-client-%s-resourceqouta", GetMD5Hash(name))
+}
