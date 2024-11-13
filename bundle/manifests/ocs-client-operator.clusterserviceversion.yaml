@@ -397,6 +397,12 @@ spec:
           verbs:
           - get
           - list
+        - apiGroups:
+          - quota.openshift.io
+          resources:
+          - clusterresourcequotas
+          verbs:
+          - get
         serviceAccountName: ocs-client-operator-status-reporter
       deployments:
       - label:

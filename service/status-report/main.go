@@ -207,7 +207,7 @@ func setClusterInformation(ctx context.Context, cl client.Client, status interfa
 
 func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
 	clusterResourceQuota := &quotav1.ClusterResourceQuota{}
-	clusterResourceQuota.Name = status.GetClientName()
+	clusterResourceQuota.Name = utils.GetClusterResourceQuotaName(status.GetClientName())
 
 	// No need to check for NotFound because unlimited quota client will not have CRQ resource
 	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterResourceQuota), clusterResourceQuota); client.IgnoreNotFound(err) != nil {

@@ -311,7 +311,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 
 func (r *StorageClientReconciler) reconcileClusterResourceQuota(spec *quotav1.ClusterResourceQuotaSpec) error {
 	clusterResourceQuota := &quotav1.ClusterResourceQuota{}
-	clusterResourceQuota.Name = fmt.Sprintf("storage-client-%s-resourceqouta", utils.GetMD5Hash(r.storageClient.Name))
+	clusterResourceQuota.Name = utils.GetClusterResourceQuotaName(r.storageClient.Name)
 	_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clusterResourceQuota, func() error {
 
 		if err := r.own(clusterResourceQuota); err != nil {
