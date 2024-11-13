@@ -67,6 +67,7 @@ const (
 	manageNoobaaSubKey     = "manageNoobaaSubscription"
 	subscriptionLabelKey   = "managed-by"
 	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
+	generateRbdOMapInfoKey = "generateRbdOMapInfo"
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
@@ -341,6 +342,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		if err := c.own(rbdDriver); err != nil {
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
 		}
+		rbdDriver.Spec.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -505,6 +507,11 @@ func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
 		return false
 	}
 	return val
+}
+
+func (c *OperatorConfigMapReconciler) shouldGenerateRBDOmapInfo() bool {
+	valAsString := strings.ToLower(c.operatorConfigMap.Data[generateRbdOMapInfoKey])
+	return valAsString == strconv.FormatBool(true)
 }
 
 func (c *OperatorConfigMapReconciler) get(obj client.Object, opts ...client.GetOption) error {
