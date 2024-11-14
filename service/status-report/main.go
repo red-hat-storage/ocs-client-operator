@@ -113,7 +113,8 @@ func main() {
 	defer providerClient.Close()
 
 	status := providerclient.NewStorageClientStatus().
-		SetClientName(storageClientName)
+		SetClientName(storageClientName).
+		SetClientID(string(storageClient.UID))
 	setPlatformInformation(ctx, cl, status)
 	setOperatorInformation(ctx, cl, status, operatorNamespace)
 	setClusterInformation(ctx, cl, status)
