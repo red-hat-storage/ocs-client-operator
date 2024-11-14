@@ -61,6 +61,7 @@ const (
 	storageClientFinalizer             = "storageclient.ocs.openshift.io"
 	storageClaimProcessedAnnotationKey = "ocs.openshift.io/storageclaim.processed"
 	storageClientDefaultAnnotationKey  = "ocs.openshift.io/storageclient.default"
+	EnforceCSIHostNWAnnotationKey      = "ocs.openshift.io/enforce-csi-host-nw"
 
 	// indexes for caching
 	ownerIndexName = "index:ownerUID"
@@ -423,6 +424,11 @@ func (r *StorageClientReconciler) onboardConsumer(externalClusterClient *provide
 
 	r.storageClient.Status.ConsumerID = response.StorageConsumerUUID
 	r.storageClient.Status.Phase = v1alpha1.StorageClientOnboarding
+	if utils.AddAnnotation(r.storageClient, EnforceCSIHostNWAnnotationKey, fmt.Sprint(response.EnforceCSIHostNW)) {
+		if err := r.update(r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+		}
+	}
 
 	r.Log.Info("onboarding started")
 	return reconcile.Result{Requeue: true}, nil

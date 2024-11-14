@@ -332,6 +332,20 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
 	}
 
+	// check for annotation to enforce host network on csi
+	storageClients := v1alpha1.StorageClientList{}
+	if err := c.list(&storageClients, &client.ListOptions{}); err != nil {
+		return fmt.Errorf("failed to get storage client: %v", err)
+	}
+
+	for i := 0; i < len(storageClients.Items); i++ {
+		enforceCSIHostNW, exists := storageClients.Items[i].Annotations[EnforceCSIHostNWAnnotationKey]
+		if exists && enforceCSIHostNW == "true" {
+			c.log.Info("enforce csi functional")
+			// csiOperatorConfig.Spec.DriverSpecDefaults.ControllerPlugin.HostNetwork = exists
+		}
+	}
+
 	// ceph rbd driver config
 	rbdDriver := &csiopv1a1.Driver{}
 	rbdDriver.Name = templates.RBDDriverName
