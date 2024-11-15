@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 4.17.0
+VERSION ?= 4.18.0
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
@@ -49,12 +49,12 @@ IMAGE_TAG ?= latest
 IMAGE_NAME ?= ocs-client-operator
 BUNDLE_IMAGE_NAME ?= $(IMAGE_NAME)-bundle
 CSI_ADDONS_BUNDLE_IMAGE_NAME ?= k8s-bundle
-CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.9.1
+CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.10.0
 CATALOG_IMAGE_NAME ?= $(IMAGE_NAME)-catalog
 
 NOOBAA_BUNDLE_NAME ?= noobaa-operator
 NOOBAA_BUNDLE_IMG_NAME ?= $(NOOBAA_BUNDLE_NAME)-bundle
-NOOBAA_BUNDLE_VERSION ?= v5.17.0
+NOOBAA_BUNDLE_VERSION ?= v5.18.0
 NOOBAA_BUNDLE_IMG_TAG ?= master-20240514
 NOOBAA_BUNDLE_IMG_NAMESPACE ?= noobaa
 NOOBAA_BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(NOOBAA_BUNDLE_IMG_NAMESPACE)/$(NOOBAA_BUNDLE_IMG_NAME):$(NOOBAA_BUNDLE_IMG_TAG)
@@ -106,7 +106,7 @@ endif
 
 # csi-addons dependencies
 CSI_ADDONS_PACKAGE_NAME ?= csi-addons
-CSI_ADDONS_PACKAGE_VERSION ?= 0.9.1
+CSI_ADDONS_PACKAGE_VERSION ?= 0.10.0
 
 # The following variables are here as a convenience for developers so we don't have
 # to retype things, because we're lazy.

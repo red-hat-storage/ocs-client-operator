@@ -20,7 +20,7 @@ exclude (
 require (
 	github.com/ceph/ceph-csi-operator/api v0.0.0-20240812072523-4d50cf3a32a0
 	github.com/go-logr/logr v1.4.2
-	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
+	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.0.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.34.1
 	github.com/openshift/api v0.0.0-20240828125535-01b3675ba7b3
@@ -28,7 +28,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
 	github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
-	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20240917115204-741b9d6f263d
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241113175552-201c936738fd
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.66.0
 	k8s.io/api v0.31.0
