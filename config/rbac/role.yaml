@@ -124,6 +124,17 @@ rules:
 - apiGroups:
   - csi.ceph.io
   resources:
+  - clientprofilemappings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - csi.ceph.io
+  resources:
   - clientprofiles
   verbs:
   - create
