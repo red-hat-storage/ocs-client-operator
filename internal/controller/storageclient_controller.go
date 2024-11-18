@@ -235,6 +235,21 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
 			}
+		case "ClientProfileMapping":
+			clientProfileMapping := &csiopv1a1.ClientProfileMapping{}
+			clientProfileMapping.Name = eResource.Name
+			clientProfileMapping.Namespace = r.OperatorNamespace
+			if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfileMapping, func() error {
+				if err := r.own(clientProfileMapping); err != nil {
+					return fmt.Errorf("failed to own clientProfileMapping resource: %v", err)
+				}
+				if err := json.Unmarshal(eResource.Data, &clientProfileMapping.Spec); err != nil {
+					return fmt.Errorf("failed to unmarshall clientProfileMapping spec: %v", err)
+				}
+				return nil
+			}); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfileMapping: %v", err)
+			}
 		case "Secret":
 			data := map[string]string{}
 			if err := json.Unmarshal(eResource.Data, &data); err != nil {
