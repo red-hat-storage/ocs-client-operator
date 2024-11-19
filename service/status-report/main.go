@@ -95,7 +95,7 @@ func main() {
 		10*time.Second,
 	)
 	if err != nil {
-		klog.Exitf("Failed to create grpc client: %v", err)
+		klog.Exitf("Failed to create grpc client with endpoint %v: %v", storageClient.Spec.StorageProviderEndpoint, err)
 	}
 	defer providerClient.Close()
 
