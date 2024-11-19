@@ -18,7 +18,7 @@ exclude (
 )
 
 require (
-	github.com/ceph/ceph-csi-operator/api v0.0.0-20240812072523-4d50cf3a32a0
+	github.com/ceph/ceph-csi-operator/api v0.0.0-20241114115439-f325f74205d3
 	github.com/go-logr/logr v1.4.2
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.0.0
 	github.com/onsi/ginkgo v1.16.5
