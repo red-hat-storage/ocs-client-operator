@@ -54,8 +54,8 @@ github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6r
 github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM=
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
-github.com/ceph/ceph-csi-operator/api v0.0.0-20240812072523-4d50cf3a32a0 h1:LIAWGeOu1JzrhknCyD0JbuCUuCuhfiY/H+cBz4nsUcg=
-github.com/ceph/ceph-csi-operator/api v0.0.0-20240812072523-4d50cf3a32a0/go.mod h1:odEUoarG26wXBCC2l4O4nMWhAz6VTKr2FRkv9yELgi8=
+github.com/ceph/ceph-csi-operator/api v0.0.0-20241114115439-f325f74205d3 h1:ft8h5V7BfQqIGJAyiTvn6x86Oi/yMs8yqW7rfKvN9SQ=
+github.com/ceph/ceph-csi-operator/api v0.0.0-20241114115439-f325f74205d3/go.mod h1:odEUoarG26wXBCC2l4O4nMWhAz6VTKr2FRkv9yELgi8=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=

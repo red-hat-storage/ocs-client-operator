@@ -103,7 +103,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Secret{}).
-		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate))
+		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate))
 
 	return bldr.Complete(r)
 }
@@ -118,6 +119,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -234,6 +236,21 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
+			}
+		case "ClientProfileMapping":
+			clientProfileMapping := &csiopv1a1.ClientProfileMapping{}
+			clientProfileMapping.Name = eResource.Name
+			clientProfileMapping.Namespace = r.OperatorNamespace
+			if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfileMapping, func() error {
+				if err := r.own(clientProfileMapping); err != nil {
+					return fmt.Errorf("failed to own clientProfileMapping resource: %v", err)
+				}
+				if err := json.Unmarshal(eResource.Data, &clientProfileMapping.Spec); err != nil {
+					return fmt.Errorf("failed to unmarshall clientProfileMapping spec: %v", err)
+				}
+				return nil
+			}); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfileMapping: %v", err)
 			}
 		case "Secret":
 			data := map[string]string{}
