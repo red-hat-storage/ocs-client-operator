@@ -365,6 +365,9 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					storageClass = r.getCephRBDStorageClass()
 				}
 				err = utils.CreateOrReplace(r.ctx, r.Client, storageClass, func() error {
+					if err := r.own(storageClass); err != nil {
+						return fmt.Errorf("failed to own Storage Class resource: %v", err)
+					}
 					utils.AddLabels(storageClass, resource.Labels)
 					utils.AddAnnotation(storageClass, storageClaimAnnotation, r.storageClaim.Name)
 					storageClass.Parameters = data
@@ -391,6 +394,9 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 					volumeSnapshotClass = r.getCephRBDVolumeSnapshotClass()
 				}
 				err = utils.CreateOrReplace(r.ctx, r.Client, volumeSnapshotClass, func() error {
+					if err := r.own(volumeSnapshotClass); err != nil {
+						return fmt.Errorf("failed to own VolumeSnapshotClass resource: %v", err)
+					}
 					utils.AddLabels(volumeSnapshotClass, resource.Labels)
 					utils.AddAnnotation(volumeSnapshotClass, storageClaimAnnotation, r.storageClaim.Name)
 					volumeSnapshotClass.Parameters = data
