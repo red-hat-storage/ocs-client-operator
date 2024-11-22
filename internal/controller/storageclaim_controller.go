@@ -407,10 +407,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 				}
 			case "VolumeReplicationClass":
 				vrc := &replicationv1alpha1.VolumeReplicationClass{}
-				vrc.Name = r.storageClaim.Name
-				if strings.Contains(resource.Name, "flatten") {
-					vrc.Name = fmt.Sprintf("%s-flatten", r.storageClaim.Name)
-				}
+				vrc.Name = resource.Name
 				err := utils.CreateOrReplace(r.ctx, r.Client, vrc, func() error {
 					if err := r.own(vrc); err != nil {
 						return fmt.Errorf("failed to own VolumeReplicationClass resource: %v", err)
