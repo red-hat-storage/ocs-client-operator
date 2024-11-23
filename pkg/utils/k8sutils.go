@@ -100,6 +100,15 @@ func AddLabel(obj metav1.Object, key string, value string) bool {
 	return false
 }
 
+func AddAnnotations(obj metav1.Object, newAnnotations map[string]string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+		obj.SetAnnotations(annotations)
+	}
+	maps.Copy(annotations, newAnnotations)
+}
+
 // AddAnnotation adds an annotation to a resource metadata, returns true if added else false
 func AddAnnotation(obj metav1.Object, key string, value string) bool {
 	annotations := obj.GetAnnotations()

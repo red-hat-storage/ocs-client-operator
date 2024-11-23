@@ -31,6 +31,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	replicationv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	nbapis "github.com/noobaa/noobaa-operator/v5/pkg/apis"
 	configv1 "github.com/openshift/api/config/v1"
@@ -80,6 +81,7 @@ func init() {
 	utilruntime.Must(csiopv1a1.AddToScheme(scheme))
 	utilruntime.Must(nbapis.AddToScheme(scheme))
 	utilruntime.Must(ramenv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(replicationv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -152,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	availCrds, err := getAvailableCRDNames(context.Background(), apiClient)
+	_, err = getAvailableCRDNames(context.Background(), apiClient)
 	if err != nil {
 		setupLog.Error(err, "Unable get a list of available CRD names")
 		os.Exit(1)
@@ -183,7 +185,6 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
-		AvailableCrds:     availCrds,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClaim")
 		os.Exit(1)
