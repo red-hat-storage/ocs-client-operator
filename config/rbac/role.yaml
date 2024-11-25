@@ -201,6 +201,15 @@ rules:
 - apiGroups:
   - ocs.openshift.io
   resources:
+  - storageclaims
+  - storageclients
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
   - storageclaims/finalizers
   verbs:
   - update
@@ -272,6 +281,25 @@ rules:
   - list
   - update
   - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - maintenancemodes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - maintenancemodes/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - replication.storage.openshift.io
   resources:

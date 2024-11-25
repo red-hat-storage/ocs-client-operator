@@ -20,13 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-	"time"
-
 	quotav1 "github.com/openshift/api/quota/v1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	"os"
+	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
@@ -205,6 +203,10 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	storageClientResponse, err := externalClusterClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
+	}
+
+	if storageClientResponse.SystemAttributes != nil {
+		r.storageClient.Status.InMaintenanceMode = storageClientResponse.SystemAttributes.SystemInMaintenanceMode
 	}
 
 	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
@@ -388,7 +390,7 @@ func (r *StorageClientReconciler) deletionPhase(externalClusterClient *providerC
 func (r *StorageClientReconciler) newExternalClusterClient() (*providerClient.OCSProviderClient, error) {
 
 	ocsProviderClient, err := providerClient.NewProviderClient(
-		r.ctx, r.storageClient.Spec.StorageProviderEndpoint, time.Second*10)
+		r.ctx, r.storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a new provider client with endpoint %v: %v", r.storageClient.Spec.StorageProviderEndpoint, err)
 	}
