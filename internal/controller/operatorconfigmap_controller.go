@@ -71,7 +71,7 @@ const (
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
-	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version"
+	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version-1"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
