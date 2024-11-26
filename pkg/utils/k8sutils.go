@@ -24,6 +24,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,27 +32,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
-// which is the namespace where operator pod is deployed.
-const OperatorNamespaceEnvVar = "OPERATOR_NAMESPACE"
+const (
+	// OperatorNamespaceEnvVar is the constant for env variable OPERATOR_NAMESPACE
+	// which is the namespace where operator pod is deployed.
+	OperatorNamespaceEnvVar = "OPERATOR_NAMESPACE"
 
-// OperatorPodNameEnvVar is the constant for env variable OPERATOR_POD_NAME
-const OperatorPodNameEnvVar = "OPERATOR_POD_NAME"
+	// OperatorPodNameEnvVar is the constant for env variable OPERATOR_POD_NAME
+	OperatorPodNameEnvVar = "OPERATOR_POD_NAME"
 
-// StorageClientNameEnvVar is the constant for env variable STORAGE_CLIENT_NAME
-const StorageClientNameEnvVar = "STORAGE_CLIENT_NAME"
+	// StorageClientNameEnvVar is the constant for env variable STORAGE_CLIENT_NAME
+	StorageClientNameEnvVar = "STORAGE_CLIENT_NAME"
 
-const StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
+	StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
 
-// Value corresponding to annotation key has subscription channel
-const DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
+	// Value corresponding to annotation key has subscription channel
+	DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
 
-// Value corresponding to annotation key has desired client hash
-const DesiredConfigHashAnnotationKey = "ocs.openshift.io/provider-side-state"
+	// Value corresponding to annotation key has desired client hash
+	DesiredConfigHashAnnotationKey = "ocs.openshift.io/provider-side-state"
 
-const CronScheduleWeekly = "@weekly"
+	CronScheduleWeekly = "@weekly"
 
-const ExitCodeThatShouldRestartTheProcess = 42
+	ExitCodeThatShouldRestartTheProcess = 42
+
+	OcsClientTimeout = 10 * time.Second
+)
 
 // GetOperatorNamespace returns the namespace where the operator is deployed.
 func GetOperatorNamespace() string {

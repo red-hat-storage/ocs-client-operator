@@ -20,13 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
-	"strings"
-	"time"
-
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	"slices"
+	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
@@ -218,7 +216,7 @@ func (r *StorageClaimReconciler) reconcilePhases() (reconcile.Result, error) {
 	providerClient, err := providerclient.NewProviderClient(
 		r.ctx,
 		r.storageClient.Spec.StorageProviderEndpoint,
-		10*time.Second,
+		utils.OcsClientTimeout,
 	)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to create provider client with endpoint %v: %v", r.storageClient.Spec.StorageProviderEndpoint, err)

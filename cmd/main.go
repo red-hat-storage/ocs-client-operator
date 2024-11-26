@@ -154,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	_, err = getAvailableCRDNames(context.Background(), apiClient)
+	availCrds, err := getAvailableCRDNames(context.Background(), apiClient)
 	if err != nil {
 		setupLog.Error(err, "Unable get a list of available CRD names")
 		os.Exit(1)
@@ -204,9 +204,20 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
 		ConsolePort:       int32(consolePort),
+		AvailableCrds:     availCrds,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
 		os.Exit(1)
+	}
+
+	if availCrds[controller.MaintenanceModeCRDName] {
+		if err = (&controller.MaintenanceModeReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "MaintenanceMode")
+			os.Exit(1)
+		}
 	}
 
 	setupLog.Info("starting manager")
