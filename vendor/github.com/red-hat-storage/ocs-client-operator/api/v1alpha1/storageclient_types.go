@@ -50,7 +50,7 @@ type StorageClientSpec struct {
 type StorageClientStatus struct {
 	Phase storageClientPhase `json:"phase,omitempty"`
 
-	InMaintenanceMode bool `json:"inMaintenanceMode"`
+	InMaintenanceMode bool `json:"inMaintenanceMode,omitempty"`
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
