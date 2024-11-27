@@ -303,7 +303,7 @@ rules:
 - apiGroups:
   - replication.storage.openshift.io
   resources:
-  - volumereplicationclass
+  - volumereplicationclasses
   verbs:
   - create
   - delete
