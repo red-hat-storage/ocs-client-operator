@@ -29,7 +29,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
 	github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
-	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241120160011-2e7cf0127dd4
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241203031449-434063b3178f
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.68.0
 	k8s.io/api v0.31.1
