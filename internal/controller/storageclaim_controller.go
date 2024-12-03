@@ -51,9 +51,6 @@ const (
 	storageClaimFinalizer  = "storageclaim.ocs.openshift.io"
 	storageClaimAnnotation = "ocs.openshift.io/storageclaim"
 	keyRotationAnnotation  = "keyrotation.csiaddons.openshift.io/schedule"
-
-	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
 )
 
 // StorageClaimReconciler reconciles a StorageClaim object
