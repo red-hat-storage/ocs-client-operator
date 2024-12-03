@@ -52,6 +52,8 @@ type StorageClientStatus struct {
 
 	InMaintenanceMode bool `json:"inMaintenanceMode,omitempty"`
 
+	MirrorEnabled bool `json:"mirrorEnabled,omitempty"`
+
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
 }
