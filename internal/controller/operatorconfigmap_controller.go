@@ -50,6 +50,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -151,6 +152,17 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	mirrorEnabledChangedPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			oldObj := e.ObjectOld.(*v1alpha1.StorageClient)
+			newObj := e.ObjectNew.(*v1alpha1.StorageClient)
+			return oldObj.Status.MirrorEnabled != newObj.Status.MirrorEnabled
+		},
+	}
+
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}, configMapPredicates).
@@ -174,7 +186,16 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
-		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
+		Watches(
+			&v1alpha1.StorageClient{},
+			enqueueConfigMapRequest,
+			builder.WithPredicates(
+				predicate.Or(
+					predicate.AnnotationChangedPredicate{},
+					mirrorEnabledChangedPredicate,
+				),
+			),
+		)
 
 	return bldr.Complete(c)
 }
@@ -356,6 +377,11 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
 	}
 
+	shouldGenerateOmapInfo, err := c.shouldGenerateOmapInfo()
+	if err != nil {
+		return fmt.Errorf("failed to retrieve information to generateOMapInfo: %v", err)
+	}
+
 	// ceph rbd driver config
 	rbdDriver := &csiopv1a1.Driver{}
 	rbdDriver.Name = templates.RBDDriverName
@@ -365,7 +391,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		if err := c.own(rbdDriver); err != nil {
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
 		}
-		rbdDriver.Spec.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
+		rbdDriver.Spec.GenerateOMapInfo = ptr.To(shouldGenerateOmapInfo)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -532,9 +558,20 @@ func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
 	return val
 }
 
-func (c *OperatorConfigMapReconciler) shouldGenerateRBDOmapInfo() bool {
-	valAsString := strings.ToLower(c.operatorConfigMap.Data[generateRbdOMapInfoKey])
-	return valAsString == strconv.FormatBool(true)
+func (c *OperatorConfigMapReconciler) shouldGenerateOmapInfo() (bool, error) {
+
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients); err != nil {
+		return false, err
+	}
+
+	for idx := range storageClients.Items {
+		if storageClients.Items[idx].Status.MirrorEnabled {
+			return true, nil
+		}
+
+	}
+	return false, nil
 }
 
 func (c *OperatorConfigMapReconciler) get(obj client.Object, opts ...client.GetOption) error {
