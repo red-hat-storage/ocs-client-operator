@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
+
 	v1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	"slices"
-	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
