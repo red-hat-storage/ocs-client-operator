@@ -63,10 +63,7 @@ func (r *MaintenanceModeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&v1alpha1.StorageClient{},
 			&handler.EnqueueRequestForObject{},
-			builder.WithPredicates(
-				generationChangePredicate,
-				maintenanceModeChangedPredicate,
-			),
+			builder.WithPredicates(maintenanceModeChangedPredicate),
 		).
 		Complete(r)
 }
