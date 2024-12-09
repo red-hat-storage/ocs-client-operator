@@ -250,6 +250,13 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				if err := json.Unmarshal(eResource.Data, &clientProfileMapping.Spec); err != nil {
 					return fmt.Errorf("failed to unmarshall clientProfileMapping spec: %v", err)
 				}
+				// TODO: This is a temporary solution till we have a single clientProfile for all storageClass
+				// sent from Provider
+				clientProfileHash := utils.GetMD5Hash(fmt.Sprintf("%s-ceph-rbd", r.storageClient.Name))
+				for i := range clientProfileMapping.Spec.Mappings {
+					clientProfileMapping.Spec.Mappings[i].LocalClientProfile = clientProfileHash
+					clientProfileMapping.Spec.Mappings[i].RemoteClientProfile = clientProfileHash
+				}
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfileMapping: %v", err)
