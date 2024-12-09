@@ -172,6 +172,15 @@ func main() {
 		}},
 	)
 
+	setupLog.Info("registering StorageClaim validating webhook endpoint")
+	hookServer.Register("/validate-storageclim", &webhook.Admission{
+		Handler: &admwebhook.StorageClaimAdmission{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+			Log:     mgr.GetLogger().WithName("webhook.storageclaim"),
+		}},
+	)
+
 	if err = (&controller.StorageClientReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
