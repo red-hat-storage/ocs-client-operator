@@ -67,6 +67,8 @@ spec:
                 type: string
               inMaintenanceMode:
                 type: boolean
+              mirrorEnabled:
+                type: boolean
               phase:
                 type: string
             type: object

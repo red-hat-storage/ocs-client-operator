@@ -207,6 +207,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 
 	if storageClientResponse.SystemAttributes != nil {
 		r.storageClient.Status.InMaintenanceMode = storageClientResponse.SystemAttributes.SystemInMaintenanceMode
+		r.storageClient.Status.MirrorEnabled = storageClientResponse.SystemAttributes.MirrorEnabled
 	}
 
 	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
