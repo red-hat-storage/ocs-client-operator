@@ -54,8 +54,8 @@ github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6r
 github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM=
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
-github.com/ceph/ceph-csi-operator/api v0.0.0-20241114115439-f325f74205d3 h1:ft8h5V7BfQqIGJAyiTvn6x86Oi/yMs8yqW7rfKvN9SQ=
-github.com/ceph/ceph-csi-operator/api v0.0.0-20241114115439-f325f74205d3/go.mod h1:odEUoarG26wXBCC2l4O4nMWhAz6VTKr2FRkv9yELgi8=
+github.com/ceph/ceph-csi-operator/api v0.0.0-20241119082218-62dc94e55c32 h1:IawGJ9fPalvY77XtDElI4ZoVfU5aLnEKL3kwWBn3YEA=
+github.com/ceph/ceph-csi-operator/api v0.0.0-20241119082218-62dc94e55c32/go.mod h1:odEUoarG26wXBCC2l4O4nMWhAz6VTKr2FRkv9yELgi8=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
@@ -325,8 +325,8 @@ github.com/prometheus/common v0.57.0 h1:Ro/rKjwdq9mZn1K5QPctzh+MA4Lp0BuYk5ZZEVho
 github.com/prometheus/common v0.57.0/go.mod h1:7uRPFSUTbfZWsJ7MHY56sqt7hLQu3bxXHDnNhl8E9qI=
 github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
-github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237 h1:ig6ePD0yopC5Qi5BRmhsIsKaOkdsGXTSmG3HTYIpquo=
-github.com/ramendr/ramen/api v0.0.0-20241001141243-29d6f22ad237/go.mod h1:nO6VM/+PEhcPGyFIQJdhY6ip822cA61PAy/s6IjenAA=
+github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3 h1:q4UjNvv3jzKOeG/S+S1Ms2FV3WajBIE6266/7BIxdX4=
+github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3/go.mod h1:O7VpTy8MMrh31DF4fv+2SZBSouAr8NlzIY4KYx7K75U=
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241120160011-2e7cf0127dd4 h1:ppE7R+yh9I2PZuGPaUDdwQ45ZFV8YfHFNKccOxTo8tg=
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20241120160011-2e7cf0127dd4/go.mod h1:XEZxUtzjlARPV8YvzcX2p7iiRbrUbDP4Q/CXx9ly5lw=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
