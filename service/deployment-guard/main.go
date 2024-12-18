@@ -22,6 +22,9 @@ func main() {
 	operatorNamespace := os.Getenv(utils.OperatorNamespaceEnvVar)
 	if operatorNamespace == "" {
 		klog.Exitf("%s env var is empty", utils.OperatorNamespaceEnvVar)
+	} else {
+		klog.Info("Skipping mode check")
+		return
 	}
 
 	// creation of kube client
