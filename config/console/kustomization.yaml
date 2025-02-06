@@ -9,9 +9,6 @@ resources:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: deployment-guard
-  newName: quay.io/ocs-dev/ocs-client-operator
-  newTag: latest
 - name: ocs-client-operator-console
   newName: quay.io/ocs-dev/ocs-client-console
   newTag: latest
