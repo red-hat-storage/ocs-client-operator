@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -130,6 +131,25 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 	}
 
+	enqueueStorageClaimRequest := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, _ client.Object) []reconcile.Request {
+			storageClaims := &v1alpha1.StorageClaimList{}
+			if err := r.Client.List(ctx, storageClaims); err != nil {
+				return []reconcile.Request{}
+			}
+
+			request := []reconcile.Request{}
+			for _, sc := range storageClaims.Items {
+				request = append(request, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name: sc.Name,
+					},
+				})
+			}
+			return request
+		},
+	)
+
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClaim{}, builder.WithPredicates(generationChangePredicate)).
@@ -139,7 +159,7 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(
 			&extv1.CustomResourceDefinition{},
-			&handler.EnqueueRequestForObject{},
+			enqueueStorageClaimRequest,
 			builder.WithPredicates(
 				utils.NamePredicate(VolumeGroupSnapshotClassCrdName),
 				utils.EventTypePredicate(
@@ -150,7 +170,8 @@ func (r *StorageClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				),
 			),
 			builder.OnlyMetadata,
-		)
+		).
+		Watches(&v1alpha1.StorageClient{}, enqueueStorageClaimRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
 	if r.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 		bldr = bldr.Owns(&groupsnapapi.VolumeGroupSnapshotClass{})
 	}
