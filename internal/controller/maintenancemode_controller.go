@@ -77,39 +77,15 @@ func (r *MaintenanceModeReconciler) Reconcile(ctx context.Context, _ ctrl.Reques
 	r.log = log.FromContext(ctx)
 	r.log.Info("Starting reconcile")
 
-	nameToStorageClient := map[string]*v1alpha1.StorageClient{}
+	//TODO: This controller assumes that there is only one client and that the maintenance mode is created only for that
+	// client. The correct way to fix this would be to use the mmode's targetID (which is the replicationID) and to
+	// fetch the corresponding VRC as the VRC is labeled with targetID and then fetch the StorageClient and put it to
+	// maintenanceMode
 
 	maintenanceModes := &ramenv1alpha1.MaintenanceModeList{}
 	if err := r.list(maintenanceModes); err != nil {
 		r.log.Error(err, "failed to list the MaintenanceMode CRs")
 		return reconcile.Result{}, err
-	}
-
-	for i := range maintenanceModes.Items {
-		mm := &maintenanceModes.Items[i]
-		sc := &v1alpha1.StorageClaim{}
-		// MMode's TargetID is replicationID, which in our case is storageClaim name
-		sc.Name = mm.Spec.TargetID
-		if err := r.get(sc); err != nil {
-			return ctrl.Result{}, err
-		}
-		clientName := sc.Spec.StorageClient
-		if clientName == "" {
-			return ctrl.Result{}, fmt.Errorf("StorageClaim %s does not have a StorageClient defined", sc.Name)
-		}
-		if nameToStorageClient[clientName] == nil {
-			storageClient := &v1alpha1.StorageClient{}
-			storageClient.Name = clientName
-			if err := r.get(storageClient); err != nil {
-				return ctrl.Result{}, err
-			}
-			nameToStorageClient[clientName] = storageClient
-		}
-		if nameToStorageClient[clientName].Status.InMaintenanceMode {
-			if err := r.updateStatusCompletedForMM(mm); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status for MaintenanceMode %s: %w", mm.Name, err)
-			}
-		}
 	}
 
 	storageClients := &v1alpha1.StorageClientList{}
@@ -118,9 +94,29 @@ func (r *MaintenanceModeReconciler) Reconcile(ctx context.Context, _ ctrl.Reques
 		return reconcile.Result{}, err
 	}
 
+	if len(storageClients.Items) != 1 {
+		r.log.Error(
+			fmt.Errorf("expected 1 StorageClient found %d", len(storageClients.Items)),
+			"invalid number of StorageClients found",
+		)
+		return reconcile.Result{}, fmt.Errorf("expected 1 StorageClient found %d", len(storageClients.Items))
+	}
+
+	needsMaintenanceMode := false
+
+	for i := range maintenanceModes.Items {
+		mm := &maintenanceModes.Items[i]
+		storageClient := &storageClients.Items[0]
+		needsMaintenanceMode = true
+		if storageClient.Status.InMaintenanceMode {
+			if err := r.updateStatusCompletedForMM(mm); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status for MaintenanceMode %s: %w", mm.Name, err)
+			}
+		}
+	}
+
 	for i := range storageClients.Items {
 		storageClient := &storageClients.Items[i]
-		_, needsMaintenanceMode := nameToStorageClient[storageClient.Name]
 		if needsMaintenanceMode != storageClient.Status.InMaintenanceMode {
 			if err := r.toggleMaintenanceModeForClient(storageClient, needsMaintenanceMode); err != nil {
 				return ctrl.Result{}, err
@@ -182,8 +178,4 @@ func (r *MaintenanceModeReconciler) updateStatusCompletedForMM(maintenanceMode *
 
 func (r *MaintenanceModeReconciler) list(obj client.ObjectList, opts ...client.ListOption) error {
 	return r.List(r.ctx, obj, opts...)
-}
-
-func (r *MaintenanceModeReconciler) get(obj client.Object, opts ...client.GetOption) error {
-	return r.Get(r.ctx, client.ObjectKeyFromObject(obj), obj, opts...)
 }
