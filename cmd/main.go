@@ -178,18 +178,9 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
-		os.Exit(1)
-	}
-
-	if err = (&controller.StorageClaimReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		OperatorNamespace: utils.GetOperatorNamespace(),
 		AvailableCrds:     availCrds,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "StorageClaim")
+		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
 		os.Exit(1)
 	}
 
