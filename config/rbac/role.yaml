@@ -176,14 +176,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - groupsnapshot.storage.k8s.io
-  resources:
-  - volumegroupsnapshotcontents
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - monitoring.coreos.com
   resources:
   - prometheusrules
@@ -208,37 +200,11 @@ rules:
   - ocs.openshift.io
   resources:
   - storageclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclaims
   - storageclients
   verbs:
   - get
   - list
   - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclaims/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclaims/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - ocs.openshift.io
   resources:
