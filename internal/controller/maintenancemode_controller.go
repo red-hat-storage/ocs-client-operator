@@ -56,11 +56,6 @@ func (r *MaintenanceModeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(generationChangePredicate),
 		).
 		Watches(
-			&v1alpha1.StorageClaim{},
-			&handler.EnqueueRequestForObject{},
-			builder.WithPredicates(generationChangePredicate),
-		).
-		Watches(
 			&v1alpha1.StorageClient{},
 			&handler.EnqueueRequestForObject{},
 			builder.WithPredicates(maintenanceModeChangedPredicate),
