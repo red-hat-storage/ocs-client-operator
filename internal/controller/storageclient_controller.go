@@ -881,17 +881,6 @@ func (r *StorageClientReconciler) update(obj client.Object, opts ...client.Updat
 	return r.Update(r.ctx, obj, opts...)
 }
 
-func (r *StorageClientReconciler) create(obj client.Object, opts ...client.CreateOption) error {
-	return r.Create(r.ctx, obj, opts...)
-}
-
-func (r *StorageClientReconciler) delete(obj client.Object, opts ...client.DeleteOption) error {
-	if err := r.Delete(r.ctx, obj, opts...); err != nil && !kerrors.IsNotFound(err) {
-		return err
-	}
-	return nil
-}
-
 func (r *StorageClientReconciler) own(dependent metav1.Object) error {
 	return controllerutil.SetOwnerReference(r.storageClient, dependent, r.Scheme)
 }
