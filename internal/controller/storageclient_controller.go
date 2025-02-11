@@ -424,8 +424,6 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				scParams["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
 				scParams["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
 				scParams["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
-
-				storageClass.Parameters = scParams
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create or update StorageClass: %s", err)
@@ -447,7 +445,6 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				utils.AddLabels(snapshotClass, eResource.Labels)
 				vscParams := snapshotClass.Parameters
 				vscParams["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
-				snapshotClass.Parameters = vscParams
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
