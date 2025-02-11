@@ -210,6 +210,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -406,19 +407,24 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			if err := json.Unmarshal(eResource.Data, &storageClass); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to unmarshal storage configuration response: %v", err)
 			}
-			if err := r.own(storageClass); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to own Storage Class resource: %v", err)
-			}
-			utils.AddLabels(storageClass, eResource.Labels)
-			scParams := storageClass.Parameters
-			scParams["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
-			scParams["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
-			scParams["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
-
 			// TODO: there will be a clash if storageclass is being reconcile by another entity
 			// ex: in internal mode storageclass was created by storagecluster controller
 			// and if we are mutating anything other than params there'll be unending reconcile loop
 			if err := utils.CreateOrReplace(r.ctx, r.Client, storageClass, func() error {
+				if existing := metav1.GetControllerOfNoCopy(storageClass); existing != nil &&
+					existing.Kind != r.storageClient.Kind {
+					existing.BlockOwnerDeletion = nil
+					existing.Controller = nil
+				}
+				if err := r.own(storageClass); err != nil {
+					return fmt.Errorf("failed to own Storage Class resource: %v", err)
+				}
+				utils.AddLabels(storageClass, eResource.Labels)
+				scParams := storageClass.Parameters
+				scParams["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
+				scParams["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
+				scParams["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
+
 				storageClass.Parameters = scParams
 				return nil
 			}); err != nil {
@@ -429,13 +435,18 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			if err := json.Unmarshal(eResource.Data, snapshotClass); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to unmarshal storage configuration response: %v", err)
 			}
-			if err := r.own(snapshotClass); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to own VolumeSnapshotClass resource: %v", err)
-			}
-			utils.AddLabels(snapshotClass, eResource.Labels)
-			vscParams := snapshotClass.Parameters
-			vscParams["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
 			if err := utils.CreateOrReplace(r.ctx, r.Client, snapshotClass, func() error {
+				if existing := metav1.GetControllerOfNoCopy(snapshotClass); existing != nil &&
+					existing.Kind != r.storageClient.Kind {
+					existing.BlockOwnerDeletion = nil
+					existing.Controller = nil
+				}
+				if err := r.own(snapshotClass); err != nil {
+					return fmt.Errorf("failed to own VolumeSnapshotClass resource: %v", err)
+				}
+				utils.AddLabels(snapshotClass, eResource.Labels)
+				vscParams := snapshotClass.Parameters
+				vscParams["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
 				snapshotClass.Parameters = vscParams
 				return nil
 			}); err != nil {
