@@ -363,6 +363,11 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			secret.Name = eResource.Name
 			secret.Namespace = r.OperatorNamespace
 			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
+				if existing := metav1.GetControllerOfNoCopy(secret); existing != nil &&
+					existing.Kind != r.storageClient.Kind {
+					existing.BlockOwnerDeletion = nil
+					existing.Controller = nil
+				}
 				if err := r.own(secret); err != nil {
 					return err
 				}
@@ -404,13 +409,13 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			}
 		case "StorageClass":
 			storageClass := &storagev1.StorageClass{}
-			if err := json.Unmarshal(eResource.Data, &storageClass); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshal storage configuration response: %v", err)
-			}
-			// TODO: there will be a clash if storageclass is being reconcile by another entity
-			// ex: in internal mode storageclass was created by storagecluster controller
-			// and if we are mutating anything other than params there'll be unending reconcile loop
+			storageClass.Name = eResource.Name
 			if err := utils.CreateOrReplace(r.ctx, r.Client, storageClass, func() error {
+				if err := json.Unmarshal(eResource.Data, &storageClass); err != nil {
+					return fmt.Errorf("failed to unmarshal storageclass configuration response: %v", err)
+				}
+				// ensure name even if it was overwritten by unmarshal of whole resource
+				storageClass.Name = eResource.Name
 				if existing := metav1.GetControllerOfNoCopy(storageClass); existing != nil &&
 					existing.Kind != r.storageClient.Kind {
 					existing.BlockOwnerDeletion = nil
@@ -419,21 +424,28 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				if err := r.own(storageClass); err != nil {
 					return fmt.Errorf("failed to own Storage Class resource: %v", err)
 				}
+
+				if storageClass.Parameters == nil {
+					storageClass.Parameters = map[string]string{}
+				}
+				storageClass.Parameters["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
+				storageClass.Parameters["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
+				storageClass.Parameters["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
+
 				utils.AddLabels(storageClass, eResource.Labels)
-				scParams := storageClass.Parameters
-				scParams["csi.storage.k8s.io/provisioner-secret-namespace"] = r.OperatorNamespace
-				scParams["csi.storage.k8s.io/node-stage-secret-namespace"] = r.OperatorNamespace
-				scParams["csi.storage.k8s.io/controller-expand-secret-namespace"] = r.OperatorNamespace
+				utils.AddAnnotations(storageClass, eResource.Annotations)
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create or update StorageClass: %s", err)
 			}
 		case "VolumeSnapshotClass":
 			snapshotClass := &snapapi.VolumeSnapshotClass{}
-			if err := json.Unmarshal(eResource.Data, snapshotClass); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshal storage configuration response: %v", err)
-			}
+			snapshotClass.Name = eResource.Name
 			if err := utils.CreateOrReplace(r.ctx, r.Client, snapshotClass, func() error {
+				if err := json.Unmarshal(eResource.Data, snapshotClass); err != nil {
+					return fmt.Errorf("failed to unmarshal snapshotclass configuration response: %v", err)
+				}
+				snapshotClass.Name = eResource.Name
 				if existing := metav1.GetControllerOfNoCopy(snapshotClass); existing != nil &&
 					existing.Kind != r.storageClient.Kind {
 					existing.BlockOwnerDeletion = nil
@@ -442,9 +454,14 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				if err := r.own(snapshotClass); err != nil {
 					return fmt.Errorf("failed to own VolumeSnapshotClass resource: %v", err)
 				}
+
+				if snapshotClass.Parameters == nil {
+					snapshotClass.Parameters = map[string]string{}
+				}
+				snapshotClass.Parameters["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
+
 				utils.AddLabels(snapshotClass, eResource.Labels)
-				vscParams := snapshotClass.Parameters
-				vscParams["csi.storage.k8s.io/snapshotter-secret-namespace"] = r.OperatorNamespace
+				utils.AddAnnotations(snapshotClass, eResource.Annotations)
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create or update VolumeSnapshotClass: %s", err)
@@ -455,6 +472,11 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				volumeGroupSnapshotClass := &groupsnapapi.VolumeGroupSnapshotClass{}
 				volumeGroupSnapshotClass.Name = eResource.Name
 				err = utils.CreateOrReplace(r.ctx, r.Client, volumeGroupSnapshotClass, func() error {
+					err = json.Unmarshal(eResource.Data, &volumeGroupSnapshotClass)
+					if err != nil {
+						return fmt.Errorf("failed to unmarshal VolumeGroupSnapshotClass configuration response: %v", err)
+					}
+					volumeGroupSnapshotClass.Name = eResource.Name
 					if existing := metav1.GetControllerOfNoCopy(volumeGroupSnapshotClass); existing != nil &&
 						existing.Kind != r.storageClient.Kind {
 						existing.BlockOwnerDeletion = nil
@@ -464,16 +486,11 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 						return fmt.Errorf("failed to own VolumeGroupSnapshotClass resource: %v", err)
 					}
 
-					err = json.Unmarshal(eResource.Data, &volumeGroupSnapshotClass.Parameters)
-					if err != nil {
-						return fmt.Errorf("failed to unmarshal VolumeGroupSnapshotClass configuration response: %v", err)
+					if volumeGroupSnapshotClass.Parameters == nil {
+						volumeGroupSnapshotClass.Parameters = map[string]string{}
 					}
 					volumeGroupSnapshotClass.Parameters["csi.storage.k8s.io/group-snapshotter-secret-namespace"] = r.OperatorNamespace
-					volumeGroupSnapshotClass.DeletionPolicy = snapapi.VolumeSnapshotContentDelete
-					volumeGroupSnapshotClass.Driver = templates.CephFsDriverName
-					if strings.Contains(strings.ToLower(volumeGroupSnapshotClass.Name), "rbd") {
-						volumeGroupSnapshotClass.Driver = templates.RBDDriverName
-					}
+
 					utils.AddLabels(volumeGroupSnapshotClass, eResource.Labels)
 					utils.AddAnnotations(volumeGroupSnapshotClass, eResource.Annotations)
 					return nil
