@@ -549,35 +549,6 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
-	// guard against secret deletion if storageconsumer is deleted as older PVs still has reference to these secrets
-	secretList := &metav1.PartialObjectMetadataList{}
-	secretList.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("SecretList"))
-	if err := r.list(secretList, client.InNamespace(r.OperatorNamespace)); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to list secrets: %v", err)
-	}
-	for idx := range secretList.Items {
-		partialSecret := &secretList.Items[idx]
-		if existing := metav1.GetControllerOfNoCopy(partialSecret); existing != nil && existing.Kind == "StorageClaim" {
-			secret := &corev1.Secret{}
-			secret.Name = partialSecret.Name
-			secret.Namespace = partialSecret.Namespace
-			if err := r.get(secret); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to get secret %s: %v", secret.Name, err)
-			}
-			if ctrlOwner := metav1.GetControllerOfNoCopy(secret); ctrlOwner != nil &&
-				ctrlOwner.Kind != r.storageClient.Kind {
-				ctrlOwner.BlockOwnerDeletion = nil
-				ctrlOwner.Controller = nil
-			}
-			if err := r.own(secret); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to own secret %s: %v", secret.Name, err)
-			}
-			if err := r.update(secret); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to change controlling owner for secret %s: %v", secret.Name, err)
-			}
-		}
-	}
-
 	return reconcile.Result{}, nil
 }
 
