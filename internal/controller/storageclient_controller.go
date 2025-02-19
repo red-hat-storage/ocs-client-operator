@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	quotav1 "github.com/openshift/api/quota/v1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	"os"
-	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
@@ -35,6 +36,7 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -309,6 +311,27 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
 			}
+		case "Service":
+			serviceSpec := &v1.ServiceSpec{}
+			if err := json.Unmarshal(eResource.Data, &serviceSpec); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall service spec data: %v", err)
+			}
+			srv := &v1.Service{}
+			srv.Name = eResource.Name
+			srv.Namespace = r.OperatorNamespace
+
+			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, srv, func() error {
+				if err := r.own(srv); err != nil {
+					return err
+				}
+
+				srv.Spec = *serviceSpec
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create service: %v", err)
+			}
+
 		}
 	}
 	if r.storageClient.GetAnnotations()[storageClaimProcessedAnnotationKey] != "true" {
