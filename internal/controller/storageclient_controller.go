@@ -175,6 +175,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&snapapi.VolumeSnapshotClass{}).
 		Owns(&replicationv1a1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&corev1.Endpoints{}).
 		Watches(
 			&extv1.CustomResourceDefinition{},
 			enqueueStorageClients,
@@ -214,6 +215,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;delete
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -484,6 +486,47 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfile: %v", err)
+			}
+		case "ServiceSpec":
+			serviceSpec := &corev1.ServiceSpec{}
+			if err := json.Unmarshal(eResource.Data, &serviceSpec); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall service spec data: %v", err)
+			}
+			srv := &corev1.Service{}
+			srv.Name = eResource.Name
+			srv.Namespace = r.OperatorNamespace
+			srv.Annotations = eResource.Annotations
+
+			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, srv, func() error {
+				if err := r.own(srv); err != nil {
+					return err
+				}
+				srv.Spec = *serviceSpec
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create service: %v", err)
+			}
+		case "Endpoints":
+			endpoints := &corev1.Endpoints{}
+			if err := json.Unmarshal(eResource.Data, &endpoints); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshal endpoints data: %v", err)
+			}
+
+			ep := &corev1.Endpoints{}
+			ep.Name = eResource.Name
+			ep.Namespace = r.OperatorNamespace
+
+			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, ep, func() error {
+				if err := r.own(ep); err != nil {
+					return err
+				}
+
+				ep.Subsets = endpoints.Subsets
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create or update endpoints: %v", err)
 			}
 		}
 		if err != nil {
