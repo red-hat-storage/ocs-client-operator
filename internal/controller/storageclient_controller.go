@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	quotav1 "github.com/openshift/api/quota/v1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	"os"
-	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
@@ -35,6 +36,7 @@ import (
 	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -102,7 +104,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate))
+		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&v1.Endpoints{})
 
 	return bldr.Complete(r)
 }
@@ -118,6 +121,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;delete
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var err error
@@ -308,6 +312,47 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			})
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
+			}
+		case "ServiceSpec":
+			serviceSpec := &v1.ServiceSpec{}
+			if err := json.Unmarshal(eResource.Data, &serviceSpec); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshall service spec data: %v", err)
+			}
+			srv := &v1.Service{}
+			srv.Name = eResource.Name
+			srv.Namespace = r.OperatorNamespace
+
+			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, srv, func() error {
+				if err := r.own(srv); err != nil {
+					return err
+				}
+
+				srv.Spec = *serviceSpec
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create service: %v", err)
+			}
+		case "Endpoints":
+			endpoints := &v1.Endpoints{}
+			if err := json.Unmarshal(eResource.Data, &endpoints); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to unmarshal endpoints data: %v", err)
+			}
+
+			ep := &v1.Endpoints{}
+			ep.Name = eResource.Name
+			ep.Namespace = r.OperatorNamespace
+
+			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, ep, func() error {
+				if err := r.own(ep); err != nil {
+					return err
+				}
+
+				ep.Subsets = endpoints.Subsets
+				return nil
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to create or update endpoints: %v", err)
 			}
 		}
 	}
