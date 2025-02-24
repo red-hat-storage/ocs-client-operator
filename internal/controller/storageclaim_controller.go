@@ -705,6 +705,9 @@ func (r *StorageClaimReconciler) hasVolumeSnapshotContents() (bool, error) {
 }
 
 func (r *StorageClaimReconciler) hasVolumeGroupSnapshotContents() (bool, error) {
+	if !r.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
+		return false, nil
+	}
 	vscList := &groupsnapapi.VolumeGroupSnapshotContentList{}
 	if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: r.storageClaimHash}); err != nil {
 		return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
