@@ -116,9 +116,6 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics")
 	flag.IntVar(&webhookPort, "webhook-port", 7443, "The port the webhook sever binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	flag.IntVar(&consolePort, "console-port", 9001, "The port where the console server will be serving it's payload")
 	opts := zap.Options{
 		Development: true,
