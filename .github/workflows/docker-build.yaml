@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
+            cache: false
 
       - name: Build operator bundle container image
         run: make bundle-build
@@ -43,6 +44,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
+            cache: false
 
       - name: Build catalog container image
         env:
