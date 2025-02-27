@@ -18,6 +18,10 @@ jobs:
         with:
             go-version-file: go.mod
 
+      - name: Run go mod tidy
+        run: |
+          make godeps-update
+
       - name: Build operator container image
         run: make build
 
@@ -30,6 +34,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
+            cache: false
+
+      - name: Run go mod tidy
+        run: |
+          make godeps-update
 
       - name: Build operator bundle container image
         run: make bundle-build
@@ -43,6 +52,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
+            cache: false
+
+      - name: Run go mod tidy
+        run: |
+          make godeps-update
 
       - name: Build catalog container image
         env:
