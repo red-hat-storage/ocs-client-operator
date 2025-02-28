@@ -363,11 +363,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			secret.Name = eResource.Name
 			secret.Namespace = r.OperatorNamespace
 			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
-				if existing := metav1.GetControllerOfNoCopy(secret); existing != nil &&
-					existing.Kind != r.storageClient.Kind {
-					existing.BlockOwnerDeletion = nil
-					existing.Controller = nil
-				}
+				removeStorageClaimAsOwner(secret)
 				if err := r.own(secret); err != nil {
 					return err
 				}
@@ -416,11 +412,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 				}
 				// ensure name even if it was overwritten by unmarshal of whole resource
 				storageClass.Name = eResource.Name
-				if existing := metav1.GetControllerOfNoCopy(storageClass); existing != nil &&
-					existing.Kind != r.storageClient.Kind {
-					existing.BlockOwnerDeletion = nil
-					existing.Controller = nil
-				}
+				removeStorageClaimAsOwner(storageClass)
 				if err := r.own(storageClass); err != nil {
 					return fmt.Errorf("failed to own Storage Class resource: %v", err)
 				}
@@ -446,11 +438,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 					return fmt.Errorf("failed to unmarshal snapshotclass configuration response: %v", err)
 				}
 				snapshotClass.Name = eResource.Name
-				if existing := metav1.GetControllerOfNoCopy(snapshotClass); existing != nil &&
-					existing.Kind != r.storageClient.Kind {
-					existing.BlockOwnerDeletion = nil
-					existing.Controller = nil
-				}
+				removeStorageClaimAsOwner(snapshotClass)
 				if err := r.own(snapshotClass); err != nil {
 					return fmt.Errorf("failed to own VolumeSnapshotClass resource: %v", err)
 				}
@@ -477,11 +465,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 						return fmt.Errorf("failed to unmarshal VolumeGroupSnapshotClass configuration response: %v", err)
 					}
 					volumeGroupSnapshotClass.Name = eResource.Name
-					if existing := metav1.GetControllerOfNoCopy(volumeGroupSnapshotClass); existing != nil &&
-						existing.Kind != r.storageClient.Kind {
-						existing.BlockOwnerDeletion = nil
-						existing.Controller = nil
-					}
+					removeStorageClaimAsOwner(volumeGroupSnapshotClass)
 					if err := r.own(volumeGroupSnapshotClass); err != nil {
 						return fmt.Errorf("failed to own VolumeGroupSnapshotClass resource: %v", err)
 					}
@@ -503,11 +487,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			vrc := &replicationv1a1.VolumeReplicationClass{}
 			vrc.Name = eResource.Name
 			err := utils.CreateOrReplace(r.ctx, r.Client, vrc, func() error {
-				if existing := metav1.GetControllerOfNoCopy(vrc); existing != nil &&
-					existing.Kind != r.storageClient.Kind {
-					existing.BlockOwnerDeletion = nil
-					existing.Controller = nil
-				}
+				removeStorageClaimAsOwner(vrc)
 				if err := r.own(vrc); err != nil {
 					return fmt.Errorf("failed to own VolumeReplicationClass resource: %v", err)
 				}
@@ -528,11 +508,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			clientProfile.Name = eResource.Name
 			clientProfile.Namespace = r.OperatorNamespace
 			if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfile, func() error {
-				if existing := metav1.GetControllerOfNoCopy(clientProfile); existing != nil &&
-					existing.Kind != r.storageClient.Kind {
-					existing.BlockOwnerDeletion = nil
-					existing.Controller = nil
-				}
+				removeStorageClaimAsOwner(clientProfile)
 				if err := r.own(clientProfile); err != nil {
 					return fmt.Errorf("failed to own clientProfile resource: %v", err)
 				}
@@ -882,4 +858,13 @@ func (r *StorageClientReconciler) update(obj client.Object, opts ...client.Updat
 
 func (r *StorageClientReconciler) own(dependent metav1.Object) error {
 	return controllerutil.SetOwnerReference(r.storageClient, dependent, r.Scheme)
+}
+
+func removeStorageClaimAsOwner(obj client.Object) {
+	refs := obj.GetOwnerReferences()
+	if idx := slices.IndexFunc(refs, func(owner metav1.OwnerReference) bool {
+		return owner.Kind == "StorageClaim"
+	}); idx != -1 {
+		obj.SetOwnerReferences(slices.Delete(refs, idx, idx+1))
+	}
 }
