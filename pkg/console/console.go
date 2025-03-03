@@ -70,9 +70,11 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 					BasePath:  pluginBasePath,
 				},
 			},
+			Proxy: getConsolePluginProxy(serviceNamespace),
 		},
 	}
 }
+
 func GetNginxConf() string {
 	return nginxConf
 }
@@ -85,6 +87,23 @@ func GetNginxConfConfigMap(namespace string) *apiv1.ConfigMap {
 		},
 		Data: map[string]string{
 			"nginx.conf": nginxConf,
+		},
+	}
+}
+
+func getConsolePluginProxy(serviceNamespace string) []consolev1.ConsolePluginProxy {
+	return []consolev1.ConsolePluginProxy{
+		{
+			Alias: "s3",
+			Endpoint: consolev1.ConsolePluginProxyEndpoint{
+				Type: consolev1.ProxyTypeService,
+				Service: &consolev1.ConsolePluginProxyServiceConfig{
+					Name:      "s3-endpoint-proxy",
+					Namespace: serviceNamespace,
+					Port:      443,
+				},
+			},
+			Authorization: consolev1.None,
 		},
 	}
 }
