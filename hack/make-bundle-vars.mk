@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 4.18.0
+VERSION ?= 4.19.0
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
@@ -49,13 +49,13 @@ IMAGE_TAG ?= latest
 IMAGE_NAME ?= ocs-client-operator
 BUNDLE_IMAGE_NAME ?= $(IMAGE_NAME)-bundle
 CSI_ADDONS_BUNDLE_IMAGE_NAME ?= k8s-bundle
-CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.10.0
+CSI_ADDONS_BUNDLE_IMAGE_TAG ?= v0.11.0
 CATALOG_IMAGE_NAME ?= $(IMAGE_NAME)-catalog
 
 NOOBAA_BUNDLE_NAME ?= noobaa-operator
 NOOBAA_BUNDLE_IMG_NAME ?= $(NOOBAA_BUNDLE_NAME)-bundle
-NOOBAA_BUNDLE_VERSION ?= v5.18.0
-NOOBAA_BUNDLE_IMG_TAG ?= master-20240514
+NOOBAA_BUNDLE_VERSION ?= v5.19.0
+NOOBAA_BUNDLE_IMG_TAG ?= master-20250226
 NOOBAA_BUNDLE_IMG_NAMESPACE ?= noobaa
 NOOBAA_BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(NOOBAA_BUNDLE_IMG_NAMESPACE)/$(NOOBAA_BUNDLE_IMG_NAME):$(NOOBAA_BUNDLE_IMG_TAG)
 
@@ -63,6 +63,12 @@ OCS_CLIENT_CONSOLE_IMG_NAME ?= ocs-client-console
 OCS_CLIENT_CONSOLE_IMG_TAG ?= latest
 OCS_CLIENT_CONSOLE_IMG_LOCATION ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)
 OCS_CLIENT_CONSOLE_IMG ?= $(OCS_CLIENT_CONSOLE_IMG_LOCATION)/$(OCS_CLIENT_CONSOLE_IMG_NAME):$(OCS_CLIENT_CONSOLE_IMG_TAG)
+
+CEPH_CSI_BUNDLE_NAME ?= cephcsi-operator
+CEPH_CSI_REGISTRY_NAMESPACE ?= ocs-dev
+CEPH_CSI_BUNDLE_IMG_NAME ?= $(CEPH_CSI_BUNDLE_NAME)-bundle
+CEPH_CSI_BUNDLE_VERSION ?= v4.19.0
+CEPH_CSI_BUNDLE_IMG_TAG ?= v4.19.0
 
 # IMG defines the image used for the operator.
 IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(IMAGE_NAME):$(IMAGE_TAG)
@@ -72,6 +78,7 @@ BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(BUNDLE_IMAGE_NAME):$(IMA
 
 CSI_ADDONS_BUNDLE_IMG ?= $(CSI_ADDONS_IMAGE_REGISTRY)/$(CSI_ADDONS_REGISTRY_NAMESPACE)/$(CSI_ADDONS_BUNDLE_IMAGE_NAME):$(CSI_ADDONS_BUNDLE_IMAGE_TAG)
 
+CEPH_CSI_BUNDLE_IMG ?= $(IMAGE_REGISTRY)/$(CEPH_CSI_REGISTRY_NAMESPACE)/$(CEPH_CSI_BUNDLE_IMG_NAME):$(CEPH_CSI_BUNDLE_IMG_TAG)
 
 # CATALOG_IMG defines the image used for the catalog.
 CATALOG_IMG ?= $(IMAGE_REGISTRY)/$(REGISTRY_NAMESPACE)/$(CATALOG_IMAGE_NAME):$(IMAGE_TAG)
@@ -81,7 +88,7 @@ CRD_OPTIONS ?= "crd:generateEmbeddedObjectMeta=true"
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
-BUNDLE_IMGS ?= $(shell echo $(BUNDLE_IMG) $(CSI_ADDONS_BUNDLE_IMG) | sed "s/ /,/g")
+BUNDLE_IMGS ?= $(shell echo $(BUNDLE_IMG) $(CSI_ADDONS_BUNDLE_IMG) $(CEPH_CSI_BUNDLE_IMG) $(NOOBAA_BUNDLE_IMG) | sed "s/ /,/g")
 
 # Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
 ifneq ($(origin CATALOG_BASE_IMG), undefined)
@@ -106,7 +113,13 @@ endif
 
 # csi-addons dependencies
 CSI_ADDONS_PACKAGE_NAME ?= csi-addons
-CSI_ADDONS_PACKAGE_VERSION ?= 0.10.0
+CSI_ADDONS_PACKAGE_VERSION ?= 0.11.0
+
+# ceph-csi-operator dependencies
+CEPH_CSI_PACKAGE_VERSION ?= 4.19.0
+
+# ceph-csi-operator dependencies
+NOOBAA_PACKAGE_VERSION ?= 5.19.0
 
 # The following variables are here as a convenience for developers so we don't have
 # to retype things, because we're lazy.
@@ -158,4 +171,4 @@ CSI_IMG_CEPH_CSI ?= $(IMAGE_LOCATION_CEPH_CSI)/$(DEFAULT_CSI_IMG_CEPH_CSI_NAME):
 #   CSI_IMG_CEPH_CSI_v4_x ?= cephcsi:v0.1
 
 # we will maintain N (VERSION var in this file) through and including N-2 versions
-CSI_OCP_VERSIONS ?= v4.15 v4.16 v4.17
+CSI_OCP_VERSIONS ?= v4.17 v4.18 v4.19
