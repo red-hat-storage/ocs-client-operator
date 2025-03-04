@@ -64,6 +64,8 @@ func SetSecurityContextConstraintsDesiredState(scc *secv1.SecurityContextConstra
 	scc.Users = []string{
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-cephfs-ctrlplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-cephfs-nodeplugin-sa", ns),
+		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-nfs-ctrlplugin-sa", ns),
+		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-nfs-nodeplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-rbd-ctrlplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-rbd-nodeplugin-sa", ns),
 	}
