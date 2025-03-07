@@ -266,6 +266,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
+		if err := c.reconcileCephCSIOperatorSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile Ceph CSI Operator subscription")
+			return ctrl.Result{}, err
+		}
+
 		if err := c.ensureConsolePlugin(); err != nil {
 			c.log.Error(err, "unable to deploy client console")
 			return ctrl.Result{}, err
@@ -649,6 +654,23 @@ func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() e
 		addonsSubscription.Spec.Channel = c.subscriptionChannel
 		if err := c.update(addonsSubscription); err != nil {
 			return fmt.Errorf("failed to update subscription channel of 'csi-addons' to %v: %v", c.subscriptionChannel, err)
+		}
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileCephCSIOperatorSubscription() error {
+	cephCsiOperatorSubscription, err := c.getSubscriptionByPackageName("cephcsi-operator")
+	if kerrors.IsNotFound(err) {
+		cephCsiOperatorSubscription, err = c.getSubscriptionByPackageName("ceph-csi-operator")
+	}
+	if err != nil {
+		return err
+	}
+	if c.subscriptionChannel != "" && c.subscriptionChannel != cephCsiOperatorSubscription.Spec.Channel {
+		cephCsiOperatorSubscription.Spec.Channel = c.subscriptionChannel
+		if err := c.update(cephCsiOperatorSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel of 'cephcsi-operator' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
 	return nil
