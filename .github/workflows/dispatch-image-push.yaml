@@ -1,5 +1,8 @@
+---
 name: image-publisher
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 on:
   workflow_dispatch:
     inputs:
@@ -9,25 +12,22 @@ on:
       IMAGE_TAG:
         required: false
         default: ""
-
 jobs:
   docker-push:
     name: docker-push
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
     - uses: actions/setup-go@v5
       with:
           go-version-file: go.mod
-
+          cache: false
     - name: Login to Quay
       uses: docker/login-action@v3
       with:
         registry: quay.io
         username: ${{ secrets.QUAY_USERNAME }}
         password: ${{ secrets.QUAY_ROBOT_TOKEN }}
-
     - name: Build and push docker images
       env:
         REGISTRY_NAMESPACE: ${{ github.event.inputs.REGISTRY_NAMESPACE }}

@@ -1,0 +1,49 @@
+---
+name: lint-and-spellcheck
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+on:
+  pull_request:
+    branches: ['*']
+jobs:
+  codespell:
+    name: codespell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: codespell
+        uses: codespell-project/actions-codespell@v2
+        with:
+          exclude_file: go.sum
+          check_filenames: true
+          check_hidden: true
+          skip: vendor
+  commitlint:
+    name: commitlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # we check commitlint for every 20 commits
+          fetch-depth: 20
+      - name: run commitlint
+        uses: wagoid/commitlint-github-action@v5
+        with:
+          configFile: './.github/workflows/conf/commitlintrc.json'
+          helpURL: |
+            Some helpful links
+            Contribution Guide -> https://github.com/red-hat-storage/odf-operator/blob/main/CONTRIBUTING.md#commit-structure
+            Naming Conventions -> https://commitlint.js.org/#/concepts-commit-conventions
+            Rules -> https://commitlint.js.org/#/reference-rules
+            How to Write a Good Git Commit Message -> https://chris.beams.io/posts/git-commit
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: yamllint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_file: ./.github/workflows/conf/yamllint.yaml
+          file_or_dir: .  # Recursive on all yaml files

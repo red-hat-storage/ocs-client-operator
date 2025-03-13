@@ -1,8 +1,8 @@
 bin/
 testbin/
 
-catalog
-catalog.Dockerfile
+./catalog
+./catalog.Dockerfile
 
 # Created by https://www.toptal.com/developers/gitignore/api/go,vim,visualstudiocode,git
 # Edit at https://www.toptal.com/developers/gitignore?templates=go,vim,visualstudiocode,git
