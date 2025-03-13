@@ -43,7 +43,7 @@ spec:
       - command:
         - /entrypoint
         args:
-        - --leader-elect
+        - "--console-port=9001"
         image: controller:latest
         name: manager
         volumeMounts:
