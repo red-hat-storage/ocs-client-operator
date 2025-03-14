@@ -1,63 +1,59 @@
 ---
-name: image-builder
-
+name: operator-build-pipeline
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 on:
-  push:
-    branches: ['*']
   pull_request:
     branches: ['*']
-
 jobs:
+  golangci-lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+            go-version-file: go.mod
+            cache: false
+      - name: Source build env variables
+        run: |
+          grep -v '^#' hack/build.env >> $GITHUB_ENV
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GO_LINT_IMG_TAG }}
+          args: --config=.golangci.yaml -v
   container-build:
     name: operator-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
-
-      - name: Run go mod tidy
-        run: |
-          make godeps-update
-
+            cache: false
       - name: Build operator container image
         run: make build
-
   bundle-build:
     name: bundle-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
             cache: false
-
-      - name: Run go mod tidy
-        run: |
-          make godeps-update
-
       - name: Build operator bundle container image
         run: make bundle-build
-
   catalog-build:
     name: catalog-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
             go-version-file: go.mod
             cache: false
-
-      - name: Run go mod tidy
-        run: |
-          make godeps-update
-
       - name: Build catalog container image
         env:
           IMAGE_REGISTRY: localhost:5000

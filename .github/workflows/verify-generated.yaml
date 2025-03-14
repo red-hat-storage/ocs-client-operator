@@ -1,16 +1,9 @@
 ---
 name: verify-generated
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 on:
-  push:
-    branches: ['*']
-    paths:
-      - hack/**
-      - Makefile
-      - config/manager/csi-images.yaml
-      - go.mod
-      - go.sum
-      - vendor
   pull_request:
     branches: ['*']
     paths:
@@ -20,7 +13,6 @@ on:
       - go.mod
       - go.sum
       - vendor
-
 jobs:
   csi-images-manifest:
     name: verify-generated-changes
@@ -30,14 +22,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
+          cache-dependency-path: |
+            ./go.sum
+            api/go.sum
       - name: Verify go deps
         run: make godeps-verify
-
       - name: Verify bundle
         run: |
           make bundle
