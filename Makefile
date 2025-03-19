@@ -56,7 +56,7 @@ godeps-verify: godeps-update
 	@echo "Verifying go-deps"
 	./hack/godeps-verify.sh
 
-test-setup: godeps-update generate fmt vet envtest ## Run setup targets for tests
+test-setup: generate fmt vet envtest ## Run setup targets for tests
 
 go-test: ## Run go test against code.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(BIN_DIR) -p path)" go test -coverprofile cover.out `go list ./... | grep -v "e2e"`
@@ -95,7 +95,6 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && \
 		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
-	cd config/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
 		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
 	$(KUSTOMIZE) build config/default | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}' | kubectl apply -f -
@@ -120,7 +119,6 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 		$(KUSTOMIZE) edit set image deployment-guard=$(IMG) && \
 		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/default && \
-		$(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG) && \
 		$(KUSTOMIZE) edit set namespace $(OPERATOR_NAMESPACE) && \
 		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/manifests/bases && \
@@ -131,6 +129,8 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 		$(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS) --extra-service-accounts="$$($(KUSTOMIZE) build $(MANIFEST_PATH) | $(YQ) 'select(.kind == "ServiceAccount") | .metadata.name' -N | paste -sd "," -)"
 	yq -i '.dependencies[0].value.packageName = "'${CSI_ADDONS_PACKAGE_NAME}'"' config/metadata/dependencies.yaml
 	yq -i '.dependencies[0].value.version = ">='${CSI_ADDONS_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
+	yq -i '.dependencies[1].value.version = ">='${CEPH_CSI_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
+	yq -i '.dependencies[2].value.version = ">='${NOOBAA_PACKAGE_VERSION}'"' config/metadata/dependencies.yaml
 	cp config/metadata/* bundle/metadata/
 	./hack/create-csi-images-manifest.sh
 	$(OPERATOR_SDK) bundle validate ./bundle
