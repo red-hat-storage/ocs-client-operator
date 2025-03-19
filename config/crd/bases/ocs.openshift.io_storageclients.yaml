@@ -61,6 +61,15 @@ spec:
           status:
             description: StorageClientStatus defines the observed state of StorageClient
             properties:
+              desiredCephFsCsiDriver:
+                type: object
+              desiredNfsCsiDriver:
+                type: object
+              desriredRbdCsiDriver:
+                properties:
+                  generateOmapInfo:
+                    type: boolean
+                type: object
               id:
                 description: ConsumerID will hold the identity of this cluster inside
                   the attached provider cluster

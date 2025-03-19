@@ -364,33 +364,58 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
 	}
 
-	// ceph rbd driver config
-	rbdDriver := &csiopv1a1.Driver{}
-	rbdDriver.Name = templates.RBDDriverName
-	rbdDriver.Namespace = c.OperatorNamespace
-
-	if err := c.createOrUpdate(rbdDriver, func() error {
-		if err := c.own(rbdDriver); err != nil {
-			return fmt.Errorf("failed to own csi rbd driver: %v", err)
-		}
-		rbdDriver.Spec.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
+	storageClients := v1alpha1.StorageClientList{}
+	if err := c.list(&storageClients, &client.ListOptions{}); err != nil {
+		return fmt.Errorf("failed to get storage client: %v", err)
 	}
 
-	// ceph fs driver config
-	cephFsDriver := &csiopv1a1.Driver{}
-	cephFsDriver.Name = templates.CephFsDriverName
-	cephFsDriver.Namespace = c.OperatorNamespace
+	for i := 0; i < len(storageClients.Items); i++ {
+		if storageClients.Items[i].Status.DesiredRbdCsiDriver != nil {
+			// ceph rbd driver config
+			rbdDriver := &csiopv1a1.Driver{}
+			rbdDriver.Name = templates.RBDDriverName
+			rbdDriver.Namespace = c.OperatorNamespace
 
-	if err := c.createOrUpdate(cephFsDriver, func() error {
-		if err := c.own(cephFsDriver); err != nil {
-			return fmt.Errorf("failed to own csi cephfs driver: %v", err)
+			if err := c.createOrUpdate(rbdDriver, func() error {
+				if err := c.own(rbdDriver); err != nil {
+					return fmt.Errorf("failed to own csi rbd driver: %v", err)
+				}
+				rbdDriver.Spec.GenerateOMapInfo = &storageClients.Items[i].Status.DesiredRbdCsiDriver.GeneratorOmapInfo
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile rbd driver: %v", err)
+			}
 		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
+		if storageClients.Items[i].Status.DesiredCephFsCsiDriver != nil {
+			// ceph fs driver config
+			cephFsDriver := &csiopv1a1.Driver{}
+			cephFsDriver.Name = templates.CephFsDriverName
+			cephFsDriver.Namespace = c.OperatorNamespace
+
+			if err := c.createOrUpdate(cephFsDriver, func() error {
+				if err := c.own(cephFsDriver); err != nil {
+					return fmt.Errorf("failed to own csi cephfs driver: %v", err)
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
+			}
+		}
+		if storageClients.Items[i].Status.DesiredNfsCsiDriver != nil {
+			// ceph fs driver config
+			nfsDriver := &csiopv1a1.Driver{}
+			nfsDriver.Name = templates.NfsDriverName
+			nfsDriver.Namespace = c.OperatorNamespace
+
+			if err := c.createOrUpdate(nfsDriver, func() error {
+				if err := c.own(nfsDriver); err != nil {
+					return fmt.Errorf("failed to own csi nfs driver: %v", err)
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile nfs driver: %v", err)
+			}
+		}
 	}
 
 	return nil
