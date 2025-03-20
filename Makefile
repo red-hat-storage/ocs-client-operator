@@ -93,10 +93,8 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | kubectl delete -f -
 
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} && \
-		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
-	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
-		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG)
 	$(KUSTOMIZE) build config/default | sed "s|STATUS_REPORTER_IMAGE_VALUE|$(IMG)|g" | awk '{print}' | kubectl apply -f -
 
 remove: ## Remove controller from the K8s cluster specified in ~/.kube/config.
@@ -113,10 +111,8 @@ remove-with-olm: ## Remove controller from the K8s cluster
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG) && \
-		$(KUSTOMIZE) edit set image deployment-guard=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/console && $(KUSTOMIZE) edit set image ocs-client-operator-console=$(OCS_CLIENT_CONSOLE_IMG) && \
-		$(KUSTOMIZE) edit set image deployment-guard=$(IMG) && \
 		$(KUSTOMIZE) edit set nameprefix $(OPERATOR_NAMEPREFIX)
 	cd config/default && \
 		$(KUSTOMIZE) edit set namespace $(OPERATOR_NAMESPACE) && \
