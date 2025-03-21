@@ -20,15 +20,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	quotav1 "github.com/openshift/api/quota/v1"
-	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"os"
 	"strings"
 
+	quotav1 "github.com/openshift/api/quota/v1"
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
-	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"google.golang.org/grpc/codes"
@@ -50,10 +50,9 @@ import (
 
 const (
 	// grpcCallNames
-	OnboardConsumer       = "OnboardConsumer"
-	OffboardConsumer      = "OffboardConsumer"
-	GetStorageConfig      = "GetStorageConfig"
-	AcknowledgeOnboarding = "AcknowledgeOnboarding"
+	OnboardConsumer  = "OnboardConsumer"
+	OffboardConsumer = "OffboardConsumer"
+	GetStorageConfig = "GetStorageConfig"
 
 	storageClientNameLabel             = "ocs.openshift.io/storageclient.name"
 	storageClientFinalizer             = "storageclient.ocs.openshift.io"
@@ -111,7 +110,6 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/finalizers,verbs=update
-//+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
@@ -195,9 +193,9 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	if r.storageClient.Status.ConsumerID == "" {
-		return r.onboardConsumer(externalClusterClient)
-	} else if r.storageClient.Status.Phase == v1alpha1.StorageClientOnboarding {
-		return r.acknowledgeOnboarding(externalClusterClient)
+		if err := r.onboardConsumer(externalClusterClient); err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	storageClientResponse, err := externalClusterClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
@@ -406,31 +404,20 @@ func (r *StorageClientReconciler) newExternalClusterClient() (*providerClient.OC
 }
 
 // onboardConsumer makes an API call to the external storage provider cluster for onboarding
-func (r *StorageClientReconciler) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
-
-	// TODO Need to find a way to get rid of ClusterVersion here as it is OCP
-	// specific one.
-	clusterVersion := &configv1.ClusterVersion{}
-	clusterVersion.Name = "version"
-	if err := r.get(clusterVersion); err != nil {
-		r.Log.Error(err, "failed to get the clusterVersion version of the OCP cluster")
-		return reconcile.Result{}, fmt.Errorf("failed to get the clusterVersion version of the OCP cluster: %v", err)
-	}
+func (r *StorageClientReconciler) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient) error {
 
 	// TODO Have a version file corresponding to the release
 	csvList := opv1a1.ClusterServiceVersionList{}
 	if err := r.list(&csvList, client.InNamespace(r.OperatorNamespace)); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to list csv resources in ns: %v, err: %v", r.OperatorNamespace, err)
+		return fmt.Errorf("failed to list csv resources in ns: %v, err: %v", r.OperatorNamespace, err)
 	}
 	csv := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
 		return strings.HasPrefix(csv.Name, csvPrefix)
 	})
 	if csv == nil {
-		return reconcile.Result{}, fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
+		return fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
 	}
-	name := fmt.Sprintf("storageconsumer-%s", clusterVersion.Spec.ClusterID)
 	onboardRequest := providerClient.NewOnboardConsumerRequest().
-		SetConsumerName(name).
 		SetOnboardingTicket(r.storageClient.Spec.OnboardingTicket).
 		SetClientOperatorVersion(csv.Spec.Version.String())
 	response, err := externalClusterClient.OnboardConsumer(r.ctx, onboardRequest)
@@ -438,36 +425,20 @@ func (r *StorageClientReconciler) onboardConsumer(externalClusterClient *provide
 		if st, ok := status.FromError(err); ok {
 			r.logGrpcErrorAndReportEvent(OnboardConsumer, err, st.Code())
 		}
-		return reconcile.Result{}, fmt.Errorf("failed to onboard consumer: %v", err)
+		return fmt.Errorf("failed to onboard consumer: %v", err)
 	}
 
 	if response.StorageConsumerUUID == "" {
 		err = fmt.Errorf("storage provider response is empty")
 		r.Log.Error(err, "empty response")
-		return reconcile.Result{}, err
+		return err
 	}
 
 	r.storageClient.Status.ConsumerID = response.StorageConsumerUUID
-	r.storageClient.Status.Phase = v1alpha1.StorageClientOnboarding
-
-	r.Log.Info("onboarding started")
-	return reconcile.Result{Requeue: true}, nil
-}
-
-func (r *StorageClientReconciler) acknowledgeOnboarding(externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
-
-	_, err := externalClusterClient.AcknowledgeOnboarding(r.ctx, r.storageClient.Status.ConsumerID)
-	if err != nil {
-		if st, ok := status.FromError(err); ok {
-			r.logGrpcErrorAndReportEvent(AcknowledgeOnboarding, err, st.Code())
-		}
-		r.Log.Error(err, "Failed to acknowledge onboarding.")
-		return reconcile.Result{}, fmt.Errorf("failed to acknowledge onboarding: %v", err)
-	}
 	r.storageClient.Status.Phase = v1alpha1.StorageClientConnected
 
-	r.Log.Info("Onboarding is acknowledged successfully.")
-	return reconcile.Result{Requeue: true}, nil
+	r.Log.Info("onboarding completed")
+	return nil
 }
 
 // offboardConsumer makes an API call to the external storage provider cluster for offboarding
@@ -532,12 +503,6 @@ func (r *StorageClientReconciler) logGrpcErrorAndReportEvent(grpcCallName string
 		} else if errCode == codes.AlreadyExists {
 			msg = "Token is already used. Contact provider admin for a new token"
 			eventReason = "TokenAlreadyUsed"
-			eventType = corev1.EventTypeWarning
-		}
-	} else if grpcCallName == AcknowledgeOnboarding {
-		if errCode == codes.NotFound {
-			msg = "StorageConsumer not found. Contact the provider admin"
-			eventReason = "NotFound"
 			eventType = corev1.EventTypeWarning
 		}
 	} else if grpcCallName == OffboardConsumer {
