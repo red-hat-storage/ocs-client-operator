@@ -11,7 +11,6 @@ metadata:
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
     operatorframework.io/suggested-namespace: openshift-storage
-    operators.operatorframework.io/internal-objects: '["storageclaims.ocs.openshift.io"]'
     operators.operatorframework.io/operator-type: standalone
     repository: https://github.com/red-hat-storage/ocs-client-operator
     support: Red Hat
@@ -23,11 +22,6 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: StorageClaim is the Schema for the storageclaims API
-      displayName: Storage Claim
-      kind: StorageClaim
-      name: storageclaims.ocs.openshift.io
-      version: v1alpha1
     - description: StorageClient is the Schema for the storageclients API
       displayName: Storage Client
       kind: StorageClient

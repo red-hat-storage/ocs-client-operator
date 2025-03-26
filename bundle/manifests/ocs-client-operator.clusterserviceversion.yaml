@@ -14,7 +14,6 @@ metadata:
     olm.skipRange: ""
     operatorframework.io/suggested-namespace: openshift-storage
     operators.operatorframework.io/builder: operator-sdk-v1.34.1
-    operators.operatorframework.io/internal-objects: '["storageclaims.ocs.openshift.io"]'
     operators.operatorframework.io/operator-type: standalone
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/red-hat-storage/ocs-client-operator
@@ -27,11 +26,6 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: StorageClaim is the Schema for the storageclaims API
-      displayName: Storage Claim
-      kind: StorageClaim
-      name: storageclaims.ocs.openshift.io
-      version: v1alpha1
     - description: StorageClient is the Schema for the storageclients API
       displayName: Storage Client
       kind: StorageClient
@@ -251,37 +245,11 @@ spec:
           - ocs.openshift.io
           resources:
           - storageclaims
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - ocs.openshift.io
-          resources:
-          - storageclaims
           - storageclients
           verbs:
           - get
           - list
           - watch
-        - apiGroups:
-          - ocs.openshift.io
-          resources:
-          - storageclaims/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - ocs.openshift.io
-          resources:
-          - storageclaims/status
-          verbs:
-          - get
-          - patch
-          - update
         - apiGroups:
           - ocs.openshift.io
           resources:
@@ -403,8 +371,6 @@ spec:
           - delete
           - get
           - list
-          - patch
-          - update
           - watch
         - apiGroups:
           - authentication.k8s.io
