@@ -393,6 +393,20 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
 	}
 
+	// nfs driver config
+	nfsDriver := &csiopv1a1.Driver{}
+	nfsDriver.Name = templates.NfsDriverName
+	nfsDriver.Namespace = c.OperatorNamespace
+
+	if err := c.createOrUpdate(nfsDriver, func() error {
+		if err := c.own(nfsDriver); err != nil {
+			return fmt.Errorf("failed to own csi nfs driver: %v", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile nfs driver: %v", err)
+	}
+
 	return nil
 }
 
