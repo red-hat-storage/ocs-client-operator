@@ -397,13 +397,13 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 }
 
 func (c *OperatorConfigMapReconciler) deletionPhase() error {
-	claimsList := &v1alpha1.StorageClaimList{}
-	if err := c.list(claimsList, client.Limit(1)); err != nil {
-		c.log.Error(err, "unable to verify StorageClaims presence prior to removal of CSI resources")
+	clientsList := &v1alpha1.StorageClientList{}
+	if err := c.list(clientsList, client.Limit(1)); err != nil {
+		c.log.Error(err, "unable to verify StorageClients presence prior to removal of CSI resources")
 		return err
-	} else if len(claimsList.Items) != 0 {
-		err = fmt.Errorf("failed to clean up resources: storage claims are present on the cluster")
-		c.log.Error(err, "Waiting for all storageClaims to be deleted.")
+	} else if len(clientsList.Items) != 0 {
+		err = fmt.Errorf("failed to clean up resources: storage clients are present on the cluster")
+		c.log.Error(err, "Waiting for all storageClients to be deleted.")
 		return err
 	}
 
