@@ -13,6 +13,7 @@ import (
 
 const RBDDriverName = "openshift-storage.rbd.csi.ceph.com"
 const CephFsDriverName = "openshift-storage.cephfs.csi.ceph.com"
+const NfsDriverName = "openshift-storage.nfs.csi.ceph.com"
 
 // security context constraints
 const SCCName = "ceph-csi-op-scc"
