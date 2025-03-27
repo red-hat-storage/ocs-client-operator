@@ -21,28 +21,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
+	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -55,9 +65,18 @@ const (
 	storageClientFinalizer            = "storageclient.ocs.openshift.io"
 	storageClientDefaultAnnotationKey = "ocs.openshift.io/storageclient.default"
 
+	vgscClusterIDIndexName = "index:volumeGroupSnapshotContentCSIDriver"
+
 	csvPrefix = "ocs-client-operator"
 
 	VolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
+)
+
+var (
+	csiDrivers = []string{
+		templates.RBDDriverName,
+		templates.CephFsDriverName,
+	}
 )
 
 // StorageClientReconciler reconciles a StorageClient object
@@ -65,6 +84,10 @@ type StorageClientReconciler struct {
 	client.Client
 	Scheme            *runtime.Scheme
 	OperatorNamespace string
+
+	cache            cache.Cache
+	controller       controller.Controller
+	crdsBeingWatched sync.Map
 }
 
 type storageClientReconcile struct {
@@ -78,15 +101,48 @@ type storageClientReconcile struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
-	bldr := ctrl.NewControllerManagedBy(mgr).
+	enqueueStorageClients := handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, _ client.Object) []ctrl.Request {
+			storageClients := &v1alpha1.StorageClientList{}
+			if err := r.Client.List(ctx, storageClients); err != nil {
+				return []ctrl.Request{}
+			}
+			requests := make([]ctrl.Request, len(storageClients.Items))
+			for idx := range storageClients.Items {
+				requests[idx] = ctrl.Request{
+					NamespacedName: client.ObjectKeyFromObject(&storageClients.Items[idx]),
+				}
+			}
+			return requests
+		},
+	)
+	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate))
-	return bldr.Complete(r)
+		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Watches(
+			&extv1.CustomResourceDefinition{},
+			enqueueStorageClients,
+			builder.WithPredicates(
+				predicate.NewPredicateFuncs(func(obj client.Object) bool {
+					_, ok := r.crdsBeingWatched.Load(obj.GetName())
+					return ok
+				}),
+				utils.EventTypePredicate(true, false, false, false),
+			),
+			builder.OnlyMetadata,
+		).
+		Build(r)
+
+	r.controller = controller
+	r.cache = mgr.GetCache()
+	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
+
+	return err
 }
 
 //+kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas,verbs=get;list;watch;create;update
@@ -146,7 +202,66 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 	return result, nil
 }
 
+func (r *storageClientReconcile) reconcileDynamicWatches() error {
+	if watchExists, foundCrd := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
+		return nil
+	}
+
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = VolumeGroupSnapshotClassCrdName
+	if err := r.get(crd); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	// CRD doesn't exist in the cluster
+	if crd.UID == "" {
+		return nil
+	}
+
+	// establish a watch
+	if err := r.controller.Watch(
+		source.Kind(
+			r.cache,
+			client.Object(&groupsnapapi.VolumeGroupSnapshotContent{}),
+			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []ctrl.Request {
+				owner := metav1.GetControllerOf(o)
+				if owner != nil &&
+					owner.Kind == "StorageClient" &&
+					owner.APIVersion == v1alpha1.GroupVersion.String() {
+					return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: owner.Name}}}
+				}
+				return nil
+			}),
+		),
+	); err != nil {
+		return fmt.Errorf("failed to setup dynamic watch on %s: %v", crd.Name, err)
+	}
+
+	// add an index
+	if err := r.cache.IndexField(r.ctx, &groupsnapapi.VolumeGroupSnapshotContent{}, vgscClusterIDIndexName, func(o client.Object) []string {
+		vgsc := o.(*groupsnapapi.VolumeGroupSnapshotContent)
+		if vgsc != nil &&
+			slices.Contains(csiDrivers, vgsc.Spec.Driver) &&
+			vgsc.Status != nil &&
+			vgsc.Status.VolumeGroupSnapshotHandle != nil {
+			parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
+			if len(parts) == 9 {
+				// second entry in the volumeID is clusterID which is unique across the cluster
+				return []string{parts[2]}
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for VGSC csi driver name: %v", err)
+	}
+	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, true)
+	return nil
+}
+
 func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
+	if err := r.reconcileDynamicWatches(); err != nil {
+		return reconcile.Result{}, err
+	}
 
 	externalClusterClient, err := r.newExternalClusterClient()
 	if err != nil {
