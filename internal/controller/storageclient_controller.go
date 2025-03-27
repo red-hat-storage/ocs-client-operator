@@ -30,14 +30,18 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	providerpb "github.com/red-hat-storage/ocs-operator/services/provider/api/v4"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,6 +69,10 @@ const (
 	storageClientFinalizer            = "storageclient.ocs.openshift.io"
 	storageClientDefaultAnnotationKey = "ocs.openshift.io/storageclient.default"
 
+	// indexes for caching
+	ownerUIDIndexName      = "index:ownerUID"
+	pvClusterIDIndexName   = "index:persistentVolumeClusterID"
+	vscClusterIDIndexName  = "index:volumeSnapshotContentCSIDriver"
 	vgscClusterIDIndexName = "index:volumeGroupSnapshotContentCSIDriver"
 
 	csvPrefix = "ocs-client-operator"
@@ -100,6 +108,45 @@ type storageClientReconcile struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ctx := context.Background()
+	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, pvClusterIDIndexName, func(o client.Object) []string {
+		pv := o.(*corev1.PersistentVolume)
+		if pv != nil &&
+			pv.Spec.CSI != nil &&
+			slices.Contains(csiDrivers, pv.Spec.CSI.Driver) &&
+			pv.Spec.CSI.VolumeAttributes["clusterID"] != "" {
+			return []string{pv.Spec.CSI.VolumeAttributes["clusterID"]}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for PV cluster id: %v", err)
+	}
+	if err := mgr.GetCache().IndexField(ctx, &snapapi.VolumeSnapshotContent{}, vscClusterIDIndexName, func(o client.Object) []string {
+		vsc := o.(*snapapi.VolumeSnapshotContent)
+		if vsc != nil &&
+			slices.Contains(csiDrivers, vsc.Spec.Driver) &&
+			vsc.Status != nil &&
+			vsc.Status.SnapshotHandle != nil {
+			parts := strings.Split(*vsc.Status.SnapshotHandle, "-")
+			if len(parts) == 9 {
+				// second entry in the volumeID is clusterID which is unique across the cluster
+				return []string{parts[2]}
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
+	}
+	if err := mgr.GetCache().IndexField(ctx, &csiopv1a1.ClientProfile{}, ownerUIDIndexName, func(obj client.Object) []string {
+		refs := obj.GetOwnerReferences()
+		owners := []string{}
+		for i := range refs {
+			owners = append(owners, string(refs[i].UID))
+		}
+		return owners
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for client profile owner: %v", err)
+	}
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	enqueueStorageClients := handler.EnqueueRequestsFromMapFunc(
 		func(ctx context.Context, _ client.Object) []ctrl.Request {
@@ -124,6 +171,10 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&storagev1.StorageClass{}).
+		Owns(&snapapi.VolumeSnapshotClass{}).
+		Owns(&replicationv1a1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(
 			&extv1.CustomResourceDefinition{},
 			enqueueStorageClients,
@@ -316,6 +367,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	for _, eResource := range storageClientResponse.ExternalResource {
+		var err error
 		// Create the received resources, if necessary.
 		switch eResource.Kind {
 		case "ClusterResourceQuota":
@@ -372,6 +424,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			secret.Name = eResource.Name
 			secret.Namespace = r.OperatorNamespace
 			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
+				removeStorageClaimAsOwner(secret)
 				if err := r.own(secret); err != nil {
 					return err
 				}
@@ -411,6 +464,22 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			if err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
 			}
+		case "StorageClass":
+			err = r.EnsureResource(&storagev1.StorageClass{}, eResource, true)
+		case "VolumeSnapshotClass":
+			err = r.EnsureResource(&snapapi.VolumeSnapshotClass{}, eResource, true)
+		case "VolumeGroupSnapshotClass":
+			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
+				continue
+			}
+			err = r.EnsureResource(&groupsnapapi.VolumeGroupSnapshotClass{}, eResource, true)
+		case "VolumeReplicationClass":
+			err = r.EnsureResource(&replicationv1a1.VolumeReplicationClass{}, eResource, true)
+		case "ClientProfile":
+			err = r.EnsureResource(&csiopv1a1.ClientProfile{}, eResource, false)
+		}
+		if err != nil {
+			return reconcile.Result{}, err
 		}
 	}
 
@@ -453,6 +522,29 @@ func (r *storageClientReconcile) createOrUpdate(obj client.Object, f controlleru
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
 	r.storageClient.Status.Phase = v1alpha1.StorageClientOffboarding
+	names, err := r.getClientProfileNames()
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	if len(names) > 0 {
+		if exist, err := r.hasPersistentVolumes(names); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify persistentvolumes dependent on storageclient %q: %v", r.storageClient.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more persistentvolumes exist that are dependent on storageclient %s", r.storageClient.Name)
+		}
+		if exist, err := r.hasVolumeSnapshotContents(names); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify volumesnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		}
+		if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		}
+	}
+
 	if res, err := r.offboardConsumer(externalClusterClient); err != nil {
 		r.log.Error(err, "Offboarding in progress.")
 	} else if !res.IsZero() {
@@ -595,6 +687,64 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob() (reconcile.R
 	return reconcile.Result{}, nil
 }
 
+func (r *storageClientReconcile) hasPersistentVolumes(clientProfileNames []string) (bool, error) {
+	for _, name := range clientProfileNames {
+		pvList := &corev1.PersistentVolumeList{}
+		if err := r.list(pvList, client.MatchingFields{pvClusterIDIndexName: name}, client.Limit(1)); err != nil {
+			return false, fmt.Errorf("failed to list persistent volumes: %v", err)
+		}
+		if len(pvList.Items) != 0 {
+			r.log.Info(fmt.Sprintf("PersistentVolumes referring storageclient %q exists", r.storageClient.Name))
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []string) (bool, error) {
+	for _, name := range clientProfileNames {
+		vscList := &snapapi.VolumeSnapshotContentList{}
+		if err := r.list(vscList, client.MatchingFields{vscClusterIDIndexName: name}); err != nil {
+			return false, fmt.Errorf("failed to list volume snapshot content resources: %v", err)
+		}
+		if len(vscList.Items) != 0 {
+			r.log.Info(fmt.Sprintf("VolumeSnapshotContent referring storageclient %q exists", r.storageClient.Name))
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNames []string) (bool, error) {
+	if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
+		return false, nil
+	}
+	for _, name := range clientProfileNames {
+		vscList := &groupsnapapi.VolumeGroupSnapshotContentList{}
+		if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: name}); err != nil {
+			return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
+		}
+		if len(vscList.Items) != 0 {
+			r.log.Info(fmt.Sprintf("VolumeGroupSnapshotContent referring storageclient %q exists", r.storageClient.Name))
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {
+	clientProfileList := &csiopv1a1.ClientProfileList{}
+	if err := r.list(clientProfileList, client.MatchingFields{ownerUIDIndexName: string(r.storageClient.UID)}); err != nil {
+		return nil, fmt.Errorf("failed to list clientprofiles owned by storageclient %s: %v", r.storageClient.Name, err)
+	}
+	clientProfileNames := make([]string, 0, len(clientProfileList.Items))
+	for idx := range clientProfileList.Items {
+		clientProfileNames = append(clientProfileNames, clientProfileList.Items[idx].Name)
+	}
+	return clientProfileNames, nil
+}
+
 func (r *storageClientReconcile) list(obj client.ObjectList, listOptions ...client.ListOption) error {
 	return r.Client.List(r.ctx, obj, listOptions...)
 }
@@ -610,4 +760,44 @@ func (r *storageClientReconcile) update(obj client.Object, opts ...client.Update
 
 func (r *storageClientReconcile) own(dependent metav1.Object) error {
 	return controllerutil.SetOwnerReference(&r.storageClient, dependent, r.Scheme)
+}
+
+func removeStorageClaimAsOwner(obj client.Object) {
+	refs := obj.GetOwnerReferences()
+	if idx := slices.IndexFunc(refs, func(owner metav1.OwnerReference) bool {
+		return owner.Kind == "StorageClaim"
+	}); idx != -1 {
+		obj.SetOwnerReferences(slices.Delete(refs, idx, idx+1))
+	}
+}
+
+func (r *storageClientReconcile) EnsureResource(obj client.Object, extRes *providerpb.ExternalResource, useReplace bool) error {
+	obj.SetName(extRes.Name)
+	obj.SetNamespace(r.OperatorNamespace)
+
+	if err := json.Unmarshal(extRes.Data, obj); err != nil {
+		return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
+	}
+	removeStorageClaimAsOwner(obj)
+	if err := r.own(obj); err != nil {
+		return fmt.Errorf("failed to own %s resource: %v", obj.GetName(), err)
+	}
+	utils.AddLabels(obj, extRes.Labels)
+	utils.AddAnnotations(obj, extRes.Annotations)
+
+	var err error
+	if useReplace {
+		err = utils.CreateOrReplace(r.ctx, r.Client, obj, func() error {
+			return nil
+		})
+	} else {
+		err = r.createOrUpdate(obj, func() error {
+			return nil
+		})
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to create or update: %v", err)
+	}
+	return nil
 }
