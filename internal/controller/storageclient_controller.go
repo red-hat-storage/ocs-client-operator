@@ -27,23 +27,20 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	"github.com/go-logr/logr"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -65,19 +62,21 @@ const (
 
 // StorageClientReconciler reconciles a StorageClient object
 type StorageClientReconciler struct {
-	ctx context.Context
 	client.Client
-	Log           klog.Logger
-	Scheme        *runtime.Scheme
-	recorder      *utils.EventReporter
-	storageClient *v1alpha1.StorageClient
-
+	Scheme            *runtime.Scheme
 	OperatorNamespace string
+}
+
+type storageClientReconcile struct {
+	*StorageClientReconciler
+
+	ctx           context.Context
+	log           logr.Logger
+	storageClient v1alpha1.StorageClient
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = utils.NewEventReporter(mgr.GetEventRecorderFor("controller_storageclient"))
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
@@ -87,7 +86,6 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate))
-
 	return bldr.Complete(r)
 }
 
@@ -101,45 +99,54 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var err error
-	r.ctx = ctx
-	r.Log = log.FromContext(ctx, "StorageClient", req)
-	r.Log.Info("Reconciling StorageClient")
+	handler := storageClientReconcile{StorageClientReconciler: r}
+	return handler.reconcile(ctx, req)
+}
 
-	r.storageClient = &v1alpha1.StorageClient{}
+func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request) (reconcile.Result, error) {
+	r.log = ctrl.LoggerFrom(ctx)
+	r.ctx = ctx
 	r.storageClient.Name = req.Name
-	if err = r.get(r.storageClient); err != nil {
+
+	r.log.Info("Starting reconcile iteration for StorageClient", "req", req)
+	if err := r.get(&r.storageClient); err != nil {
 		if kerrors.IsNotFound(err) {
-			r.Log.Info("StorageClient resource not found. Ignoring since object must be deleted.")
+			r.log.Info("StorageClient resource not found. Ignoring since object must be deleted.")
 			return reconcile.Result{}, nil
 		}
-		r.Log.Error(err, "Failed to get StorageClient.")
+		r.log.Error(err, "Failed to get StorageClient.")
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %v", err)
 	}
-
-	// Dont Reconcile the StorageClient if it is in failed state
 	if r.storageClient.Status.Phase == v1alpha1.StorageClientFailed {
 		return reconcile.Result{}, nil
 	}
 
 	result, reconcileErr := r.reconcilePhases()
 
-	// Apply status changes to the StorageClient
-	statusErr := r.Client.Status().Update(ctx, r.storageClient)
+	statusErr := r.Client.Status().Update(r.ctx, &r.storageClient)
 	if statusErr != nil {
-		r.Log.Error(statusErr, "Failed to update StorageClient status.")
+		r.log.Error(statusErr, "Failed to update StorageClient status.")
 	}
 	if reconcileErr != nil {
-		err = reconcileErr
+		return reconcile.Result{}, reconcileErr
 	} else if statusErr != nil {
-		err = statusErr
+		return reconcile.Result{}, statusErr
 	}
-	return result, err
+
+	return result, nil
 }
 
-func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
+func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	externalClusterClient, err := r.newExternalClusterClient()
 	if err != nil {
@@ -155,24 +162,21 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	updateStorageClient := false
 	storageClients := &v1alpha1.StorageClientList{}
 	if err := r.list(storageClients); err != nil {
-		r.Log.Error(err, "unable to list storage clients")
+		r.log.Error(err, "unable to list storage clients")
 		return ctrl.Result{}, err
 	}
 	if len(storageClients.Items) == 1 && storageClients.Items[0].Name == r.storageClient.Name {
-		if utils.AddAnnotation(r.storageClient, storageClientDefaultAnnotationKey, "true") {
+		if utils.AddAnnotation(&r.storageClient, storageClientDefaultAnnotationKey, "true") {
 			updateStorageClient = true
 		}
 	}
-
-	// ensure finalizer
-	if controllerutil.AddFinalizer(r.storageClient, storageClientFinalizer) {
+	if controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
 		r.storageClient.Status.Phase = v1alpha1.StorageClientInitializing
-		r.Log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
+		r.log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
 		updateStorageClient = true
 	}
-
 	if updateStorageClient {
-		if err := r.update(r.storageClient); err != nil {
+		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient: %v", err)
 		}
 	}
@@ -183,6 +187,10 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
+		return res, err
+	}
+
 	storageClientResponse, err := externalClusterClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
@@ -190,10 +198,6 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 
 	if storageClientResponse.SystemAttributes != nil {
 		r.storageClient.Status.InMaintenanceMode = storageClientResponse.SystemAttributes.SystemInMaintenanceMode
-	}
-
-	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
-		return res, err
 	}
 
 	for _, eResource := range storageClientResponse.ExternalResource {
@@ -295,8 +299,8 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
-	if utils.AddAnnotation(r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredConfigHash) {
-		if err := r.update(r.storageClient); err != nil {
+	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredConfigHash) {
+		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
 		}
 	}
@@ -304,7 +308,7 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	return reconcile.Result{}, nil
 }
 
-func (r *StorageClientReconciler) reconcileClusterResourceQuota(spec *quotav1.ClusterResourceQuotaSpec) error {
+func (r *storageClientReconcile) reconcileClusterResourceQuota(spec *quotav1.ClusterResourceQuotaSpec) error {
 	clusterResourceQuota := &quotav1.ClusterResourceQuota{}
 	clusterResourceQuota.Name = utils.GetClusterResourceQuotaName(r.storageClient.Name)
 	_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clusterResourceQuota, func() error {
@@ -323,40 +327,36 @@ func (r *StorageClientReconciler) reconcileClusterResourceQuota(spec *quotav1.Cl
 	return nil
 }
 
-func (r *StorageClientReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
+func (r *storageClientReconcile) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
 	result, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, f)
 	if err != nil {
 		return err
 	}
-	r.Log.Info(fmt.Sprintf("%s successfully %s", obj.GetObjectKind(), result), "name", obj.GetName())
+	r.log.Info(fmt.Sprintf("%s successfully %s", obj.GetObjectKind(), result), "name", obj.GetName())
 	return nil
 }
 
-func (r *StorageClientReconciler) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
-	// TODO Need to take care of deleting the SCC created for this
-	// storageClient and also the default SCC created for this storageClient
+func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
 	r.storageClient.Status.Phase = v1alpha1.StorageClientOffboarding
-
 	if res, err := r.offboardConsumer(externalClusterClient); err != nil {
-		r.Log.Error(err, "Offboarding in progress.")
+		r.log.Error(err, "Offboarding in progress.")
 	} else if !res.IsZero() {
 		// result is not empty
 		return res, nil
 	}
-
-	if controllerutil.RemoveFinalizer(r.storageClient, storageClientFinalizer) {
-		r.Log.Info("removing finalizer from StorageClient.", "StorageClient", r.storageClient.Name)
-		if err := r.update(r.storageClient); err != nil {
-			r.Log.Info("Failed to remove finalizer from StorageClient", "StorageClient", r.storageClient.Name)
+	if controllerutil.RemoveFinalizer(&r.storageClient, storageClientFinalizer) {
+		r.log.Info("removing finalizer from StorageClient.", "StorageClient", r.storageClient.Name)
+		if err := r.update(&r.storageClient); err != nil {
+			r.log.Info("Failed to remove finalizer from StorageClient", "StorageClient", r.storageClient.Name)
 			return reconcile.Result{}, fmt.Errorf("failed to remove finalizer from StorageClient: %v", err)
 		}
 	}
-	r.Log.Info("StorageClient is offboarded", "StorageClient", r.storageClient.Name)
+	r.log.Info("StorageClient is offboarded", "StorageClient", r.storageClient.Name)
 	return reconcile.Result{}, nil
 }
 
 // newExternalClusterClient returns the *providerClient.OCSProviderClient
-func (r *StorageClientReconciler) newExternalClusterClient() (*providerClient.OCSProviderClient, error) {
+func (r *storageClientReconcile) newExternalClusterClient() (*providerClient.OCSProviderClient, error) {
 
 	ocsProviderClient, err := providerClient.NewProviderClient(
 		r.ctx, r.storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
@@ -368,7 +368,7 @@ func (r *StorageClientReconciler) newExternalClusterClient() (*providerClient.OC
 }
 
 // onboardConsumer makes an API call to the external storage provider cluster for onboarding
-func (r *StorageClientReconciler) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient) error {
+func (r *storageClientReconcile) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient) error {
 
 	// TODO Have a version file corresponding to the release
 	csvList := opv1a1.ClusterServiceVersionList{}
@@ -386,82 +386,31 @@ func (r *StorageClientReconciler) onboardConsumer(externalClusterClient *provide
 		SetClientOperatorVersion(csv.Spec.Version.String())
 	response, err := externalClusterClient.OnboardConsumer(r.ctx, onboardRequest)
 	if err != nil {
-		if st, ok := status.FromError(err); ok {
-			r.logGrpcErrorAndReportEvent(OnboardConsumer, err, st.Code())
-		}
 		return fmt.Errorf("failed to onboard consumer: %v", err)
 	}
 
 	if response.StorageConsumerUUID == "" {
 		err = fmt.Errorf("storage provider response is empty")
-		r.Log.Error(err, "empty response")
+		r.log.Error(err, "empty response")
 		return err
 	}
 
 	r.storageClient.Status.ConsumerID = response.StorageConsumerUUID
 	r.storageClient.Status.Phase = v1alpha1.StorageClientConnected
 
-	r.Log.Info("onboarding completed")
+	r.log.Info("onboarding completed")
 	return nil
 }
 
 // offboardConsumer makes an API call to the external storage provider cluster for offboarding
-func (r *StorageClientReconciler) offboardConsumer(externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
-
-	_, err := externalClusterClient.OffboardConsumer(r.ctx, r.storageClient.Status.ConsumerID)
-	if err != nil {
-		if st, ok := status.FromError(err); ok {
-			r.logGrpcErrorAndReportEvent(OffboardConsumer, err, st.Code())
-		}
+func (r *storageClientReconcile) offboardConsumer(externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
+	if _, err := externalClusterClient.OffboardConsumer(r.ctx, r.storageClient.Status.ConsumerID); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to offboard consumer: %v", err)
 	}
-
 	return reconcile.Result{}, nil
 }
 
-func (r *StorageClientReconciler) logGrpcErrorAndReportEvent(grpcCallName string, err error, errCode codes.Code) {
-
-	var msg, eventReason, eventType string
-
-	if grpcCallName == OnboardConsumer {
-		if errCode == codes.InvalidArgument {
-			msg = "Token is invalid. Verify the token again or contact the provider admin"
-			eventReason = "TokenInvalid"
-			eventType = corev1.EventTypeWarning
-		} else if errCode == codes.AlreadyExists {
-			msg = "Token is already used. Contact provider admin for a new token"
-			eventReason = "TokenAlreadyUsed"
-			eventType = corev1.EventTypeWarning
-		}
-	} else if grpcCallName == OffboardConsumer {
-		if errCode == codes.InvalidArgument {
-			msg = "StorageConsumer UID is not valid. Contact the provider admin"
-			eventReason = "UIDInvalid"
-			eventType = corev1.EventTypeWarning
-		}
-	} else if grpcCallName == GetStorageConfig {
-		if errCode == codes.InvalidArgument {
-			msg = "StorageConsumer UID is not valid. Contact the provider admin"
-			eventReason = "UIDInvalid"
-			eventType = corev1.EventTypeWarning
-		} else if errCode == codes.NotFound {
-			msg = "StorageConsumer UID not found. Contact the provider admin"
-			eventReason = "UIDNotFound"
-			eventType = corev1.EventTypeWarning
-		} else if errCode == codes.Unavailable {
-			msg = "StorageConsumer is not ready yet. Will requeue after 5 second"
-			eventReason = "NotReady"
-			eventType = corev1.EventTypeNormal
-		}
-	}
-
-	if msg != "" {
-		r.Log.Error(err, "StorageProvider:"+grpcCallName+":"+msg)
-		r.recorder.ReportIfNotPresent(r.storageClient, eventType, eventReason, msg)
-	}
-}
-
-func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.Result, error) {
+func (r *storageClientReconcile) reconcileClientStatusReporterJob() (reconcile.Result, error) {
 	cronJob := &batchv1.CronJob{}
 	// maximum characters allowed for cronjob name is 52 and below interpolation creates 47 characters
 	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", utils.GetMD5Hash(r.storageClient.Name)[:16])
@@ -531,19 +480,19 @@ func (r *StorageClientReconciler) reconcileClientStatusReporterJob() (reconcile.
 	return reconcile.Result{}, nil
 }
 
-func (r *StorageClientReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
+func (r *storageClientReconcile) list(obj client.ObjectList, listOptions ...client.ListOption) error {
 	return r.Client.List(r.ctx, obj, listOptions...)
 }
 
-func (r *StorageClientReconciler) get(obj client.Object, opts ...client.GetOption) error {
+func (r *storageClientReconcile) get(obj client.Object, opts ...client.GetOption) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Get(r.ctx, key, obj, opts...)
 }
 
-func (r *StorageClientReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
+func (r *storageClientReconcile) update(obj client.Object, opts ...client.UpdateOption) error {
 	return r.Update(r.ctx, obj, opts...)
 }
 
-func (r *StorageClientReconciler) own(dependent metav1.Object) error {
-	return controllerutil.SetOwnerReference(r.storageClient, dependent, r.Scheme)
+func (r *storageClientReconcile) own(dependent metav1.Object) error {
+	return controllerutil.SetOwnerReference(&r.storageClient, dependent, r.Scheme)
 }
