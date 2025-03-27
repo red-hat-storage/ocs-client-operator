@@ -33,7 +33,7 @@ require (
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
 	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20250325163953-cacc710836ff
 	github.com/stretchr/testify v1.9.0
-	google.golang.org/grpc v1.70.0
+	google.golang.org/grpc v1.70.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/api v0.31.1
 	k8s.io/apiextensions-apiserver v0.31.0
