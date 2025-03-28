@@ -416,7 +416,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfileMapping: %v", err)
 			}
 		case "Secret":
-			data := map[string]string{}
+			data := map[string][]byte{}
 			if err := json.Unmarshal(eResource.Data, &data); err != nil {
 				return reconcile.Result{}, fmt.Errorf("failed to unmarshall secret: %v", err)
 			}
@@ -427,12 +427,6 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 				removeStorageClaimAsOwner(secret)
 				if err := r.own(secret); err != nil {
 					return err
-				}
-				if secret.Data == nil {
-					secret.Data = map[string][]byte{}
-				}
-				for k, v := range data {
-					secret.Data[k] = []byte(v)
 				}
 				return nil
 			})
