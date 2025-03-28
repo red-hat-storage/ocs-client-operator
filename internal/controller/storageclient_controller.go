@@ -428,6 +428,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 				if err := r.own(secret); err != nil {
 					return err
 				}
+				secret.Data = data
 				return nil
 			})
 			if err != nil {
@@ -459,16 +460,16 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
 			}
 		case "StorageClass":
-			err = r.EnsureResource(&storagev1.StorageClass{}, eResource, true)
+			err = r.EnsureClusterScopedResource(&storagev1.StorageClass{}, eResource, true)
 		case "VolumeSnapshotClass":
-			err = r.EnsureResource(&snapapi.VolumeSnapshotClass{}, eResource, true)
+			err = r.EnsureClusterScopedResource(&snapapi.VolumeSnapshotClass{}, eResource, true)
 		case "VolumeGroupSnapshotClass":
 			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 				continue
 			}
-			err = r.EnsureResource(&groupsnapapi.VolumeGroupSnapshotClass{}, eResource, true)
+			err = r.EnsureClusterScopedResource(&groupsnapapi.VolumeGroupSnapshotClass{}, eResource, true)
 		case "VolumeReplicationClass":
-			err = r.EnsureResource(&replicationv1a1.VolumeReplicationClass{}, eResource, true)
+			err = r.EnsureClusterScopedResource(&replicationv1a1.VolumeReplicationClass{}, eResource, true)
 		case "ClientProfile":
 			clientProfile := &csiopv1a1.ClientProfile{}
 			clientProfile.Name = eResource.Name
@@ -778,9 +779,8 @@ func removeStorageClaimAsOwner(obj client.Object) {
 	}
 }
 
-func (r *storageClientReconcile) EnsureResource(obj client.Object, extRes *providerpb.ExternalResource, useReplace bool) error {
+func (r *storageClientReconcile) EnsureClusterScopedResource(obj client.Object, extRes *providerpb.ExternalResource, useReplace bool) error {
 	obj.SetName(extRes.Name)
-	obj.SetNamespace(r.OperatorNamespace)
 
 	if err := json.Unmarshal(extRes.Data, obj); err != nil {
 		return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
