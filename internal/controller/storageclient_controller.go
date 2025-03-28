@@ -380,7 +380,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			}
 		case "CephConnection":
 			cephConnection := &csiopv1a1.CephConnection{}
-			cephConnection.Name = r.storageClient.Name
+			cephConnection.Name = eResource.Name
 			cephConnection.Namespace = r.OperatorNamespace
 			if err := r.createOrUpdate(cephConnection, func() error {
 				if err := r.own(cephConnection); err != nil {
@@ -476,7 +476,20 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		case "VolumeReplicationClass":
 			err = r.EnsureResource(&replicationv1a1.VolumeReplicationClass{}, eResource, true)
 		case "ClientProfile":
-			err = r.EnsureResource(&csiopv1a1.ClientProfile{}, eResource, false)
+			clientProfile := &csiopv1a1.ClientProfile{}
+			clientProfile.Name = eResource.Name
+			clientProfile.Namespace = r.OperatorNamespace
+			if err := r.createOrUpdate(clientProfile, func() error {
+				if err := r.own(clientProfile); err != nil {
+					return fmt.Errorf("failed to own clientProfile resource: %v", err)
+				}
+				if err := json.Unmarshal(eResource.Data, &clientProfile.Spec); err != nil {
+					return fmt.Errorf("failed to unmarshall clientProfile: %v", err)
+				}
+				return nil
+			}); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfile: %v", err)
+			}
 		}
 		if err != nil {
 			return reconcile.Result{}, err
