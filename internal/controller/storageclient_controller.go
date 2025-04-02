@@ -782,25 +782,24 @@ func removeStorageClaimAsOwner(obj client.Object) {
 func (r *storageClientReconcile) EnsureClusterScopedResource(obj client.Object, extRes *providerpb.ExternalResource, useReplace bool) error {
 	obj.SetName(extRes.Name)
 
-	if err := json.Unmarshal(extRes.Data, obj); err != nil {
-		return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
+	mutateFunc := func() error {
+		if err := json.Unmarshal(extRes.Data, obj); err != nil {
+			return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
+		}
+		removeStorageClaimAsOwner(obj)
+		if err := r.own(obj); err != nil {
+			return fmt.Errorf("failed to own %s resource: %v", obj.GetName(), err)
+		}
+		utils.AddLabels(obj, extRes.Labels)
+		utils.AddAnnotations(obj, extRes.Annotations)
+		return nil
 	}
-	removeStorageClaimAsOwner(obj)
-	if err := r.own(obj); err != nil {
-		return fmt.Errorf("failed to own %s resource: %v", obj.GetName(), err)
-	}
-	utils.AddLabels(obj, extRes.Labels)
-	utils.AddAnnotations(obj, extRes.Annotations)
 
 	var err error
 	if useReplace {
-		err = utils.CreateOrReplace(r.ctx, r.Client, obj, func() error {
-			return nil
-		})
+		err = utils.CreateOrReplace(r.ctx, r.Client, obj, mutateFunc)
 	} else {
-		err = r.createOrUpdate(obj, func() error {
-			return nil
-		})
+		err = r.createOrUpdate(obj, mutateFunc)
 	}
 
 	if err != nil {
