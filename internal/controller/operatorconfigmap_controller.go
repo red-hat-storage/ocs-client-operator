@@ -41,6 +41,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/version"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
@@ -183,6 +184,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups="apps",resources=deployments,verbs=get;list;watch
 //+kubebuilder:rbac:groups="apps",resources=deployments/finalizers,verbs=update
+//+kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
@@ -314,7 +316,57 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{}, nil
 }
 
+func (c *OperatorConfigMapReconciler) errorOnRookOwnedCsi() error {
+	rookManagedCsiObjects := []struct {
+		gvk  schema.GroupVersionKind
+		name string
+	}{
+		{
+			gvk:  appsv1.SchemeGroupVersion.WithKind("Deployment"),
+			name: "csi-rbdplugin-provisioner",
+		},
+		{
+			gvk:  appsv1.SchemeGroupVersion.WithKind("Deployment"),
+			name: "csi-cephfsplugin-provisioner",
+		},
+		{
+			gvk:  appsv1.SchemeGroupVersion.WithKind("Deployment"),
+			name: "csi-nfsplugin-provisioner",
+		},
+		{
+			gvk:  appsv1.SchemeGroupVersion.WithKind("DaemonSet"),
+			name: "csi-rbdplugin",
+		},
+		{
+			gvk:  appsv1.SchemeGroupVersion.WithKind("DaemonSet"),
+			name: "csi-cephfsplugin",
+		},
+		{
+			gvk:  appsv1.SchemeGroupVersion.WithKind("DaemonSet"),
+			name: "csi-nfsplugin",
+		},
+	}
+	for i := range rookManagedCsiObjects {
+		entry := &rookManagedCsiObjects[i]
+		partialObject := &metav1.PartialObjectMetadata{}
+		partialObject.SetGroupVersionKind(entry.gvk)
+		partialObject.SetName(entry.name)
+		partialObject.SetNamespace(c.OperatorNamespace)
+		if err := c.get(partialObject); client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("failed to verify presence of %s: %v", entry.name, err)
+		} else if err == nil {
+			return fmt.Errorf("found presence of %s", entry.name)
+		}
+	}
+	return nil
+}
+
 func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
+	// Wait for CSI deployed by rook to be absent as not to race for resources at node level
+	// NOTE: in next minor version this should be removed
+	if err := c.errorOnRookOwnedCsi(); err != nil {
+		return fmt.Errorf("waiting for rook owned CSI to be removed: %v", err)
+	}
 
 	// scc
 	scc := &secv1.SecurityContextConstraints{}
