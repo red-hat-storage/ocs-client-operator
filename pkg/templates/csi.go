@@ -114,6 +114,7 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			Replicas: ptr.To(int32(2)),
 		},
 		NodePlugin: &csiopv1a1.NodePluginSpec{
+			EnableSeLinuxHostMount: ptr.To(true),
 			Resources: csiopv1a1.NodePluginResourcesSpec{
 				LogRotator: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
