@@ -37,7 +37,6 @@ import (
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	providerpb "github.com/red-hat-storage/ocs-operator/services/provider/api/v4"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -357,175 +356,58 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		return res, err
 	}
 
-	storageClientResponse, err := externalClusterClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
+	storageClientResponse, err := externalClusterClient.GetDesiredClientState(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
 	}
 
-	if storageClientResponse.SystemAttributes != nil {
-		r.storageClient.Status.InMaintenanceMode = storageClientResponse.SystemAttributes.SystemInMaintenanceMode
-	}
+	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
-	for _, eResource := range storageClientResponse.ExternalResource {
+	for _, kubeResource := range storageClientResponse.KubeResources {
 		var err error
-		// Create the received resources, if necessary.
-		switch eResource.Kind {
-		case "ClusterResourceQuota":
-			var clusterResourceQuotaSpec *quotav1.ClusterResourceQuotaSpec
-			if err := json.Unmarshal(eResource.Data, &clusterResourceQuotaSpec); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshall clusterResourceQuotaSpec error: %v", err)
-			}
-			if err := r.reconcileClusterResourceQuota(clusterResourceQuotaSpec); err != nil {
-				return reconcile.Result{}, err
-			}
-		case "CephConnection":
-			cephConnection := &csiopv1a1.CephConnection{}
-			cephConnection.Name = eResource.Name
-			cephConnection.Namespace = r.OperatorNamespace
-			if err := r.createOrUpdate(cephConnection, func() error {
-				if err := r.own(cephConnection); err != nil {
-					return fmt.Errorf("failed to own cephConnection resource: %v", err)
-				}
-				if err := json.Unmarshal(eResource.Data, &cephConnection.Spec); err != nil {
-					return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)
-				}
-				return nil
-			}); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to reconcile cephConnection: %v", err)
-			}
-		case "ClientProfileMapping":
-			clientProfileMapping := &csiopv1a1.ClientProfileMapping{}
-			clientProfileMapping.Name = eResource.Name
-			clientProfileMapping.Namespace = r.OperatorNamespace
-			if _, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clientProfileMapping, func() error {
-				if err := r.own(clientProfileMapping); err != nil {
-					return fmt.Errorf("failed to own clientProfileMapping resource: %v", err)
-				}
-				if err := json.Unmarshal(eResource.Data, &clientProfileMapping.Spec); err != nil {
-					return fmt.Errorf("failed to unmarshall clientProfileMapping spec: %v", err)
-				}
-				// TODO: This is a temporary solution till we have a single clientProfile for all storageClass
-				// sent from Provider
-				clientProfileHash := utils.GetMD5Hash(fmt.Sprintf("%s-ceph-rbd", r.storageClient.Name))
-				for i := range clientProfileMapping.Spec.Mappings {
-					clientProfileMapping.Spec.Mappings[i].LocalClientProfile = clientProfileHash
-					clientProfileMapping.Spec.Mappings[i].RemoteClientProfile = clientProfileHash
-				}
-				return nil
-			}); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfileMapping: %v", err)
-			}
-		case "Secret":
-			data := map[string][]byte{}
-			if err := json.Unmarshal(eResource.Data, &data); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshall secret: %v", err)
-			}
-			secret := &corev1.Secret{}
-			secret.Name = eResource.Name
-			secret.Namespace = r.OperatorNamespace
-			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
-				removeStorageClaimAsOwner(secret)
-				if err := r.own(secret); err != nil {
-					return err
-				}
-				secret.Data = data
-				return nil
-			})
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf(
-					"failed to create or update secret %v: %v",
-					client.ObjectKeyFromObject(secret),
-					err,
-				)
-			}
-		case "Noobaa":
-			noobaaSpec := &nbv1.NooBaaSpec{}
-			if err := json.Unmarshal(eResource.Data, &noobaaSpec); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshall noobaa spec data: %v", err)
-			}
-			nb := &nbv1.NooBaa{}
-			nb.Name = eResource.Name
-			nb.Namespace = r.OperatorNamespace
+		typeMeta := &metav1.TypeMeta{}
+		if err := json.Unmarshal(kubeResource, typeMeta); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to unmarshal the type for the Object: %w", err)
+		}
 
-			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, nb, func() error {
-				if err := r.own(nb); err != nil {
-					return err
-				}
-				utils.AddAnnotation(nb, "remote-client-noobaa", "true")
-				noobaaSpec.JoinSecret.Namespace = r.OperatorNamespace
-				nb.Spec = *noobaaSpec
-				return nil
-			})
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
-			}
-		case "StorageClass":
-			err = r.EnsureClusterScopedResource(&storagev1.StorageClass{}, eResource, true)
-		case "VolumeSnapshotClass":
-			err = r.EnsureClusterScopedResource(&snapapi.VolumeSnapshotClass{}, eResource, true)
-		case "VolumeGroupSnapshotClass":
+		// Create the received resources, if necessary.
+		switch typeMeta.GroupVersionKind() {
+		case quotav1.SchemeGroupVersion.WithKind("ClusterResourceQuota"):
+			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource, false)
+		case csiopv1a1.GroupVersion.WithKind("CephConnection"):
+			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource, false)
+		case csiopv1a1.GroupVersion.WithKind("ClientProfileMapping"):
+			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource, false)
+		case corev1.SchemeGroupVersion.WithKind("Secret"):
+			err = r.reconcileResource(&corev1.Secret{}, kubeResource, false)
+		case nbv1.SchemeGroupVersion.WithKind("Noobaa"):
+			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource, false)
+		case storagev1.SchemeGroupVersion.WithKind("StorageClass"):
+			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource, true)
+		case snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"):
+			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource, true)
+		case groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
 			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 				continue
 			}
-			err = r.EnsureClusterScopedResource(&groupsnapapi.VolumeGroupSnapshotClass{}, eResource, true)
-		case "VolumeReplicationClass":
-			err = r.EnsureClusterScopedResource(&replicationv1a1.VolumeReplicationClass{}, eResource, true)
-		case "ClientProfile":
-			clientProfile := &csiopv1a1.ClientProfile{}
-			clientProfile.Name = eResource.Name
-			clientProfile.Namespace = r.OperatorNamespace
-			if err := r.createOrUpdate(clientProfile, func() error {
-				if err := r.own(clientProfile); err != nil {
-					return fmt.Errorf("failed to own clientProfile resource: %v", err)
-				}
-				if err := json.Unmarshal(eResource.Data, &clientProfile.Spec); err != nil {
-					return fmt.Errorf("failed to unmarshall clientProfile: %v", err)
-				}
-				return nil
-			}); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to reconcile clientProfile: %v", err)
-			}
+			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource, true)
+		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
+			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource, true)
+		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
+			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource, false)
 		}
 		if err != nil {
 			return reconcile.Result{}, err
 		}
 	}
 
-	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredConfigHash) {
+	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredStateHash) {
 		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
 		}
 	}
 
 	return reconcile.Result{}, nil
-}
-
-func (r *storageClientReconcile) reconcileClusterResourceQuota(spec *quotav1.ClusterResourceQuotaSpec) error {
-	clusterResourceQuota := &quotav1.ClusterResourceQuota{}
-	clusterResourceQuota.Name = utils.GetClusterResourceQuotaName(r.storageClient.Name)
-	_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, clusterResourceQuota, func() error {
-
-		if err := r.own(clusterResourceQuota); err != nil {
-			return err
-		}
-
-		clusterResourceQuota.Spec = *spec
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create or update clusterResourceQuota %v: %s", &clusterResourceQuota, err)
-	}
-	return nil
-}
-
-func (r *storageClientReconcile) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
-	result, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, f)
-	if err != nil {
-		return err
-	}
-	r.log.Info(fmt.Sprintf("%s successfully %s", obj.GetObjectKind(), result), "name", obj.GetName())
-	return nil
 }
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
@@ -779,19 +661,28 @@ func removeStorageClaimAsOwner(obj client.Object) {
 	}
 }
 
-func (r *storageClientReconcile) EnsureClusterScopedResource(obj client.Object, extRes *providerpb.ExternalResource, useReplace bool) error {
-	obj.SetName(extRes.Name)
+func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte, useReplace bool) error {
+	objectMeta := &metav1.PartialObjectMetadata{}
+	if err := json.Unmarshal(rawObject, objectMeta); err != nil {
+		return err
+	}
+
+	obj.SetName(objectMeta.Name)
+	obj.SetNamespace(objectMeta.Namespace)
 
 	mutateFunc := func() error {
-		if err := json.Unmarshal(extRes.Data, obj); err != nil {
+		// Unmarshal follows merge semantics, that means that we don't need to worry about overriding the status,
+		// or any metadata fields. There is an exception when it comes to creationTimestamp which gets serialized into
+		// default value.
+		creationTimestamp := obj.GetCreationTimestamp()
+		if err := json.Unmarshal(rawObject, obj); err != nil {
 			return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
 		}
+		obj.SetCreationTimestamp(creationTimestamp)
 		removeStorageClaimAsOwner(obj)
 		if err := r.own(obj); err != nil {
 			return fmt.Errorf("failed to own %s resource: %v", obj.GetName(), err)
 		}
-		utils.AddLabels(obj, extRes.Labels)
-		utils.AddAnnotations(obj, extRes.Annotations)
 		return nil
 	}
 
@@ -799,11 +690,11 @@ func (r *storageClientReconcile) EnsureClusterScopedResource(obj client.Object, 
 	if useReplace {
 		err = utils.CreateOrReplace(r.ctx, r.Client, obj, mutateFunc)
 	} else {
-		err = r.createOrUpdate(obj, mutateFunc)
+		_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to create or update: %v", err)
+		return fmt.Errorf("failed to create or update %v %v: %v", obj.GetObjectKind().GroupVersionKind(), obj.GetName(), err)
 	}
 	return nil
 }
