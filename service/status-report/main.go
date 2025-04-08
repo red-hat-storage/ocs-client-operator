@@ -241,7 +241,9 @@ func setOperatorInformation(ctx context.Context, cl client.Client, status interf
 	if operatorVersion == "" {
 		klog.Warningf("Unable to find csv with prefix %q", csvPrefix)
 	}
-	status.SetOperatorVersion(operatorVersion)
+	status.
+		SetOperatorVersion(operatorVersion).
+		SetOperatorNamespace(operatorNamespace)
 }
 
 func setPlatformInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {

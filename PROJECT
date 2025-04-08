@@ -20,13 +20,4 @@ resources:
   kind: StorageClient
   path: github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: openshift.io
-  group: ocs
-  kind: StorageClaim
-  path: github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
-  version: v1alpha1
 version: "3"

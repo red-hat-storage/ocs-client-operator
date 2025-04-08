@@ -66,6 +66,14 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
   - deployments
   verbs:
   - get
@@ -208,37 +216,11 @@ rules:
   - ocs.openshift.io
   resources:
   - storageclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclaims
   - storageclients
   verbs:
   - get
   - list
   - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclaims/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclaims/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - ocs.openshift.io
   resources:
@@ -360,6 +342,4 @@ rules:
   - delete
   - get
   - list
-  - patch
-  - update
   - watch

@@ -261,16 +261,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.StorageClaimReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		OperatorNamespace: utils.GetOperatorNamespace(),
-		AvailableCrds:     availCrds,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "StorageClaim")
-		os.Exit(1)
-	}
-
 	if metricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(metricsCertWatcher); err != nil {

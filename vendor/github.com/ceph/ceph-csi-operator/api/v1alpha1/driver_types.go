@@ -174,7 +174,7 @@ type NodePluginSpec struct {
 
 	// Control the host mount of /etc/selinux for csi plugin pods. Defaults to false
 	//+kubebuilder:validation:Optional
-	EnableSeLinuxHostMount *bool `json:"EnableSeLinuxHostMount,omitempty"`
+	EnableSeLinuxHostMount *bool `json:"enableSeLinuxHostMount,omitempty"`
 	// Topology settings for the plugin pods
 	//+kubebuilder:validation:Optional
 	Topology *TopologySpec `json:"topology,omitempty"`
@@ -210,6 +210,8 @@ type ControllerPluginResourcesSpec struct {
 }
 
 type ControllerPluginSpec struct {
+	// hostNetwork setting to be propagated to CSI controller plugin pods
+	HostNetwork *bool `json:"hostNetwork,omitempty"`
 	// Embedded common pods spec
 	PodCommonSpec `json:",inline"`
 

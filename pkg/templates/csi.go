@@ -13,6 +13,7 @@ import (
 
 const RBDDriverName = "openshift-storage.rbd.csi.ceph.com"
 const CephFsDriverName = "openshift-storage.cephfs.csi.ceph.com"
+const NfsDriverName = "openshift-storage.nfs.csi.ceph.com"
 
 // security context constraints
 const SCCName = "ceph-csi-op-scc"
@@ -113,6 +114,7 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			Replicas: ptr.To(int32(2)),
 		},
 		NodePlugin: &csiopv1a1.NodePluginSpec{
+			EnableSeLinuxHostMount: ptr.To(true),
 			Resources: csiopv1a1.NodePluginResourcesSpec{
 				LogRotator: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
