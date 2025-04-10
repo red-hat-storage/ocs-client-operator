@@ -122,16 +122,7 @@ func main() {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
 	}
 
-	updated := false
-	if utils.AddAnnotation(storageClient, utils.DesiredSubscriptionChannelAnnotationKey, statusResponse.DesiredClientOperatorChannel) {
-		updated = true
-	}
-
 	if utils.AddAnnotation(storageClient, utils.DesiredConfigHashAnnotationKey, statusResponse.DesiredConfigHash) {
-		updated = true
-	}
-
-	if updated {
 		if err := cl.Update(ctx, storageClient); err != nil {
 			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
 		}
