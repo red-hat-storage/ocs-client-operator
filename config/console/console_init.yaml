@@ -66,3 +66,4 @@ spec:
         key: node.ocs.openshift.io/storage
         operator: Equal
         value: "true"
+      priorityClassName: system-cluster-critical
