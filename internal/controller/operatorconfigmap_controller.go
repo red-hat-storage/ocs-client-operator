@@ -271,6 +271,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
+		if err := c.reconcileRecipeOperatorSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile Recipe Operator subscription")
+			return ctrl.Result{}, err
+		}
+
 		if err := c.ensureConsolePlugin(); err != nil {
 			c.log.Error(err, "unable to deploy client console")
 			return ctrl.Result{}, err
@@ -671,6 +676,20 @@ func (c *OperatorConfigMapReconciler) reconcileCephCSIOperatorSubscription() err
 		cephCsiOperatorSubscription.Spec.Channel = c.subscriptionChannel
 		if err := c.update(cephCsiOperatorSubscription); err != nil {
 			return fmt.Errorf("failed to update subscription channel of 'cephcsi-operator' to %v: %v", c.subscriptionChannel, err)
+		}
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() error {
+	recipeOperatorSubscription, err := c.getSubscriptionByPackageName("recipe")
+	if err != nil {
+		return err
+	}
+	if c.subscriptionChannel != "" && c.subscriptionChannel != recipeOperatorSubscription.Spec.Channel {
+		recipeOperatorSubscription.Spec.Channel = c.subscriptionChannel
+		if err := c.update(recipeOperatorSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel of 'recipe' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
 	return nil

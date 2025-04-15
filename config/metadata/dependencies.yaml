@@ -11,3 +11,7 @@ dependencies:
     value:
       packageName: noobaa-operator
       version: ">=5.17.0 <=5.18.0"
+  - type: olm.package
+    value:
+      packageName: recipe
+      version: "0.0.1"
