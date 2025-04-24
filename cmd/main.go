@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/internal/controller"
@@ -186,6 +187,19 @@ func main() {
 		})
 	}
 
+	defaultNamespaces := map[string]cache.Config{}
+	operatorNamespace := utils.GetOperatorNamespace()
+	defaultNamespaces[operatorNamespace] = cache.Config{}
+
+	watchNamespace := utils.GetWatchNamespace()
+	if watchNamespace == "" {
+		setupLog.Info("No value for env WATCH_NAMESPACE is set. Manager will only watch for resources in the operator deployed namespace.")
+	} else {
+		for _, namespace := range strings.Split(watchNamespace, ",") {
+			defaultNamespaces[namespace] = cache.Config{}
+		}
+	}
+
 	subscriptionwebhookSelector := fields.SelectorFromSet(fields.Set{"metadata.name": templates.SubscriptionWebhookName})
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -200,6 +214,7 @@ func main() {
 					Field: subscriptionwebhookSelector,
 				},
 			},
+			DefaultNamespaces: defaultNamespaces,
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    webhookPort,
