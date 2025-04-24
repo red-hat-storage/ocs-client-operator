@@ -64,11 +64,12 @@ const (
 	operatorConfigMapName = "ocs-client-operator-config"
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
-	clusterVersionName     = "version"
-	manageNoobaaSubKey     = "manageNoobaaSubscription"
-	subscriptionLabelKey   = "managed-by"
-	subscriptionLabelValue = "webhook.subscription.ocs.openshift.io"
-	generateRbdOMapInfoKey = "generateRbdOMapInfo"
+	clusterVersionName                 = "version"
+	manageNoobaaSubKey                 = "manageNoobaaSubscription"
+	subscriptionLabelKey               = "managed-by"
+	subscriptionLabelValue             = "webhook.subscription.ocs.openshift.io"
+	generateRbdOMapInfoKey             = "generateRbdOMapInfo"
+	useHostNetworkForCsiControllersKey = "useHostNetworkForCsiControllers"
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
@@ -415,7 +416,8 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
 		}
-
+		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])
+		csiOperatorConfig.Spec.DriverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
