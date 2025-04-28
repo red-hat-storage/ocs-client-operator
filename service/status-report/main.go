@@ -18,16 +18,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"math"
-	"os"
-	"reflect"
-
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	"math"
+	"os"
 
-	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -61,10 +56,6 @@ func main() {
 
 	if err := configv1.AddToScheme(scheme); err != nil {
 		klog.Exitf("Failed to add configv1 to scheme: %v", err)
-	}
-
-	if err := csiopv1a1.AddToScheme(scheme); err != nil {
-		klog.Exitf("Failed to add csiopv1a1 to scheme: %v", err)
 	}
 
 	if err := quotav1.AddToScheme(scheme); err != nil {
@@ -131,48 +122,6 @@ func main() {
 			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
 		}
 	}
-
-	if err := updateCSIConfig(ctx, cl, providerClient, storageClient, operatorNamespace); err != nil {
-		klog.Exitf("Failed to update csi config: %v", err)
-	}
-}
-
-func updateCSIConfig(ctx context.Context,
-	cl client.Client,
-	providerClient *providerclient.OCSProviderClient,
-	storageClient *v1alpha1.StorageClient,
-	operatorNamespace string) error {
-	scResponse, err := providerClient.GetStorageConfig(ctx, storageClient.Status.ConsumerID)
-	if err != nil {
-		return fmt.Errorf("failed to get StorageConfig of storageClient %v: %v", storageClient.Status.ConsumerID, err)
-	}
-	for _, eResource := range scResponse.ExternalResource {
-		if eResource.Kind == "CephConnection" {
-			desiredCephConnectionSpec := &csiopv1a1.CephConnectionSpec{}
-			if err := json.Unmarshal(eResource.Data, &desiredCephConnectionSpec); err != nil {
-				return fmt.Errorf("failed to unmarshall cephConnectionSpec: %v", err)
-			}
-
-			cephConnection := &csiopv1a1.CephConnection{}
-			cephConnection.Name = storageClient.Name
-			cephConnection.Namespace = operatorNamespace
-			if err := cl.Get(ctx, client.ObjectKeyFromObject(cephConnection), cephConnection); err != nil {
-				return fmt.Errorf("failed to get csi cephConnection resource: %v", err)
-			}
-
-			if !reflect.DeepEqual(cephConnection.Spec, desiredCephConnectionSpec) {
-				cephConnectionCopy := &csiopv1a1.CephConnection{}
-				cephConnection.ObjectMeta.DeepCopyInto(&cephConnectionCopy.ObjectMeta)
-				desiredCephConnectionSpec.DeepCopyInto(&cephConnectionCopy.Spec)
-				// patch is being used to ensure spec is accurate at this point of time even if there are reconciles happening which change resourceversion
-				if err := cl.Patch(ctx, cephConnection, client.MergeFrom(cephConnectionCopy)); err != nil {
-					return fmt.Errorf("failed to patch csi cephConnectionSpec: %v", err)
-				}
-			}
-		}
-	}
-
-	return nil
 }
 
 func setClusterInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
