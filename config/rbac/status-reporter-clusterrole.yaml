@@ -12,16 +12,6 @@ rules:
       - list
       - update
   - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    resourceNames:
-      - ceph-csi-configs
-    verbs:
-      - get
-      - list
-      - update
-  - apiGroups:
       - config.openshift.io
     resources:
       - clusterversions
