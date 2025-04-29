@@ -54,6 +54,19 @@ type StorageClientStatus struct {
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
+
+	RbdDriverRequirements    *RbdDriverRequirements    `json:"rbdDriverRequirements,omitempty"`
+	CephFsDriverRequirements *CephFsDriverRequirements `json:"cephFsDriverRequirements,omitempty"`
+	NfsDriverRequirements    *NfsDriverRequirements    `json:"nfsDriverRequirements,omitempty"`
+}
+
+type RbdDriverRequirements struct {
+}
+
+type CephFsDriverRequirements struct {
+}
+
+type NfsDriverRequirements struct {
 }
 
 //+kubebuilder:object:root=true
