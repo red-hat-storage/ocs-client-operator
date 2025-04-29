@@ -61,6 +61,7 @@ type StorageClientStatus struct {
 }
 
 type RbdDriverRequirements struct {
+	TopologyDomainLabels []string `json:"topologyDomainLabels,omitempty"`
 }
 
 type CephFsDriverRequirements struct {
