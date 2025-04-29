@@ -449,12 +449,10 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		}
 	}
 
-	if res, err := r.offboardConsumer(externalClusterClient); err != nil {
-		r.log.Error(err, "Offboarding in progress.")
-	} else if !res.IsZero() {
-		// result is not empty
-		return res, nil
+	if err := r.offboardConsumer(externalClusterClient); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to offboard consumer for storageclient %v: %v", r.storageClient.Name, err)
 	}
+
 	if controllerutil.RemoveFinalizer(&r.storageClient, storageClientFinalizer) {
 		r.log.Info("removing finalizer from StorageClient.", "StorageClient", r.storageClient.Name)
 		if err := r.update(&r.storageClient); err != nil {
@@ -502,11 +500,11 @@ func (r *storageClientReconcile) onboardConsumer(externalClusterClient *provider
 }
 
 // offboardConsumer makes an API call to the external storage provider cluster for offboarding
-func (r *storageClientReconcile) offboardConsumer(externalClusterClient *providerClient.OCSProviderClient) (reconcile.Result, error) {
+func (r *storageClientReconcile) offboardConsumer(externalClusterClient *providerClient.OCSProviderClient) error {
 	if _, err := externalClusterClient.OffboardConsumer(r.ctx, r.storageClient.Status.ConsumerID); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to offboard consumer: %v", err)
+		return fmt.Errorf("failed to offboard consumer: %v", err)
 	}
-	return reconcile.Result{}, nil
+	return nil
 }
 
 func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersion string) (reconcile.Result, error) {
