@@ -60,6 +60,8 @@ const (
 	ExitCodeThatShouldRestartTheProcess = 42
 
 	OcsClientTimeout = 10 * time.Second
+
+	OperatorVersionEnvVar = "OPERATOR_VERSION"
 )
 
 // GetOperatorNamespace returns the namespace where the operator is deployed.
@@ -69,6 +71,14 @@ func GetOperatorNamespace() string {
 
 func GetWatchNamespace() string {
 	return os.Getenv(WatchNamespaceEnvVar)
+}
+
+func GetOperatorPodName() (string, error) {
+	podName := os.Getenv(OperatorPodNameEnvVar)
+	if podName == "" {
+		return "", fmt.Errorf("OPERATOR_POD_NAME env doesn't contain pod name")
+	}
+	return podName, nil
 }
 
 func ValidateOperatorNamespace() error {
