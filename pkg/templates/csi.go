@@ -4,10 +4,13 @@ import (
 	"fmt"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+
 	secv1 "github.com/openshift/api/security/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -113,6 +116,13 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			},
 			Replicas:    ptr.To(int32(2)),
 			HostNetwork: ptr.To(true),
+			DeploymentStrategy: &appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxSurge:       ptr.To(intstr.FromInt32(0)),
+					MaxUnavailable: ptr.To(intstr.FromInt32(1)),
+				},
+			},
 		},
 		NodePlugin: &csiopv1a1.NodePluginSpec{
 			EnableSeLinuxHostMount: ptr.To(true),
