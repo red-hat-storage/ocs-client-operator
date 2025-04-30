@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"reflect"
-	"strings"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
@@ -43,7 +42,6 @@ import (
 )
 
 const (
-	csvPrefix              = "ocs-client-operator"
 	clusterDNSResourceName = "cluster"
 )
 
@@ -93,6 +91,12 @@ func main() {
 	if !isSet {
 		klog.Exitf("%s env var not set", utils.OperatorNamespaceEnvVar)
 	}
+
+	operatorVersion, isSet := os.LookupEnv(utils.OperatorVersionEnvVar)
+	if !isSet {
+		klog.Exitf("%s env var not set", utils.OperatorVersionEnvVar)
+	}
+
 	storageClient := &v1alpha1.StorageClient{}
 	storageClient.Name = storageClientName
 
@@ -114,7 +118,7 @@ func main() {
 		SetClientName(storageClientName).
 		SetClientID(string(storageClient.UID))
 	setPlatformInformation(ctx, cl, status)
-	setOperatorInformation(ctx, cl, status, operatorNamespace)
+	setOperatorInformation(status, operatorVersion, operatorNamespace)
 	setClusterInformation(ctx, cl, status)
 	setStorageQuotaUtilizationRatio(ctx, cl, status)
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
@@ -215,23 +219,7 @@ func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, stat
 
 }
 
-func setOperatorInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus,
-	operatorNamespace string) {
-	var operatorVersion string
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err := cl.List(ctx, &csvList, client.InNamespace(operatorNamespace)); err != nil {
-		klog.Warningf("Failed to list csv resources: %v", err)
-	} else {
-		item := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
-			return strings.HasPrefix(csv.Name, csvPrefix)
-		})
-		if item != nil {
-			operatorVersion = item.Spec.Version.String()
-		}
-	}
-	if operatorVersion == "" {
-		klog.Warningf("Unable to find csv with prefix %q", csvPrefix)
-	}
+func setOperatorInformation(status interfaces.StorageClientStatus, operatorVersion, operatorNamespace string) {
 	status.
 		SetOperatorVersion(operatorVersion).
 		SetOperatorNamespace(operatorNamespace)
