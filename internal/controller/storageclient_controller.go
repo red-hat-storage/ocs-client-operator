@@ -38,6 +38,7 @@ import (
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -74,8 +75,6 @@ const (
 	vscClusterIDIndexName  = "index:volumeSnapshotContentCSIDriver"
 	vgscClusterIDIndexName = "index:volumeGroupSnapshotContentCSIDriver"
 
-	csvPrefix = "ocs-client-operator"
-
 	VolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
 )
 
@@ -91,6 +90,7 @@ type StorageClientReconciler struct {
 	client.Client
 	Scheme            *runtime.Scheme
 	OperatorNamespace string
+	OperatorPodName   string
 
 	cache            cache.Cache
 	controller       controller.Controller
@@ -346,13 +346,18 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	operatorVersion, err := r.getOperatorVersion()
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to get operator version: %v", err)
+	}
+
 	if r.storageClient.Status.ConsumerID == "" {
-		if err := r.onboardConsumer(externalClusterClient); err != nil {
+		if err := r.onboardConsumer(externalClusterClient, operatorVersion); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
 
-	if res, err := r.reconcileClientStatusReporterJob(); err != nil {
+	if res, err := r.reconcileClientStatusReporterJob(operatorVersion); err != nil {
 		return res, err
 	}
 
@@ -472,22 +477,10 @@ func (r *storageClientReconcile) newExternalClusterClient() (*providerClient.OCS
 }
 
 // onboardConsumer makes an API call to the external storage provider cluster for onboarding
-func (r *storageClientReconcile) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient) error {
-
-	// TODO Have a version file corresponding to the release
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err := r.list(&csvList, client.InNamespace(r.OperatorNamespace)); err != nil {
-		return fmt.Errorf("failed to list csv resources in ns: %v, err: %v", r.OperatorNamespace, err)
-	}
-	csv := utils.Find(csvList.Items, func(csv *opv1a1.ClusterServiceVersion) bool {
-		return strings.HasPrefix(csv.Name, csvPrefix)
-	})
-	if csv == nil {
-		return fmt.Errorf("unable to find csv with prefix %q", csvPrefix)
-	}
+func (r *storageClientReconcile) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient, operatorVersion string) error {
 	onboardRequest := providerClient.NewOnboardConsumerRequest().
 		SetOnboardingTicket(r.storageClient.Spec.OnboardingTicket).
-		SetClientOperatorVersion(csv.Spec.Version.String())
+		SetClientOperatorVersion(operatorVersion)
 	response, err := externalClusterClient.OnboardConsumer(r.ctx, onboardRequest)
 	if err != nil {
 		return fmt.Errorf("failed to onboard consumer: %v", err)
@@ -514,7 +507,7 @@ func (r *storageClientReconcile) offboardConsumer(externalClusterClient *provide
 	return reconcile.Result{}, nil
 }
 
-func (r *storageClientReconcile) reconcileClientStatusReporterJob() (reconcile.Result, error) {
+func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersion string) (reconcile.Result, error) {
 	cronJob := &batchv1.CronJob{}
 	// maximum characters allowed for cronjob name is 52 and below interpolation creates 47 characters
 	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", utils.GetMD5Hash(r.storageClient.Name)[:16])
@@ -557,6 +550,10 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob() (reconcile.R
 										{
 											Name:  utils.OperatorNamespaceEnvVar,
 											Value: r.OperatorNamespace,
+										},
+										{
+											Name:  utils.OperatorVersionEnvVar,
+											Value: operatorVersion,
 										},
 									},
 								},
@@ -704,4 +701,37 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject 
 		return fmt.Errorf("failed to create or update %v %v: %v", obj.GetObjectKind().GroupVersionKind(), obj.GetName(), err)
 	}
 	return nil
+}
+
+func (r *storageClientReconcile) getOperatorVersion() (string, error) {
+	deploymentName := r.OperatorPodName
+	for range 2 {
+		if i := strings.LastIndex(deploymentName, "-"); i > -1 {
+			deploymentName = deploymentName[:i]
+		} else {
+			return "", fmt.Errorf("failed to derive deployment name from pod name")
+		}
+	}
+
+	deployment := &metav1.PartialObjectMetadata{}
+	deployment.SetGroupVersionKind(appsv1.SchemeGroupVersion.WithKind("Deployment"))
+	deployment.Name = deploymentName
+	deployment.Namespace = r.OperatorNamespace
+	if err := r.get(deployment); err != nil {
+		return "", fmt.Errorf("failed to get deployment: %v", err)
+	}
+	ownerCsvIdx := slices.IndexFunc(deployment.OwnerReferences, func(owner metav1.OwnerReference) bool {
+		return owner.Kind == "ClusterServiceVersion"
+	})
+	if ownerCsvIdx == -1 {
+		return "", fmt.Errorf("unable to find csv from deployment owners")
+	}
+
+	csv := &opv1a1.ClusterServiceVersion{}
+	csv.Name = deployment.OwnerReferences[ownerCsvIdx].Name
+	csv.Namespace = r.OperatorNamespace
+	if err := r.get(csv); err != nil {
+		return "", fmt.Errorf("failed to get csv: %v", err)
+	}
+	return csv.Spec.Version.String(), nil
 }
