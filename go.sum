@@ -341,8 +341,6 @@ github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0leargg
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
 github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3 h1:q4UjNvv3jzKOeG/S+S1Ms2FV3WajBIE6266/7BIxdX4=
 github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3/go.mod h1:O7VpTy8MMrh31DF4fv+2SZBSouAr8NlzIY4KYx7K75U=
-github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20250407140600-29da539df4d8 h1:sx4Kq6MlHQwilf+3HcfKzAvMrBkouuuoJHLUwH/b5k8=
-github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20250407140600-29da539df4d8/go.mod h1:XGJhEtU1/Sg0mSX+hXSgzchnHq3g9Aposw5Wtf6z6vM=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU5NdKM8=
 github.com/rogpeppe/go-internal v1.12.0/go.mod h1:E+RYuTGaKKdloAfM02xzb0FW3Paa99yedzYV+kq4uf4=
