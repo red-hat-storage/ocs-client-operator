@@ -378,28 +378,28 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		// Create the received resources, if necessary.
 		switch typeMeta.GroupVersionKind() {
 		case quotav1.SchemeGroupVersion.WithKind("ClusterResourceQuota"):
-			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource, false)
+			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource)
 		case csiopv1a1.GroupVersion.WithKind("CephConnection"):
-			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource, false)
+			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource)
 		case csiopv1a1.GroupVersion.WithKind("ClientProfileMapping"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource, false)
+			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource)
 		case corev1.SchemeGroupVersion.WithKind("Secret"):
-			err = r.reconcileResource(&corev1.Secret{}, kubeResource, false)
+			err = r.reconcileResource(&corev1.Secret{}, kubeResource)
 		case nbv1.SchemeGroupVersion.WithKind("Noobaa"):
-			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource, false)
+			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource)
 		case storagev1.SchemeGroupVersion.WithKind("StorageClass"):
-			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource, true)
+			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource)
 		case snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"):
-			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource, true)
+			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource)
 		case groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
 			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 				continue
 			}
-			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource, true)
+			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource)
 		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
-			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource, true)
+			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource)
 		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource, false)
+			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource)
 		}
 		if err != nil {
 			return reconcile.Result{}, err
@@ -665,7 +665,7 @@ func removeStorageClaimAsOwner(obj client.Object) {
 	}
 }
 
-func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte, useReplace bool) error {
+func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte) error {
 	objectMeta := &metav1.PartialObjectMetadata{}
 	if err := json.Unmarshal(rawObject, objectMeta); err != nil {
 		return err
@@ -691,10 +691,9 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject 
 	}
 
 	var err error
-	if useReplace {
+	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
+	if utils.IsForbiddenError(err) {
 		err = utils.CreateOrReplace(r.ctx, r.Client, obj, mutateFunc)
-	} else {
-		_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
 	}
 
 	if err != nil {

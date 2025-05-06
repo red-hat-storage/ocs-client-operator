@@ -202,3 +202,16 @@ func mutate(f controllerutil.MutateFn, key client.ObjectKey, obj client.Object) 
 func GetClusterResourceQuotaName(name string) string {
 	return fmt.Sprintf("storage-client-%s-resourceqouta", GetMD5Hash(name))
 }
+
+func IsForbiddenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	statusErr := err.(*errors.StatusError)
+	for i := range statusErr.ErrStatus.Details.Causes {
+		if statusErr.ErrStatus.Details.Causes[i].Type == metav1.CauseTypeForbidden {
+			return true
+		}
+	}
+	return false
+}
