@@ -255,6 +255,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	podName, err := utils.GetOperatorPodName()
+	if err != nil {
+		setupLog.Error(err, "Failed to get operator pod name")
+	}
+
 	setupLog.Info("setting up webhook server")
 	hookServer := mgr.GetWebhookServer()
 
@@ -271,6 +276,7 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
+		OperatorPodName:   podName,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
 		os.Exit(1)
