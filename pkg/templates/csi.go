@@ -130,11 +130,6 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{
 					{
-						Key:      "node-role.kubernetes.io/master",
-						Operator: corev1.TolerationOpExists,
-						Effect:   corev1.TaintEffectNoSchedule,
-					},
-					{
 						Effect:   corev1.TaintEffectNoSchedule,
 						Key:      "node.ocs.openshift.io/storage",
 						Operator: corev1.TolerationOpEqual,
