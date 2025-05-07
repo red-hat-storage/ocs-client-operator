@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2025-04-15T05:54:04Z"
+    createdAt: "2025-04-28T16:47:07Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -398,16 +398,6 @@ spec:
           - ocs.openshift.io
           resources:
           - storageclients
-          verbs:
-          - get
-          - list
-          - update
-        - apiGroups:
-          - ""
-          resourceNames:
-          - ceph-csi-configs
-          resources:
-          - configmaps
           verbs:
           - get
           - list
