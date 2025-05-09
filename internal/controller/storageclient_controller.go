@@ -46,6 +46,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -84,6 +85,8 @@ var (
 		templates.CephFsDriverName,
 	}
 )
+
+type gvkToObjectKeys = map[schema.GroupVersionKind][]types.NamespacedName
 
 // StorageClientReconciler reconciles a StorageClient object
 type StorageClientReconciler struct {
@@ -368,6 +371,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
+	resourceMapping := gvkToObjectKeys{}
 	for _, kubeResource := range storageClientResponse.KubeResources {
 		var err error
 		typeMeta := &metav1.TypeMeta{}
@@ -378,28 +382,28 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		// Create the received resources, if necessary.
 		switch typeMeta.GroupVersionKind() {
 		case quotav1.SchemeGroupVersion.WithKind("ClusterResourceQuota"):
-			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource, false)
+			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource, false, resourceMapping)
 		case csiopv1a1.GroupVersion.WithKind("CephConnection"):
-			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource, false)
+			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource, false, resourceMapping)
 		case csiopv1a1.GroupVersion.WithKind("ClientProfileMapping"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource, false)
+			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource, false, resourceMapping)
 		case corev1.SchemeGroupVersion.WithKind("Secret"):
-			err = r.reconcileResource(&corev1.Secret{}, kubeResource, false)
+			err = r.reconcileResource(&corev1.Secret{}, kubeResource, false, resourceMapping)
 		case nbv1.SchemeGroupVersion.WithKind("Noobaa"):
-			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource, false)
+			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource, false, resourceMapping)
 		case storagev1.SchemeGroupVersion.WithKind("StorageClass"):
-			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource, true)
+			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource, true, resourceMapping)
 		case snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"):
-			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource, true)
+			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource, true, resourceMapping)
 		case groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
 			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 				continue
 			}
-			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource, true)
+			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource, true, resourceMapping)
 		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
-			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource, true)
+			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource, true, resourceMapping)
 		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource, false)
+			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource, false, resourceMapping)
 		}
 		if err != nil {
 			return reconcile.Result{}, err
@@ -419,7 +423,34 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	if err := r.deleteStaleResources(resourceMapping); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to delete stale resources: %v", err)
+	}
+
 	return reconcile.Result{}, nil
+}
+
+func (r *storageClientReconcile) deleteStaleResources(resourceMapping gvkToObjectKeys) error {
+	for gvk, providerSentKeys := range resourceMapping {
+		existingObjList := &metav1.PartialObjectMetadataList{}
+		existingObjList.SetGroupVersionKind(gvk)
+		if err := r.list(existingObjList); err != nil {
+			return err
+		}
+		retainKeys := make(map[types.NamespacedName]bool, len(providerSentKeys))
+		for idx := range providerSentKeys {
+			retainKeys[providerSentKeys[idx]] = true
+		}
+		for idx := range existingObjList.Items {
+			obj := &existingObjList.Items[idx]
+			if metav1.IsControlledBy(obj, &r.storageClient) && !retainKeys[client.ObjectKeyFromObject(obj)] {
+				if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
@@ -653,7 +684,7 @@ func (r *storageClientReconcile) update(obj client.Object, opts ...client.Update
 }
 
 func (r *storageClientReconcile) own(dependent metav1.Object) error {
-	return controllerutil.SetOwnerReference(&r.storageClient, dependent, r.Scheme)
+	return controllerutil.SetControllerReference(&r.storageClient, dependent, r.Scheme)
 }
 
 func removeStorageClaimAsOwner(obj client.Object) {
@@ -665,7 +696,7 @@ func removeStorageClaimAsOwner(obj client.Object) {
 	}
 }
 
-func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte, useReplace bool) error {
+func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte, useReplace bool, resourceMapping gvkToObjectKeys) error {
 	objectMeta := &metav1.PartialObjectMetadata{}
 	if err := json.Unmarshal(rawObject, objectMeta); err != nil {
 		return err
@@ -700,6 +731,9 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject 
 	if err != nil {
 		return fmt.Errorf("failed to create or update %v %v: %v", obj.GetObjectKind().GroupVersionKind(), obj.GetName(), err)
 	}
+
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	resourceMapping[gvk] = append(resourceMapping[gvk], client.ObjectKeyFromObject(obj))
 	return nil
 }
 
