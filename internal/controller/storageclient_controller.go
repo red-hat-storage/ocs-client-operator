@@ -28,6 +28,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	"go.uber.org/multierr"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -46,6 +47,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -84,6 +86,8 @@ var (
 		templates.CephFsDriverName,
 	}
 )
+
+type gvkToKuberesources = map[schema.GroupVersionKind][][]byte
 
 // StorageClientReconciler reconciles a StorageClient object
 type StorageClientReconciler struct {
@@ -368,42 +372,85 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
-	for _, kubeResource := range storageClientResponse.KubeResources {
-		var err error
+	resourceMapping := gvkToKuberesources{}
+	for idx := range storageClientResponse.KubeResources {
+		resource := storageClientResponse.KubeResources[idx]
 		typeMeta := &metav1.TypeMeta{}
-		if err := json.Unmarshal(kubeResource, typeMeta); err != nil {
+		if err := json.Unmarshal(resource, typeMeta); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to unmarshal the type for the Object: %w", err)
 		}
-
-		// Create the received resources, if necessary.
-		switch typeMeta.GroupVersionKind() {
-		case quotav1.SchemeGroupVersion.WithKind("ClusterResourceQuota"):
-			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource, false)
-		case csiopv1a1.GroupVersion.WithKind("CephConnection"):
-			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource, false)
-		case csiopv1a1.GroupVersion.WithKind("ClientProfileMapping"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource, false)
-		case corev1.SchemeGroupVersion.WithKind("Secret"):
-			err = r.reconcileResource(&corev1.Secret{}, kubeResource, false)
-		case nbv1.SchemeGroupVersion.WithKind("Noobaa"):
-			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource, false)
-		case storagev1.SchemeGroupVersion.WithKind("StorageClass"):
-			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource, true)
-		case snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"):
-			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource, true)
-		case groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
-			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
-				continue
-			}
-			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource, true)
-		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
-			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource, true)
-		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource, false)
+		resourceMapping[typeMeta.GroupVersionKind()] = append(resourceMapping[typeMeta.GroupVersionKind()], resource)
+	}
+	if err := r.reconcileKuberesource(
+		quotav1.SchemeGroupVersion.WithKind("ClusterResourceQuota"),
+		&quotav1.ClusterResourceQuota{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "ClusterResourceQuota", err)
+	}
+	if err := r.reconcileKuberesource(
+		csiopv1a1.GroupVersion.WithKind("CephConnection"),
+		&csiopv1a1.CephConnection{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "CephConnection", err)
+	}
+	if err := r.reconcileKuberesource(
+		csiopv1a1.GroupVersion.WithKind("ClientProfileMapping"),
+		&csiopv1a1.ClientProfileMapping{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "ClientProfileMapping", err)
+	}
+	if err := r.reconcileKuberesource(
+		corev1.SchemeGroupVersion.WithKind("Secret"),
+		&corev1.Secret{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "Secret", err)
+	}
+	if err := r.reconcileKuberesource(
+		nbv1.SchemeGroupVersion.WithKind("NooBaa"),
+		&nbv1.NooBaa{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "Noobaa", err)
+	}
+	if err := r.reconcileKuberesource(
+		storagev1.SchemeGroupVersion.WithKind("StorageClass"),
+		&storagev1.StorageClass{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "StorageClass", err)
+	}
+	if err := r.reconcileKuberesource(
+		snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"),
+		&snapapi.VolumeSnapshotClass{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "VolumeSnapshotClass", err)
+	}
+	if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); val.(bool) {
+		if err := r.reconcileKuberesource(
+			groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"),
+			&groupsnapapi.VolumeGroupSnapshotClass{},
+			resourceMapping); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "VolumeGroupSnapshotClass", err)
 		}
-		if err != nil {
-			return reconcile.Result{}, err
-		}
+	}
+	if err := r.reconcileKuberesource(
+		replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"),
+		&replicationv1a1.VolumeReplicationClass{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "VolumeReplicationClass", err)
+	}
+	if err := r.reconcileKuberesource(
+		csiopv1a1.GroupVersion.WithKind("ClientProfile"),
+		&csiopv1a1.ClientProfile{},
+		resourceMapping,
+	); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile %s: %v", "ClientProfile", err)
 	}
 
 	update := false
@@ -653,7 +700,7 @@ func (r *storageClientReconcile) update(obj client.Object, opts ...client.Update
 }
 
 func (r *storageClientReconcile) own(dependent metav1.Object) error {
-	return controllerutil.SetOwnerReference(&r.storageClient, dependent, r.Scheme)
+	return controllerutil.SetControllerReference(&r.storageClient, dependent, r.Scheme)
 }
 
 func removeStorageClaimAsOwner(obj client.Object) {
@@ -663,6 +710,36 @@ func removeStorageClaimAsOwner(obj client.Object) {
 	}); idx != -1 {
 		obj.SetOwnerReferences(slices.Delete(refs, idx, idx+1))
 	}
+}
+
+func (r *storageClientReconcile) reconcileKuberesource(
+	gvk schema.GroupVersionKind,
+	obj client.Object,
+	resourceMapping gvkToKuberesources,
+) error {
+	resources := resourceMapping[gvk]
+	retainKeys := make(map[types.NamespacedName]bool, len(resources))
+	for idx := range resources {
+		if err := r.reconcileResource(obj, resources[idx], true); err != nil {
+			return err
+		}
+		retainKeys[client.ObjectKeyFromObject(obj)] = true
+	}
+	existingObjList := &metav1.PartialObjectMetadataList{}
+	existingObjList.SetGroupVersionKind(gvk)
+	if err := r.list(existingObjList); err != nil {
+		return err
+	}
+	var combinedErr error
+	for idx := range existingObjList.Items {
+		obj := &existingObjList.Items[idx]
+		if metav1.IsControlledBy(obj, &r.storageClient) && !retainKeys[client.ObjectKeyFromObject(obj)] {
+			if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
+				multierr.AppendInto(&combinedErr, err)
+			}
+		}
+	}
+	return combinedErr
 }
 
 func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte, useReplace bool) error {
