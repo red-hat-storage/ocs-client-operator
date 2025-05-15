@@ -447,8 +447,17 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		}
 	}
 
+	statusReporterJob := &batchv1.CronJob{}
+	statusReporterJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", utils.GetMD5Hash(r.storageClient.Name)[:16])
+	statusReporterJob.Namespace = r.OperatorNamespace
+	r.log.Info("deleting status reporter job", "StatusReporter", statusReporterJob.Name)
+	if err := r.Client.Delete(r.ctx, statusReporterJob); client.IgnoreNotFound(err) != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to delete status reporter job for StorageClient %q: %v", r.storageClient.Name, err)
+	}
+
 	if res, err := r.offboardConsumer(externalClusterClient); err != nil {
 		r.log.Error(err, "Offboarding in progress.")
+		return reconcile.Result{}, err
 	} else if !res.IsZero() {
 		// result is not empty
 		return res, nil
