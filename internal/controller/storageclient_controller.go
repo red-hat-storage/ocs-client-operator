@@ -389,6 +389,11 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource, false)
 		case storagev1.SchemeGroupVersion.WithKind("StorageClass"):
 			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource, true)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+			// update topology labels if replica-1 storageclass is created
+			err = r.updateTopologyLabels(kubeResource)
 		case snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"):
 			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource, true)
 		case groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
@@ -420,6 +425,100 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func (r *storageClientReconcile) updateTopologyLabels(storageClass []byte) error {
+	storageClassObj := &storagev1.StorageClass{}
+	if err := json.Unmarshal(storageClass, storageClassObj); err != nil {
+		return fmt.Errorf("failed to unmarshal the type for the Object: %w", err)
+	}
+
+	if storageClassObj.Parameters != nil {
+		if storageClassObj.Parameters["topologyConstrainedPools"] != "" {
+			// update the rbd driver spec with topology labels
+			topologyLabel, err := getTopologyLabel(storageClassObj.Parameters["topologyConstrainedPools"])
+			if err != nil {
+				return fmt.Errorf("failed to get topology label: %w", err)
+			}
+
+			// update the csi driver spec with topology labels
+			err = r.updateCsiDriverTopologySpec(topologyLabel)
+			if err != nil {
+				return fmt.Errorf("failed to update csi driver topology spec: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+type DomainSegment struct {
+	DomainLabel string `json:"domainLabel"`
+	Value       string `json:"value"`
+}
+
+type Pool struct {
+	PoolName       string          `json:"poolName"`
+	DomainSegments []DomainSegment `json:"domainSegments"`
+}
+
+func getTopologyLabel(topologyConstrainedPools string) (string, error) {
+	var pools []Pool
+	failureDomain := ""
+	// Unmarshal the string into the slice of Pool
+	err := json.Unmarshal([]byte(topologyConstrainedPools), &pools)
+	if err != nil {
+		return "", fmt.Errorf("failed to unmarshal topologyConstrainedPools: %w", err)
+	}
+
+	if len(pools) != 0 {
+		if len(pools[0].DomainSegments) != 0 {
+			failureDomain = pools[0].DomainSegments[0].DomainLabel
+		}
+	}
+
+	if failureDomain == "zone" {
+		return "topology.kubernetes.io/zone", nil
+	} else if failureDomain == "rack" {
+		return "topology.rook.io/rack", nil
+	} else if failureDomain == "hostname" || failureDomain == "host" {
+		return "kubernetes.io/hostname", nil
+	}
+
+	return "", fmt.Errorf("failed to get topology label")
+}
+
+func (r *storageClientReconcile) updateCsiDriverTopologySpec(topologyLabel string) error {
+	// update the topology labels in the csi driver spec
+	rbdDriver := &csiopv1a1.Driver{}
+	rbdDriver.Name = templates.RBDDriverName
+	rbdDriver.Namespace = r.OperatorNamespace
+
+	mutateFn := func() error {
+		if err := r.get(rbdDriver); err != nil {
+			r.log.Error(err, "Failed to get rbd driver")
+		}
+		if rbdDriver.Spec.NodePlugin == nil {
+			rbdDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+				Topology: &csiopv1a1.TopologySpec{
+					DomainLabels: []string{topologyLabel},
+				},
+			}
+		} else {
+			rbdDriver.Spec.NodePlugin.Topology = &csiopv1a1.TopologySpec{
+				DomainLabels: []string{topologyLabel},
+			}
+		}
+
+		return nil
+	}
+
+	result, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, rbdDriver, mutateFn)
+	if err != nil {
+		return err
+	}
+
+	r.log.Info("rbd driver updated", "result", result, "rbdDriver", rbdDriver.Name)
+	return nil
 }
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
