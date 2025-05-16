@@ -30,6 +30,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
 	github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3
+	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
 	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20250616153327-dc1da2c8e1b7
 	github.com/stretchr/testify v1.9.0

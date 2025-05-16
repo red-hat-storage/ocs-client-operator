@@ -45,6 +45,7 @@ import (
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -89,6 +90,7 @@ func init() {
 	utilruntime.Must(ramenv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(replicationv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(groupsnapapi.AddToScheme(scheme))
+	utilruntime.Must(odfgsapiv1b1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
