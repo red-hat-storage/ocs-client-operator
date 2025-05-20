@@ -407,8 +407,10 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	update := false
-	if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
-		update = true
+	if storageClientResponse.ClientOperatorChannel != "" {
+		if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
+			update = true
+		}
 	}
 	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredStateHash) {
 		update = true
