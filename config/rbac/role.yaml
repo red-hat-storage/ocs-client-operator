@@ -182,6 +182,7 @@ rules:
   - delete
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
@@ -302,6 +303,7 @@ rules:
   - delete
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - security.openshift.io
@@ -324,6 +326,7 @@ rules:
   - delete
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - snapshot.storage.k8s.io
@@ -342,4 +345,5 @@ rules:
   - delete
   - get
   - list
+  - update
   - watch

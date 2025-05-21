@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2025-05-14T08:12:57Z"
+    createdAt: "2025-05-21T08:44:12Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -219,6 +219,7 @@ spec:
           - delete
           - get
           - list
+          - update
           - watch
         - apiGroups:
           - groupsnapshot.storage.k8s.io
@@ -339,6 +340,7 @@ spec:
           - delete
           - get
           - list
+          - update
           - watch
         - apiGroups:
           - security.openshift.io
@@ -361,6 +363,7 @@ spec:
           - delete
           - get
           - list
+          - update
           - watch
         - apiGroups:
           - snapshot.storage.k8s.io
@@ -379,6 +382,7 @@ spec:
           - delete
           - get
           - list
+          - update
           - watch
         - apiGroups:
           - authentication.k8s.io
