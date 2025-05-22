@@ -95,6 +95,11 @@ func main() {
 		klog.Exitf("Failed to get storageClient %q/%q: %v", storageClient.Namespace, storageClient.Name, err)
 	}
 
+	if !storageClient.GetDeletionTimestamp().IsZero() {
+		klog.Infof("Skipping report, StorageClient %q is being deleted", storageClient.Name)
+		os.Exit(0)
+	}
+
 	providerClient, err := providerclient.NewProviderClient(
 		ctx,
 		storageClient.Spec.StorageProviderEndpoint,
