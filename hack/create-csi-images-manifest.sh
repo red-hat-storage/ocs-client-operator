@@ -28,6 +28,8 @@ for version in ${CSI_OCP_VERSIONS}; do
   addons="CSI_IMG_ADDONS_${VER}"
   ADDONS=${!addons:-${CSI_IMG_ADDONS}}
 
+  odfsnapshotter="CSI_IMG_ODF_SNAPSHOTTER_${VER}"
+  ODFSNAPSHOTTER=${!odfsnapshotter:-${CSI_IMG_ODF_SNAPSHOTTER}}
   echo "\
 ---
 apiVersion: v1
@@ -44,6 +46,7 @@ data:
   registrar: "$REGISTRAR"
   plugin: "$PLUGIN"
   addons: "$ADDONS"
+  ex-snapshotter: "$ODFSNAPSHOTTER"
 " > $OUT_FILE
 
 done
