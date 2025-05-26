@@ -13,4 +13,5 @@ data:
   registrar: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
   plugin: quay.io/cephcsi/cephcsi:v3.10.2
   addons: quay.io/csiaddons/k8s-sidecar:v0.8.0
+  ex-snapshotter: quay.io/ocs-dev/csi-snapshotter:latest
 
