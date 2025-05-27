@@ -77,6 +77,7 @@ const CSIOperatorConfigName = "ceph-csi-operator-config"
 
 var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 	DriverSpecDefaults: &csiopv1a1.DriverSpec{
+		EnableMetadata: ptr.To(true),
 		Log: &csiopv1a1.LogSpec{
 			Verbosity: 5,
 			Rotation: &csiopv1a1.LogRotationSpec{
