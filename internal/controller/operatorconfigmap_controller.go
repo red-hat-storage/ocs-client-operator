@@ -193,6 +193,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=installplans,verbs=get;list;patch
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
@@ -250,31 +251,13 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		if err := c.reconcileClientOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile client operator subscription")
+		if err := c.reconcileSubscriptionLabelForWebhook(); err != nil {
+			c.log.Error(err, "unable to reconcile subscription label")
 			return ctrl.Result{}, err
 		}
 
-		//only reconcile noobaa-operator for remote clusters
-		if c.getNoobaaSubManagementConfig() {
-			if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
-				c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
-				return ctrl.Result{}, err
-			}
-		}
-
-		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile CSI Addons subscription")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.reconcileCephCSIOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile Ceph CSI Operator subscription")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.reconcileRecipeOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile Recipe Operator subscription")
+		if err := c.reconcileSubscriptions(); err != nil {
+			c.log.Error(err, "unable to reconcile subscriptions")
 			return ctrl.Result{}, err
 		}
 
@@ -673,95 +656,6 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() error {
-
-	clientSubscription, err := c.getSubscriptionByPackageName("ocs-client-operator")
-	if err != nil {
-		return err
-	}
-
-	updateRequired := utils.AddLabel(clientSubscription, subscriptionLabelKey, subscriptionLabelValue)
-	if c.subscriptionChannel != "" && c.subscriptionChannel != clientSubscription.Spec.Channel {
-		clientSubscription.Spec.Channel = c.subscriptionChannel
-		// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
-		// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
-		// without any side effects for already running workloads. However, this will be a silent failure and need to be fixed via above TODO issue.
-		updateRequired = true
-	}
-
-	if updateRequired {
-		if err := c.update(clientSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileNoobaaOperatorSubscription() error {
-	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
-	if kerrors.IsNotFound(err) {
-		noobaaSubscription, err = c.getSubscriptionByPackageName("noobaa-operator")
-	}
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != noobaaSubscription.Spec.Channel {
-		noobaaSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(noobaaSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'mcg-operator' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() error {
-	addonsSubscription, err := c.getSubscriptionByPackageName("odf-csi-addons-operator")
-	if kerrors.IsNotFound(err) {
-		addonsSubscription, err = c.getSubscriptionByPackageName("csi-addons")
-	}
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != addonsSubscription.Spec.Channel {
-		addonsSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(addonsSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'odf-csi-addons-operator' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileCephCSIOperatorSubscription() error {
-	cephCsiOperatorSubscription, err := c.getSubscriptionByPackageName("cephcsi-operator")
-	if kerrors.IsNotFound(err) {
-		cephCsiOperatorSubscription, err = c.getSubscriptionByPackageName("ceph-csi-operator")
-	}
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != cephCsiOperatorSubscription.Spec.Channel {
-		cephCsiOperatorSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(cephCsiOperatorSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'cephcsi-operator' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() error {
-	recipeOperatorSubscription, err := c.getSubscriptionByPackageName("recipe")
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != recipeOperatorSubscription.Spec.Channel {
-		recipeOperatorSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(recipeOperatorSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'recipe' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
 func (c *OperatorConfigMapReconciler) reconcileWebhookService() error {
 	svc := &corev1.Service{}
 	svc.Name = templates.WebhookServiceName
@@ -887,6 +781,82 @@ func (c *OperatorConfigMapReconciler) deleteDelegatedCSI() error {
 	scc.Name = templates.SCCName
 	if err := c.delete(scc); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileSubscriptionLabelForWebhook() error {
+	sub, err := c.getSubscriptionByPackageName("ocs-client-operator")
+	if err != nil {
+		return err
+	}
+	if utils.AddLabel(sub, subscriptionLabelKey, subscriptionLabelValue) {
+		if err := c.update(sub); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileSubscriptions() error {
+	pkgNames := [][2]string{
+		// d/s and u/s names of packages for fallback
+		{"ocs-client-operator", ""},
+		{"odf-csi-addons-operator", "csi-addons"},
+		{"cephcsi-operator", "ceph-csi-operator"},
+		{"recipe", ""},
+	}
+	if c.getNoobaaSubManagementConfig() {
+		pkgNames = append(pkgNames, [2]string{"mcg-operator", "noobaa-operator"})
+	}
+	installPlansForApproval := map[string]struct{}{}
+	subsMissingInstallPlans := false
+	for _, pkgName := range pkgNames {
+		sub, err := c.getSubscriptionByPackageName(pkgName[0])
+		if pkgName[1] != "" && kerrors.IsNotFound(err) {
+			sub, err = c.getSubscriptionByPackageName(pkgName[1])
+		}
+		if err != nil {
+			return err
+		}
+		if c.subscriptionChannel != "" && c.subscriptionChannel != sub.Spec.Channel {
+			sub.Spec.Channel = c.subscriptionChannel
+			if err := c.update(sub); err != nil {
+				return fmt.Errorf("failed to update subscription channel of %s to %v: %v", sub.Name, c.subscriptionChannel, err)
+			}
+		}
+		if sub.Spec.InstallPlanApproval == opv1a1.ApprovalManual && sub.Status.CurrentCSV != sub.Status.InstalledCSV {
+			ipRef := sub.Status.InstallPlanRef
+			if ipRef != nil {
+				installPlansForApproval[ipRef.Name] = struct{}{}
+			} else {
+				subsMissingInstallPlans = true
+				c.log.Info("installplan is not found in subscription %s status", sub.Name)
+			}
+		}
+	}
+
+	approvePatch := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"approved":true}}`))
+	for ipName := range installPlansForApproval {
+		installPlan := &opv1a1.InstallPlan{}
+		installPlan.Name = ipName
+		installPlan.Namespace = c.OperatorNamespace
+		if err := c.get(installPlan); client.IgnoreNotFound(err) != nil {
+			return err
+		} else if installPlan.UID == "" {
+			// if installplan is not found but mentioned in subscription then it's deleted and
+			// we can't do anything in that scenario
+			c.log.Info("Warning! installplan %s not found, probably deleted", installPlan.Name)
+			continue
+		}
+
+		if err := c.Patch(c.ctx, installPlan, approvePatch); err != nil {
+			return err
+		}
+	}
+	if subsMissingInstallPlans {
+		// requeue for OLM to update installplan in the subscriptions
+		return fmt.Errorf("one or more subscriptions are missing installplan")
 	}
 	return nil
 }
