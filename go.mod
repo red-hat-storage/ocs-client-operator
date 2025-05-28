@@ -5,6 +5,7 @@ go 1.23.0
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
 	github.com/red-hat-storage/ocs-client-operator/api => ./api
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 => github.com/leelavg/ocs-operator/services/provider/api/v4 v4.0.0-20250528051122-0c89f68ddf01
 	k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
 )
@@ -111,7 +112,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/net v0.37.0 // indirect
