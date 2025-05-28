@@ -196,6 +196,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=corev1,resources=nodes,verbs=list;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -398,6 +399,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("unable to find the updated cluster version")
 	}
 
+	// domain labels
+	domainLabels := c.getDomainLabels()
+
 	// csi operator config
 	cmName, err := c.getImageSetConfigMapName(historyRecord.Version)
 	if err != nil {
@@ -413,6 +417,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		csiOperatorConfig.Spec.DriverSpecDefaults.NodePlugin.Topology = &csiopv1a1.TopologySpec{
+			DomainLabels: domainLabels,
+		}
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
 		}
@@ -467,6 +474,32 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 	}
 
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) getDomainLabels() []string {
+	topologyLabels := []string{
+		"kubernetes.io/hostname",
+		"topology.kubernetes.io/zone",
+		"topology.rook.io/rack",
+	}
+
+	// list node labels
+	nodes := &corev1.NodeList{}
+	err := c.List(c.ctx, nodes)
+	if err != nil {
+		c.log.Error(err, "failed to list nodes labels")
+	}
+
+	actualTopologyLabels := []string{}
+	for _, node := range nodes.Items {
+		for _, label := range topologyLabels {
+			if node.GetLabels()[label] != "" {
+				actualTopologyLabels = append(actualTopologyLabels, label)
+			}
+		}
+	}
+
+	return actualTopologyLabels
 }
 
 func (c *OperatorConfigMapReconciler) deletionPhase() error {
