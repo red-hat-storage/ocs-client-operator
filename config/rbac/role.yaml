@@ -24,6 +24,13 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - nodes
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create

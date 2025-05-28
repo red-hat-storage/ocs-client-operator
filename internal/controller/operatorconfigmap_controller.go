@@ -40,6 +40,7 @@ import (
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -176,6 +177,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
+		Watches(&corev1.Node{}, enqueueConfigMapRequest, builder.OnlyMetadata, builder.WithPredicates(predicate.LabelChangedPredicate{})).
 		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
 
 	return bldr.Complete(c)
@@ -196,6 +198,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=list;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -398,6 +401,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("unable to find the updated cluster version")
 	}
 
+	// domain labels
+	domainLabels, err := c.getDomainLabels()
+	if err != nil {
+		return fmt.Errorf("failed to get domain labels: %v", err)
+	}
+
 	// csi operator config
 	cmName, err := c.getImageSetConfigMapName(historyRecord.Version)
 	if err != nil {
@@ -413,6 +422,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		csiOperatorConfig.Spec.DriverSpecDefaults.NodePlugin.Topology = &csiopv1a1.TopologySpec{
+			DomainLabels: domainLabels,
+		}
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
 		}
@@ -467,6 +479,45 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 	}
 
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) getDomainLabels() ([]string, error) {
+	topologyLabels := []string{
+		"kubernetes.io/hostname",
+		"topology.kubernetes.io/zone",
+		"topology.rook.io/rack",
+	}
+	actualTopologyLabels := []string{}
+
+	// list node labels
+	nodes := &metav1.PartialObjectMetadataList{}
+	nodes.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("NodeList"))
+	labelSelector := &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{"node-role.kubernetes.io/worker": ""}),
+	}
+	if err := c.List(c.ctx, nodes, labelSelector); err != nil {
+		c.log.Error(err, "failed to list nodes labels")
+		return actualTopologyLabels, err
+	}
+
+	topologyLabelsCount := map[string]int{}
+	for _, nodes := range nodes.Items {
+		for _, label := range topologyLabels {
+			if nodes.GetLabels()[label] != "" {
+				topologyLabelsCount[label]++
+			}
+		}
+	}
+
+	for _, label := range topologyLabels {
+		if (topologyLabelsCount[label] == nodes.Size()) && (topologyLabelsCount[label] > 0) {
+			actualTopologyLabels = append(actualTopologyLabels, label)
+		} else {
+			c.log.Info("Skipping topology label", "label", label, "count", topologyLabelsCount[label], "storageNodeLabelCount", nodes.Size())
+		}
+	}
+
+	return actualTopologyLabels, nil
 }
 
 func (c *OperatorConfigMapReconciler) deletionPhase() error {
