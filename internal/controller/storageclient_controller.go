@@ -213,6 +213,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;delete;patch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -421,7 +422,38 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	// Deleting pre 4.19 built-in storage claims
+	if err = r.deleteStorageClaims(fmt.Sprintf("%s-ceph-rbd", r.storageClient.Name)); err != nil {
+		return reconcile.Result{}, err
+	}
+	if err = r.deleteStorageClaims(fmt.Sprintf("%s-cephfs", r.storageClient.Name)); err != nil {
+		return reconcile.Result{}, err
+	}
 	return reconcile.Result{}, nil
+}
+
+func (r *storageClientReconcile) deleteStorageClaims(claimName string) error {
+	storageClaim := &metav1.PartialObjectMetadata{}
+	storageClaim.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("StorageClaim"))
+	storageClaim.Name = claimName
+
+	if err := r.Client.Get(r.ctx, types.NamespacedName{Name: claimName}, storageClaim); client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("Failed to get StorageClaim %q: %w", claimName, err)
+	}
+	if storageClaim.UID != "" {
+		if err := r.Client.Delete(r.ctx, storageClaim); err != nil {
+			return fmt.Errorf("Failed to delete StorageClaim %q: %v", claimName, err)
+		}
+
+		original := storageClaim.DeepCopy()
+		if controllerutil.RemoveFinalizer(storageClaim, "storageclaim.ocs.openshift.io") {
+			if err := r.Client.Patch(r.ctx, storageClaim, client.MergeFrom(original)); err != nil {
+				return fmt.Errorf("Failed to patch StorageClaim %q: %v", claimName, err)
+			}
+			r.log.Info("StorageClaim finalizer removed", "name", claimName)
+		}
+	}
+	return nil
 }
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
