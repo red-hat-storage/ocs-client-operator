@@ -46,6 +46,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -213,6 +214,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;delete;update;patch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -421,7 +423,49 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	//Once the owner references are removed from resources, StorageClaim is deleted
+	if err = r.deleteStorageClaims(); err != nil {
+		return reconcile.Result{}, err
+	}
 	return reconcile.Result{}, nil
+}
+
+func (r *storageClientReconcile) deleteStorageClaims() error {
+	storageClaimFinalizer := "storageclaim.ocs.openshift.io"
+	expectedStorageClaimNames := []string{
+		fmt.Sprintf("%s-ceph-rbd", r.storageClient.Name),
+		fmt.Sprintf("%s-cephfs", r.storageClient.Name),
+	}
+
+	for _, claimName := range expectedStorageClaimNames {
+		storageClaim := &metav1.PartialObjectMetadata{}
+		storageClaim.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "ocs.openshift.io",
+			Version: "v1alpha1",
+			Kind:    "StorageClaim",
+		})
+		storageClaim.Name = claimName
+
+		if err := r.Client.Get(r.ctx, types.NamespacedName{Name: claimName}, storageClaim); err != nil {
+			if kerrors.IsNotFound(err) {
+				r.log.Info("StorageClaim already deleted", "name", claimName)
+				continue
+			}
+			return fmt.Errorf("failed to get StorageClaim %q: %w", claimName, err)
+		}
+
+		if err := r.Client.Delete(r.ctx, storageClaim); err != nil && !kerrors.IsNotFound(err) {
+			return fmt.Errorf("Failed to delete StorageClaim %q: %v", claimName, err)
+		}
+
+		original := storageClaim.DeepCopy()
+		if controllerutil.RemoveFinalizer(storageClaim, storageClaimFinalizer) {
+			if err := r.Client.Patch(r.ctx, storageClaim, client.MergeFrom(original)); err != nil && !kerrors.IsNotFound(err) {
+				return fmt.Errorf("Failed to patch StorageClaim %q: %v", claimName, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
