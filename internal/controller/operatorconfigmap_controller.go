@@ -74,6 +74,7 @@ const (
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
 	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version"
+	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -423,6 +424,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
 	}
 
+	storageClients := v1alpha1.StorageClientList{}
+	if err := c.list(&storageClients); err != nil {
+		return fmt.Errorf("failed to get storage clients: %v", err)
+	}
+	cniNetworkAnnotationValue, cniNetworkAnnotationExists := storageClients.Items[0].GetAnnotations()[cniNetworksAnnotationKey]
+
 	// ceph rbd driver config
 	rbdDriver := &csiopv1a1.Driver{}
 	rbdDriver.Name = templates.RBDDriverName
@@ -433,6 +440,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
 		}
 		rbdDriver.Spec.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
+		if cniNetworkAnnotationExists {
+			rbdDriver.Spec = csiopv1a1.DriverSpec{}
+			rbdDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{}
+			rbdDriver.Spec.ControllerPlugin.Annotations = make(map[string]string)
+			rbdDriver.Spec.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -447,6 +460,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		if err := c.own(cephFsDriver); err != nil {
 			return fmt.Errorf("failed to own csi cephfs driver: %v", err)
 		}
+		if cniNetworkAnnotationExists {
+			cephFsDriver.Spec = csiopv1a1.DriverSpec{}
+			cephFsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{}
+			cephFsDriver.Spec.ControllerPlugin.Annotations = make(map[string]string)
+			cephFsDriver.Spec.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
@@ -460,6 +479,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 	if err := c.createOrUpdate(nfsDriver, func() error {
 		if err := c.own(nfsDriver); err != nil {
 			return fmt.Errorf("failed to own csi nfs driver: %v", err)
+		}
+		if cniNetworkAnnotationExists {
+			nfsDriver.Spec = csiopv1a1.DriverSpec{}
+			nfsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{}
+			nfsDriver.Spec.ControllerPlugin.Annotations = make(map[string]string)
+			nfsDriver.Spec.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
 		}
 		return nil
 	}); err != nil {
