@@ -64,7 +64,6 @@ spec:
         - name: ocs-client-operator-console-nginx-conf
           configMap:
             name: ocs-client-operator-console-nginx-conf
-            optional: true
         - name: ocs-client-operator-console-nginx-log
           emptyDir: {}
         - name: ocs-client-operator-console-nginx-tmp
