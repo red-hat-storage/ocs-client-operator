@@ -207,6 +207,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete;update
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete;update
@@ -398,6 +399,8 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource)
 		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
 			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource)
+		case replicationv1a1.GroupVersion.WithKind("VolumeGroupReplicationClass"):
+			err = r.reconcileResource(&replicationv1a1.VolumeGroupReplicationClass{}, kubeResource)
 		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
 			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource)
 		}
