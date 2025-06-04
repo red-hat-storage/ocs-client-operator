@@ -217,10 +217,11 @@ rules:
   - ocs.openshift.io
   resources:
   - storageclaims
-  - storageclients
   verbs:
+  - delete
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - ocs.openshift.io
