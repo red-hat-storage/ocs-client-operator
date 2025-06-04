@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
+
 	"github.com/go-logr/logr"
 	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -19,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"slices"
 )
 
 const (
@@ -65,7 +66,7 @@ func (r *MaintenanceModeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=maintenancemodes,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=maintenancemodes/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients;storageclaims,verbs=get;list;watch
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch
 
 func (r *MaintenanceModeReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	r.ctx = ctx
