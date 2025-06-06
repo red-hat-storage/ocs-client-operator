@@ -278,6 +278,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
+		if err := c.reconcileODFSnapshotterSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile ODF External Snapshotter Operator subscription")
+			return ctrl.Result{}, err
+		}
+
 		if err := c.ensureConsolePlugin(); err != nil {
 			c.log.Error(err, "unable to deploy client console")
 			return ctrl.Result{}, err
@@ -757,6 +762,20 @@ func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() erro
 		recipeOperatorSubscription.Spec.Channel = c.subscriptionChannel
 		if err := c.update(recipeOperatorSubscription); err != nil {
 			return fmt.Errorf("failed to update subscription channel of 'recipe' to %v: %v", c.subscriptionChannel, err)
+		}
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileODFSnapshotterSubscription() error {
+	odfSnapshotterSubscription, err := c.getSubscriptionByPackageName("odf-snapshot-controller")
+	if err != nil {
+		return err
+	}
+	if c.subscriptionChannel != "" && c.subscriptionChannel != odfSnapshotterSubscription.Spec.Channel {
+		odfSnapshotterSubscription.Spec.Channel = c.subscriptionChannel
+		if err := c.update(odfSnapshotterSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel of 'odf-snapshot-controller' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
 	return nil
