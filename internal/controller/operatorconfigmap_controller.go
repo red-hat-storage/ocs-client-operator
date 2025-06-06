@@ -413,7 +413,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
-		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
+		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] || c.AvailableCrds[OdfVolumeGroupSnapshotClassCrdName] {
 			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
 		}
 		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])

@@ -37,6 +37,7 @@ import (
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	odfgroupsnapapi "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -70,12 +71,14 @@ const (
 	storageClientDefaultAnnotationKey = "ocs.openshift.io/storageclient.default"
 
 	// indexes for caching
-	ownerUIDIndexName      = "index:ownerUID"
-	pvClusterIDIndexName   = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName  = "index:volumeSnapshotContentCSIDriver"
-	vgscClusterIDIndexName = "index:volumeGroupSnapshotContentCSIDriver"
+	ownerUIDIndexName         = "index:ownerUID"
+	pvClusterIDIndexName      = "index:persistentVolumeClusterID"
+	vscClusterIDIndexName     = "index:volumeSnapshotContentCSIDriver"
+	vgscClusterIDIndexName    = "index:volumeGroupSnapshotContentCSIDriver"
+	odfvgscClusterIDIndexName = "index:odfVolumeGroupSnapshotContentCSIDriver"
 
-	VolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
+	VolumeGroupSnapshotClassCrdName    = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
+	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
 )
 
 var (
@@ -191,6 +194,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.controller = controller
 	r.cache = mgr.GetCache()
 	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
+	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, false)
 
 	return err
 }
@@ -213,6 +217,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;
+//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;delete;patch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -254,17 +260,28 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *storageClientReconcile) reconcileDynamicWatches() error {
-	if watchExists, foundCrd := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
+	err := r.reconcileForVolumeGroupSnapshot(VolumeGroupSnapshotClassCrdName, vgscClusterIDIndexName, &groupsnapapi.VolumeGroupSnapshotContent{})
+	if err != nil {
+		return err
+	}
+	err = r.reconcileForVolumeGroupSnapshot(OdfVolumeGroupSnapshotClassCrdName, odfvgscClusterIDIndexName, &odfgroupsnapapi.VolumeGroupSnapshotContent{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *storageClientReconcile) reconcileForVolumeGroupSnapshot(crdName, indexName string, obj client.Object) error {
+	if watchExists, foundCrd := r.crdsBeingWatched.Load(crdName); foundCrd && watchExists.(bool) {
 		return nil
 	}
 
 	crd := &metav1.PartialObjectMetadata{}
 	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
-	crd.Name = VolumeGroupSnapshotClassCrdName
+	crd.Name = crdName
 	if err := r.get(crd); client.IgnoreNotFound(err) != nil {
 		return err
 	}
-	// CRD doesn't exist in the cluster
 	if crd.UID == "" {
 		return nil
 	}
@@ -273,7 +290,7 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 	if err := r.controller.Watch(
 		source.Kind(
 			r.cache,
-			client.Object(&groupsnapapi.VolumeGroupSnapshotContent{}),
+			client.Object(obj),
 			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []ctrl.Request {
 				owner := metav1.GetControllerOf(o)
 				if owner != nil &&
@@ -289,23 +306,37 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 	}
 
 	// add an index
-	if err := r.cache.IndexField(r.ctx, &groupsnapapi.VolumeGroupSnapshotContent{}, vgscClusterIDIndexName, func(o client.Object) []string {
-		vgsc := o.(*groupsnapapi.VolumeGroupSnapshotContent)
-		if vgsc != nil &&
-			slices.Contains(csiDrivers, vgsc.Spec.Driver) &&
-			vgsc.Status != nil &&
-			vgsc.Status.VolumeGroupSnapshotHandle != nil {
-			parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
-			if len(parts) == 9 {
-				// second entry in the volumeID is clusterID which is unique across the cluster
-				return []string{parts[2]}
+	if err := r.cache.IndexField(r.ctx, obj, indexName, func(o client.Object) []string {
+		if crd.Name == VolumeGroupSnapshotClassCrdName {
+			vgsc := o.(*groupsnapapi.VolumeGroupSnapshotContent)
+			if vgsc != nil &&
+				slices.Contains(csiDrivers, vgsc.Spec.Driver) &&
+				vgsc.Status != nil &&
+				vgsc.Status.VolumeGroupSnapshotHandle != nil {
+				parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
+				if len(parts) == 9 {
+					// second entry in the volumeID is clusterID which is unique across the cluster
+					return []string{parts[2]}
+				}
+			}
+		} else {
+			vgsc := o.(*odfgroupsnapapi.VolumeGroupSnapshotContent)
+			if vgsc != nil &&
+				slices.Contains(csiDrivers, vgsc.Spec.Driver) &&
+				vgsc.Status != nil &&
+				vgsc.Status.VolumeGroupSnapshotHandle != nil {
+				parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
+				if len(parts) == 9 {
+					// second entry in the volumeID is clusterID which is unique across the cluster
+					return []string{parts[2]}
+				}
 			}
 		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for VGSC csi driver name: %v", err)
 	}
-	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, true)
+	r.crdsBeingWatched.Store(crdName, true)
 	return nil
 }
 
@@ -397,6 +428,11 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 				continue
 			}
 			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource)
+		case odfgroupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
+			if val, _ := r.crdsBeingWatched.Load(OdfVolumeGroupSnapshotClassCrdName); !val.(bool) {
+				continue
+			}
+			err = r.reconcileResource(&odfgroupsnapapi.VolumeGroupSnapshotClass{}, kubeResource)
 		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
 			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource)
 		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
@@ -474,10 +510,15 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
-		if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
+		if exist, err := r.hasVolumeGroupSnapshotContents(names, VolumeGroupSnapshotClassCrdName); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		}
+		if exist, err := r.hasVolumeGroupSnapshotContents(names, OdfVolumeGroupSnapshotClassCrdName); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify odf-volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more odf-volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
 	}
 
@@ -641,19 +682,33 @@ func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []
 	return false, nil
 }
 
-func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNames []string) (bool, error) {
-	if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
+func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNames []string, crdName string) (bool, error) {
+	if val, _ := r.crdsBeingWatched.Load(crdName); !val.(bool) {
 		return false, nil
 	}
-	for _, name := range clientProfileNames {
-		vscList := &groupsnapapi.VolumeGroupSnapshotContentList{}
-		if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: name}); err != nil {
-			return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
+	if crdName == VolumeGroupSnapshotClassCrdName {
+		for _, name := range clientProfileNames {
+			vscList := &groupsnapapi.VolumeGroupSnapshotContentList{}
+			if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: name}); err != nil {
+				return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
+			}
+			if len(vscList.Items) != 0 {
+				r.log.Info(fmt.Sprintf("VolumeGroupSnapshotContent referring storageclient %q exists", r.storageClient.Name))
+				return true, nil
+			}
 		}
-		if len(vscList.Items) != 0 {
-			r.log.Info(fmt.Sprintf("VolumeGroupSnapshotContent referring storageclient %q exists", r.storageClient.Name))
-			return true, nil
+	} else {
+		for _, name := range clientProfileNames {
+			vscList := &odfgroupsnapapi.VolumeGroupSnapshotContentList{}
+			if err := r.list(vscList, client.MatchingFields{odfvgscClusterIDIndexName: name}); err != nil {
+				return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
+			}
+			if len(vscList.Items) != 0 {
+				r.log.Info(fmt.Sprintf("VolumeGroupSnapshotContent referring storageclient %q exists", r.storageClient.Name))
+				return true, nil
+			}
 		}
+
 	}
 
 	return false, nil
