@@ -74,6 +74,7 @@ const (
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
 	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version"
+	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -225,8 +226,14 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
+	storageClients := &v1alpha1.StorageClientList{}
+	if err := c.list(storageClients); err != nil {
+		c.log.Error(err, "failed to list StorageClients")
+		return reconcile.Result{}, err
+	}
+
 	var err error
-	if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(); err != nil {
+	if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
 		return reconcile.Result{}, err
 	}
 
@@ -288,7 +295,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		if err := c.reconcileDelegatedCSI(); err != nil {
+		if err := c.reconcileDelegatedCSI(storageClients); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -372,7 +379,7 @@ func (c *OperatorConfigMapReconciler) errorOnRookOwnedCsi() error {
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
+func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1alpha1.StorageClientList) error {
 	// Wait for CSI deployed by rook to be absent as not to race for resources at node level
 	// NOTE: in next minor version this should be removed
 	if err := c.errorOnRookOwnedCsi(); err != nil {
@@ -403,6 +410,16 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 		return fmt.Errorf("unable to find the updated cluster version")
 	}
 
+	cniNetworkAnnotationValue := ""
+	for i := range storageClients.Items {
+		if annotationValue := storageClients.Items[i].GetAnnotations()[cniNetworksAnnotationKey]; annotationValue != "" {
+			if cniNetworkAnnotationValue != "" {
+				return fmt.Errorf("only one client with CNI network annotation value is supported")
+			}
+			cniNetworkAnnotationValue = annotationValue
+		}
+	}
+
 	// csi operator config
 	cmName, err := c.getImageSetConfigMapName(historyRecord.Version)
 	if err != nil {
@@ -416,13 +433,20 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI() error {
 			return fmt.Errorf("failed to own csi operator config: %v", err)
 		}
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
-		csiOperatorConfig.Spec.DriverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
-		csiOperatorConfig.Spec.DriverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
+		driverSpecDefaults := csiOperatorConfig.Spec.DriverSpecDefaults
+		driverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
+		driverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
-			csiOperatorConfig.Spec.DriverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
+			driverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
 		}
 		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])
-		csiOperatorConfig.Spec.DriverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
+		driverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
+		if cniNetworkAnnotationValue != "" {
+			if driverSpecDefaults.ControllerPlugin.Annotations == nil {
+				driverSpecDefaults.ControllerPlugin.Annotations = map[string]string{}
+			}
+			driverSpecDefaults.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
@@ -835,12 +859,7 @@ func (c *OperatorConfigMapReconciler) getSubscriptionByPackageName(pkgName strin
 	return &subList.Items[0], nil
 }
 
-func (c *OperatorConfigMapReconciler) getDesiredSubscriptionChannel() (string, error) {
-
-	storageClients := &v1alpha1.StorageClientList{}
-	if err := c.list(storageClients); err != nil {
-		return "", fmt.Errorf("failed to list storageclients: %v", err)
-	}
+func (c *OperatorConfigMapReconciler) getDesiredSubscriptionChannel(storageClients *v1alpha1.StorageClientList) (string, error) {
 
 	var desiredChannel string
 	for idx := range storageClients.Items {
