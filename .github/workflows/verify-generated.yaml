@@ -9,10 +9,9 @@ on:
     paths:
       - hack/**
       - Makefile
-      - config/manager/csi-images.yaml
+      - config/**
       - go.mod
-      - go.sum
-      - vendor
+      - api/go.mod
 jobs:
   csi-images-manifest:
     name: verify-generated-changes
