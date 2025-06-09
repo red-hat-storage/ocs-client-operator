@@ -45,6 +45,9 @@ const (
 
 	StatusReporterImageEnvVar = "STATUS_REPORTER_IMAGE"
 
+	// Value corresponding to annotation key has the provider version
+	ProviderVersionAnnotationKey = "ocs.openshift.io/provider.version"
+
 	// Value corresponding to annotation key has subscription channel
 	DesiredSubscriptionChannelAnnotationKey = "ocs.openshift.io/subscription.channel"
 

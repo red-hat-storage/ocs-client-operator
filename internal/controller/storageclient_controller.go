@@ -408,6 +408,11 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	update := false
+	if storageClientResponse.ProviderVersion != "" {
+		if utils.AddAnnotation(&r.storageClient, utils.ProviderVersionAnnotationKey, storageClientResponse.ProviderVersion) {
+			update = true
+		}
+	}
 	if storageClientResponse.ClientOperatorChannel != "" {
 		if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
 			update = true
