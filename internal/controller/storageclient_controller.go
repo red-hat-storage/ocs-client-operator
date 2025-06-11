@@ -408,6 +408,28 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	if storageClientResponse.CsiDrivers.DesiredRbdDriver != nil {
+		r.storageClient.Status.DesiredRbdCsiDriver = &v1alpha1.DesiredRbdCsiDriver{}
+		r.storageClient.Status.DesiredRbdCsiDriver.GeneratorOmapInfo = storageClientResponse.CsiDrivers.DesiredRbdDriver.GenerateOmapInfo
+		if err := r.Status().Update(r.ctx, &r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient status with desired Rbd CSI driver: %v", err)
+		}
+	}
+
+	if storageClientResponse.CsiDrivers.DesiredCephFsDriver != nil {
+		r.storageClient.Status.DesiredCephFsCsiDriver = &v1alpha1.DesiredCephFsCsiDriver{}
+		if err := r.Status().Update(r.ctx, &r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient status with desired CephFs CSI driver: %v", err)
+		}
+	}
+
+	if storageClientResponse.CsiDrivers.DesiredNfsDriver != nil {
+		r.storageClient.Status.DesiredNfsCsiDriver = &v1alpha1.DesiredNfsCsiDriver{}
+		if err := r.Status().Update(r.ctx, &r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient status with desired NFS CSI driver: %v", err)
+		}
+	}
+
 	update := false
 	if storageClientResponse.ClientOperatorChannel != "" {
 		if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
