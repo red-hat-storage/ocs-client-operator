@@ -44,6 +44,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -437,7 +438,7 @@ func (r *storageClientReconcile) deleteStorageClaims(claimName string) error {
 	storageClaim.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("StorageClaim"))
 	storageClaim.Name = claimName
 
-	if err := r.Client.Get(r.ctx, types.NamespacedName{Name: claimName}, storageClaim); client.IgnoreNotFound(err) != nil {
+	if err := r.get(storageClaim); client.IgnoreNotFound(err) != nil && !meta.IsNoMatchError(err) {
 		return fmt.Errorf("Failed to get StorageClaim %q: %w", claimName, err)
 	}
 	if storageClaim.UID != "" {
