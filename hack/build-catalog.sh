@@ -10,7 +10,7 @@ ${OPM} render --output=yaml ${CSI_ADDONS_BUNDLE_IMG} > catalog/csi-adddons-bundl
 ${OPM} render --output=yaml ${CEPH_CSI_BUNDLE_IMG} > catalog/cephcsi-operator-bundle.yaml
 ${OPM} render --output=yaml ${RECIPE_BUNDLE_IMG} > catalog/recipe.yaml
 ${OPM} render --output=yaml ${NOOBAA_BUNDLE_IMG} > catalog/noobaa-operator-bundle.yaml
-${OPM} render --output=yaml ${SNAPSHOT_CONTROLLER_BUNDLE_IMG} > catalog/odf-snapshot-controller-bundle.yaml
+${OPM} render --output=yaml ${SNAPSHOT_CONTROLLER_BUNDLE_IMG} > catalog/odf-external-snapshotter-operator-bundle.yaml
 
 cat << EOF >> catalog/index.yaml
 ---
@@ -65,14 +65,14 @@ entries:
   - name: $RECIPE_BUNDLE_NAME.v$RECIPE_BUNDLE_VERSION
 ---
 defaultChannel: alpha
-name: $SNAPSHOT_CONTROLLER_BUNDLE_NAME
+name: $SNAPSHOT_CONTROLLER_PACKAGE_NAME
 schema: olm.package
 ---
 schema: olm.channel
-package: recipe
+package: odf-external-snapshotter-operator
 name: alpha
 entries:
-  - name: $SNAPSHOT_CONTROLLER_BUNDLE_NAME.v$SNAPSHOT_CONTROLLER_BUNDLE_VERSION
+  - name: $SNAPSHOT_CONTROLLER_PACKAGE_NAME.v$SNAPSHOT_CONTROLLER_PACKAGE_VERSION
 EOF
 
 ${OPM} validate catalog

@@ -792,14 +792,14 @@ func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() erro
 }
 
 func (c *OperatorConfigMapReconciler) reconcileODFSnapshotterSubscription() error {
-	odfSnapshotterSubscription, err := c.getSubscriptionByPackageName("odf-snapshot-controller")
+	odfSnapshotterSubscription, err := c.getSubscriptionByPackageName("odf-external-snapshotter-operator")
 	if err != nil {
 		return err
 	}
 	if c.subscriptionChannel != "" && c.subscriptionChannel != odfSnapshotterSubscription.Spec.Channel {
 		odfSnapshotterSubscription.Spec.Channel = c.subscriptionChannel
 		if err := c.update(odfSnapshotterSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'odf-snapshot-controller' to %v: %v", c.subscriptionChannel, err)
+			return fmt.Errorf("failed to update subscription channel of 'odf-external-snapshotter-operator' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
 	return nil
