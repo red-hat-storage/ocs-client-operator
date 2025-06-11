@@ -17,5 +17,5 @@ dependencies:
       version: "0.0.1"
   - type: olm.package
     value:
-      packageName: odf-snapshot-controller
+      packageName: odf-external-snapshotter-operator
       version: ">=4.20.0"
