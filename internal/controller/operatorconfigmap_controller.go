@@ -89,6 +89,7 @@ type OperatorConfigMapReconciler struct {
 	ctx                 context.Context
 	operatorConfigMap   *corev1.ConfigMap
 	consoleDeployment   *appsv1.Deployment
+	providerVersion     *version.Version
 	subscriptionChannel string
 }
 
@@ -236,6 +237,8 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
 		return reconcile.Result{}, err
 	}
+
+	c.providerVersion = version.MustParseSemantic(storageClients.Items[0].GetAnnotations()[utils.ProviderVersionAnnotationKey])
 
 	if c.operatorConfigMap.GetDeletionTimestamp().IsZero() {
 
@@ -708,9 +711,23 @@ func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() erro
 	if err != nil {
 		return err
 	}
+	var clientCsvVersion *version.Version
+
+	if csvName := clientSubscription.Status.InstalledCSV; csvName != "" {
+		csv := &opv1a1.ClusterServiceVersion{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      csvName,
+				Namespace: c.OperatorNamespace,
+			},
+		}
+		if err := c.get(csv); err != nil {
+			return fmt.Errorf("failed to get client CSV %s: %v", csvName, err)
+		}
+		clientCsvVersion = version.MustParseSemantic(csv.Spec.Version.String())
+	}
 
 	updateRequired := utils.AddLabel(clientSubscription, subscriptionLabelKey, subscriptionLabelValue)
-	if c.subscriptionChannel != "" && c.subscriptionChannel != clientSubscription.Spec.Channel {
+	if c.subscriptionChannel != "" && c.subscriptionChannel != clientSubscription.Spec.Channel && clientCsvVersion.LessThan(c.providerVersion) {
 		clientSubscription.Spec.Channel = c.subscriptionChannel
 		// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
 		// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
