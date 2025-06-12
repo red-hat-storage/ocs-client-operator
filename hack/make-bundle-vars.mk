@@ -138,6 +138,7 @@ CEPH_CSI_PACKAGE_VERSION ?= 4.19.0
 NOOBAA_PACKAGE_VERSION ?= 5.19.0
 
 # snapshot-controller dependencies
+SNAPSHOT_CONTROLLER_PACKAGE_NAME ?= odf-external-snapshotter-operator
 SNAPSHOT_CONTROLLER_PACKAGE_VERSION ?= 4.20.0
 
 # The following variables are here as a convenience for developers so we don't have
