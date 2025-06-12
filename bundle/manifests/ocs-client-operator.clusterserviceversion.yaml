@@ -517,8 +517,6 @@ spec:
                       fieldPath: metadata.name
                 - name: STATUS_REPORTER_IMAGE
                   value: quay.io/ocs-dev/ocs-client-operator:latest
-                - name: NOOBAA_OPERATOR_CHANNEL
-                  value: stable-4.17
                 image: quay.io/ocs-dev/ocs-client-operator:latest
                 livenessProbe:
                   httpGet:
