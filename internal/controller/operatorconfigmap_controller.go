@@ -411,12 +411,19 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	cniNetworkAnnotationValue := ""
+	topologyKey := ""
 	for i := range storageClients.Items {
 		if annotationValue := storageClients.Items[i].GetAnnotations()[cniNetworksAnnotationKey]; annotationValue != "" {
 			if cniNetworkAnnotationValue != "" {
 				return fmt.Errorf("only one client with CNI network annotation value is supported")
 			}
 			cniNetworkAnnotationValue = annotationValue
+		}
+
+		// all storageclients will run on same nodes for a given cluster, so same topology key
+		topologyKeyValue := storageClients.Items[i].GetAnnotations()[utils.AnnotationNonResilientPoolsTopologyKey]
+		if topologyKeyValue != "" {
+			topologyKey = topologyKeyValue
 		}
 	}
 
@@ -462,6 +469,13 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
 		}
 		rbdDriver.Spec.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
+		if topologyKey != "" {
+			rbdDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+				Topology: &csiopv1a1.TopologySpec{
+					DomainLabels: []string{topologyKey},
+				},
+			}
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile rbd driver: %v", err)

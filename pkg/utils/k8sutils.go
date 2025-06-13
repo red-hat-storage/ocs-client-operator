@@ -51,6 +51,8 @@ const (
 	// Value corresponding to annotation key has desired client hash
 	DesiredConfigHashAnnotationKey = "ocs.openshift.io/provider-side-state"
 
+	AnnotationNonResilientPoolsTopologyKey = "ocs.openshift.io/non-resilient-pools-topology-key"
+
 	CronScheduleWeekly = "@weekly"
 
 	ExitCodeThatShouldRestartTheProcess = 42
