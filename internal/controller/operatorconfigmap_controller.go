@@ -17,6 +17,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -413,12 +415,25 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	cniNetworkAnnotationValue := ""
+	topologyDomainLablesSet := map[string]struct{}{}
 	for i := range storageClients.Items {
-		if annotationValue := storageClients.Items[i].GetAnnotations()[cniNetworksAnnotationKey]; annotationValue != "" {
+		storageClient := &storageClients.Items[i]
+		annotations := storageClient.GetAnnotations()
+		if annotationValue := annotations[cniNetworksAnnotationKey]; annotationValue != "" {
 			if cniNetworkAnnotationValue != "" {
 				return fmt.Errorf("only one client with CNI network annotation value is supported")
 			}
 			cniNetworkAnnotationValue = annotationValue
+		}
+
+		// merge topology keys from all storage clients,
+		// as multiple storage clients hubs can have different topology keys
+		if annotationValue := annotations[utils.TopologyDomainLabelsAnnotationKey]; annotationValue != "" {
+			// if the annotation value is not empty, it should be a comma separated list of labels
+			// e.g. "region,zone"
+			for _, label := range strings.Split(annotationValue, ",") {
+				topologyDomainLablesSet[label] = struct{}{}
+			}
 		}
 	}
 
@@ -448,6 +463,11 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 				driverSpecDefaults.ControllerPlugin.Annotations = map[string]string{}
 			}
 			driverSpecDefaults.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
+		}
+		if len(topologyDomainLablesSet) > 0 {
+			driverSpecDefaults.NodePlugin.Topology = &csiopv1a1.TopologySpec{
+				DomainLabels: slices.Collect(maps.Keys(topologyDomainLablesSet)),
+			}
 		}
 		return nil
 	}); err != nil {
