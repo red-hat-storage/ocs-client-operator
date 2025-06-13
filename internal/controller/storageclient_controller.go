@@ -36,7 +36,6 @@ import (
 	"github.com/go-logr/logr"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
@@ -92,7 +91,6 @@ var (
 		&csiopv1a1.CephConnection{},
 		&csiopv1a1.ClientProfileMapping{},
 		&corev1.Secret{},
-		&nbv1.NooBaa{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
 		&replicationv1a1.VolumeReplicationClass{},
@@ -189,7 +187,6 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClient{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
@@ -225,7 +222,6 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete

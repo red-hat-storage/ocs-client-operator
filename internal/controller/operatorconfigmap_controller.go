@@ -262,11 +262,13 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		//only reconcile noobaa-operator for remote clusters
-		if c.getNoobaaSubManagementConfig() {
-			if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
-				c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
-				return ctrl.Result{}, err
+		//don't reconcile noobaa-operator for remote clusters
+		if false {
+			if c.getNoobaaSubManagementConfig() {
+				if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
+					c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
+					return ctrl.Result{}, err
+				}
 			}
 		}
 
