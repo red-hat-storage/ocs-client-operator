@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+	"go.uber.org/multierr"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -44,6 +46,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,6 +54,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -83,7 +87,26 @@ var (
 		templates.RBDDriverName,
 		templates.CephFsDriverName,
 	}
+	kindsToReconcile = []client.Object{
+		&quotav1.ClusterResourceQuota{},
+		&csiopv1a1.CephConnection{},
+		&csiopv1a1.ClientProfileMapping{},
+		&corev1.Secret{},
+		&nbv1.NooBaa{},
+		&storagev1.StorageClass{},
+		&snapapi.VolumeSnapshotClass{},
+		&replicationv1a1.VolumeReplicationClass{},
+		&csiopv1a1.ClientProfile{},
+		&groupsnapapi.VolumeGroupSnapshotClass{},
+	}
 )
+
+type desiredKubeObject struct {
+	types.NamespacedName
+	bytes []byte
+}
+
+type desiredKubeObjects []desiredKubeObject
 
 // StorageClientReconciler reconciles a StorageClient object
 type StorageClientReconciler struct {
@@ -369,42 +392,30 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
-	for _, kubeResource := range storageClientResponse.KubeResources {
-		var err error
-		typeMeta := &metav1.TypeMeta{}
-		if err := json.Unmarshal(kubeResource, typeMeta); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to unmarshal the type for the Object: %w", err)
+	kubeObjectsByGvk := map[string]desiredKubeObjects{}
+	for _, kubeObj := range storageClientResponse.KubeObjects {
+		if kubeObj == nil {
+			continue
 		}
-
-		// Create the received resources, if necessary.
-		switch typeMeta.GroupVersionKind() {
-		case quotav1.SchemeGroupVersion.WithKind("ClusterResourceQuota"):
-			err = r.reconcileResource(&quotav1.ClusterResourceQuota{}, kubeResource)
-		case csiopv1a1.GroupVersion.WithKind("CephConnection"):
-			err = r.reconcileResource(&csiopv1a1.CephConnection{}, kubeResource)
-		case csiopv1a1.GroupVersion.WithKind("ClientProfileMapping"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfileMapping{}, kubeResource)
-		case corev1.SchemeGroupVersion.WithKind("Secret"):
-			err = r.reconcileResource(&corev1.Secret{}, kubeResource)
-		case nbv1.SchemeGroupVersion.WithKind("Noobaa"):
-			err = r.reconcileResource(&nbv1.NooBaa{}, kubeResource)
-		case storagev1.SchemeGroupVersion.WithKind("StorageClass"):
-			err = r.reconcileResource(&storagev1.StorageClass{}, kubeResource)
-		case snapapi.SchemeGroupVersion.WithKind("VolumeSnapshotClass"):
-			err = r.reconcileResource(&snapapi.VolumeSnapshotClass{}, kubeResource)
-		case groupsnapapi.SchemeGroupVersion.WithKind("VolumeGroupSnapshotClass"):
-			if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
-				continue
-			}
-			err = r.reconcileResource(&groupsnapapi.VolumeGroupSnapshotClass{}, kubeResource)
-		case replicationv1a1.GroupVersion.WithKind("VolumeReplicationClass"):
-			err = r.reconcileResource(&replicationv1a1.VolumeReplicationClass{}, kubeResource)
-		case csiopv1a1.GroupVersion.WithKind("ClientProfile"):
-			err = r.reconcileResource(&csiopv1a1.ClientProfile{}, kubeResource)
+		objectMeta := &metav1.PartialObjectMetadata{}
+		if err := json.Unmarshal(kubeObj.Bytes, objectMeta); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to unmarshal metadata for the Object: %w", err)
 		}
-		if err != nil {
-			return reconcile.Result{}, err
-		}
+		gvk := objectMeta.GroupVersionKind().String()
+		kubeObjectsByGvk[gvk] = append(
+			kubeObjectsByGvk[gvk],
+			desiredKubeObject{
+				NamespacedName: client.ObjectKeyFromObject(objectMeta),
+				bytes:          kubeObj.Bytes,
+			},
+		)
+	}
+	var combinedErr error
+	for _, kind := range kindsToReconcile {
+		r.reconcileResourcesByGVK(kind, kubeObjectsByGvk, combinedErr)
+	}
+	if combinedErr != nil {
+		return reconcile.Result{}, combinedErr
 	}
 
 	update := false
@@ -437,7 +448,7 @@ func (r *storageClientReconcile) deleteStorageClaims(claimName string) error {
 	storageClaim.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("StorageClaim"))
 	storageClaim.Name = claimName
 
-	if err := r.Client.Get(r.ctx, types.NamespacedName{Name: claimName}, storageClaim); client.IgnoreNotFound(err) != nil {
+	if err := r.get(storageClaim); client.IgnoreNotFound(err) != nil && !meta.IsNoMatchError(err) {
 		return fmt.Errorf("Failed to get StorageClaim %q: %w", claimName, err)
 	}
 	if storageClaim.UID != "" {
@@ -685,7 +696,7 @@ func (r *storageClientReconcile) update(obj client.Object, opts ...client.Update
 }
 
 func (r *storageClientReconcile) own(dependent metav1.Object) error {
-	return controllerutil.SetOwnerReference(&r.storageClient, dependent, r.Scheme)
+	return controllerutil.SetControllerReference(&r.storageClient, dependent, r.Scheme)
 }
 
 func removeStorageClaimAsOwner(obj client.Object) {
@@ -697,21 +708,61 @@ func removeStorageClaimAsOwner(obj client.Object) {
 	}
 }
 
-func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject []byte) error {
-	objectMeta := &metav1.PartialObjectMetadata{}
-	if err := json.Unmarshal(rawObject, objectMeta); err != nil {
-		return err
+func (r *storageClientReconcile) reconcileResourcesByGVK(
+	kind client.Object,
+	desiredObjects map[string]desiredKubeObjects,
+	combinedErr error,
+) {
+	gvk, err := apiutil.GVKForObject(kind, r.Scheme)
+	if err != nil {
+		r.log.Error(err, "failed to get gvk")
+		multierr.AppendInto(&combinedErr, err)
+		return
 	}
 
-	obj.SetName(objectMeta.Name)
-	obj.SetNamespace(objectMeta.Namespace)
+	objectsToReconcile := desiredObjects[gvk.String()]
+	reconciledObjects := make(map[types.NamespacedName]bool, len(objectsToReconcile))
+	for idx := range objectsToReconcile {
+		// object supplied to reconcile mutates it, we either need to send
+		// fresh copy or zero out fields on the mutated object, doing the former
+		// as we don't know the fields that needs to be zeroed for every concrete object
+		goType := reflect.TypeOf(kind).Elem()
+		untypedInstance := reflect.New(goType).Interface()
+		kubeObject := untypedInstance.(client.Object)
+
+		desiredState := objectsToReconcile[idx]
+		if err := r.reconcileResource(kubeObject, desiredState); err != nil {
+			multierr.AppendInto(&combinedErr, err)
+		} else {
+			reconciledObjects[desiredState.NamespacedName] = true
+		}
+	}
+
+	existingObjList := &metav1.PartialObjectMetadataList{}
+	existingObjList.SetGroupVersionKind(gvk)
+	if err := r.list(existingObjList); err != nil && !meta.IsNoMatchError(err) {
+		multierr.AppendInto(&combinedErr, err)
+		r.log.Error(err, "failed to list resources")
+	}
+	for idx := range existingObjList.Items {
+		obj := &existingObjList.Items[idx]
+		if !reconciledObjects[client.ObjectKeyFromObject(obj)] && metav1.IsControlledBy(obj, &r.storageClient) {
+			if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
+				multierr.AppendInto(&combinedErr, err)
+				r.log.Error(err, "failed to delete object", "Name", client.ObjectKeyFromObject(obj))
+			}
+		}
+	}
+}
+
+func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredState desiredKubeObject) error {
 
 	mutateFunc := func() error {
 		// Unmarshal follows merge semantics, that means that we don't need to worry about overriding the status,
 		// or any metadata fields. There is an exception when it comes to creationTimestamp which gets serialized into
 		// default value.
 		creationTimestamp := obj.GetCreationTimestamp()
-		if err := json.Unmarshal(rawObject, obj); err != nil {
+		if err := json.Unmarshal(desiredState.bytes, obj); err != nil {
 			return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
 		}
 		obj.SetCreationTimestamp(creationTimestamp)
@@ -721,7 +772,10 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject 
 		}
 		return nil
 	}
+
 	var err error
+	obj.SetName(desiredState.Name)
+	obj.SetNamespace(desiredState.Namespace)
 	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
 	if utils.IsForbiddenError(err) {
 		if err := r.Client.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
@@ -746,6 +800,12 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, rawObject 
 				err,
 			)
 		}
+	} else if meta.IsNoMatchError(err) {
+		r.log.Info(
+			"Skipping! object type does not exist",
+			"name",
+			client.ObjectKeyFromObject(obj),
+		)
 	} else if err != nil {
 		return fmt.Errorf(
 			"failed to create or update %v %v/%v: %v",
