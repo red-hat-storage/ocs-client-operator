@@ -212,6 +212,7 @@ rules:
   - get
   - list
   - update
+  - watch
 - apiGroups:
   - ocs.openshift.io
   resources:
@@ -253,6 +254,7 @@ rules:
   resources:
   - clusterserviceversions
   verbs:
+  - delete
   - get
   - list
   - watch
@@ -261,6 +263,7 @@ rules:
   resources:
   - subscriptions
   verbs:
+  - delete
   - get
   - list
   - update
