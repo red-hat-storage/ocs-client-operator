@@ -30,10 +30,6 @@ import (
 // which is the namespace where operator pod is deployed.
 const OperatorNamespaceEnvVar = "OPERATOR_NAMESPACE"
 
-// WatchNamespaceEnvVar is the constant for env variable WATCH_NAMESPACE
-// which indicates any other namespace to watch for resources.
-const WatchNamespaceEnvVar = "WATCH_NAMESPACE"
-
 // OperatorPodNameEnvVar is the constant for env variable OPERATOR_POD_NAME
 const OperatorPodNameEnvVar = "OPERATOR_POD_NAME"
 
@@ -57,10 +53,6 @@ const CSIReconcileEnvVar = "CSI_RECONCILE"
 // GetOperatorNamespace returns the namespace where the operator is deployed.
 func GetOperatorNamespace() string {
 	return os.Getenv(OperatorNamespaceEnvVar)
-}
-
-func GetWatchNamespace() string {
-	return os.Getenv(WatchNamespaceEnvVar)
 }
 
 func ValidateOperatorNamespace() error {
