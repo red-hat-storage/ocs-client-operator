@@ -9,9 +9,5 @@ dependencies:
       version: '>=4.19.0'
   - type: olm.package
     value:
-      packageName: noobaa-operator
-      version: ">=5.19.0"
-  - type: olm.package
-    value:
       packageName: recipe
       version: "0.0.1"
