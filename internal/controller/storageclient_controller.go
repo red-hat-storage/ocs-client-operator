@@ -427,6 +427,19 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredStateHash) {
 		update = true
 	}
+
+	if storageClientResponse.RbdDriverRequirements != nil && len(storageClientResponse.RbdDriverRequirements.TopologyDomainLables) > 0 {
+		annotationValue := strings.Join(storageClientResponse.RbdDriverRequirements.TopologyDomainLables, ",")
+		if utils.AddAnnotation(&r.storageClient, utils.TopologyDomainLabelsAnnotationKey, annotationValue) {
+			update = true
+		}
+	} else {
+		// remove the annotation if it exists
+		if utils.RemoveAnnotation(&r.storageClient, utils.TopologyDomainLabelsAnnotationKey) {
+			update = true
+		}
+	}
+
 	if update {
 		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
