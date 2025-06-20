@@ -189,7 +189,6 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1alpha1.StorageClient{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
@@ -225,7 +224,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;create;update;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
@@ -427,6 +426,19 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredStateHash) {
 		update = true
 	}
+
+	if storageClientResponse.RbdDriverRequirements != nil && len(storageClientResponse.RbdDriverRequirements.TopologyDomainLables) > 0 {
+		annotationValue := strings.Join(storageClientResponse.RbdDriverRequirements.TopologyDomainLables, ",")
+		if utils.AddAnnotation(&r.storageClient, utils.TopologyDomainLabelsAnnotationKey, annotationValue) {
+			update = true
+		}
+	} else {
+		// remove the annotation if it exists
+		if utils.RemoveAnnotation(&r.storageClient, utils.TopologyDomainLabelsAnnotationKey) {
+			update = true
+		}
+	}
+
 	if update {
 		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)

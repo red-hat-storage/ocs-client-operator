@@ -51,6 +51,8 @@ const (
 	// Value corresponding to annotation key has desired client hash
 	DesiredConfigHashAnnotationKey = "ocs.openshift.io/provider-side-state"
 
+	TopologyDomainLabelsAnnotationKey = "ocs.openshift.io/csi-rbd-topology-domain-labels"
+
 	CronScheduleWeekly = "@weekly"
 
 	ExitCodeThatShouldRestartTheProcess = 42
@@ -140,6 +142,13 @@ func AddAnnotation(obj metav1.Object, key string, value string) bool {
 		return true
 	}
 	return false
+}
+
+func RemoveAnnotation(obj metav1.Object, key string) bool {
+	annotations := obj.GetAnnotations()
+	annotationCount := len(annotations)
+	delete(annotations, key)
+	return len(annotations) < annotationCount
 }
 
 func GetMD5Hash(text string) string {
