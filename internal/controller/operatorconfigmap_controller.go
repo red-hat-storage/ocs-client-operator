@@ -531,7 +531,8 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
 	valAsString, ok := c.operatorConfigMap.Data[manageNoobaaSubKey]
 	if !ok {
-		return true
+		//while feature in dev preview returning false to disable feature by default.
+		return false
 	}
 	val, err := strconv.ParseBool(valAsString)
 	if err != nil {
@@ -539,7 +540,8 @@ func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {
 			err,
 			"Unsupported value under manageNoobaaSubscription key",
 		)
-		return true
+		//while feature in dev preview returning false to disable feature by default.
+		return false
 	}
 	return val
 }
@@ -631,17 +633,15 @@ func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() erro
 }
 
 func (c *OperatorConfigMapReconciler) reconcileNoobaaOperatorSubscription() error {
-	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
-	if kerrors.IsNotFound(err) {
-		noobaaSubscription, err = c.getSubscriptionByPackageName("noobaa-operator")
-	}
+	noobaaSubscription, err := c.getSubscriptionByPackageName("noobaa-operator")
 	if err != nil {
 		return err
 	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != noobaaSubscription.Spec.Channel {
-		noobaaSubscription.Spec.Channel = c.subscriptionChannel
+	desiredSubChannel := utils.GetNoobaaOperatorChannel()
+	if desiredSubChannel != noobaaSubscription.Spec.Channel {
+		noobaaSubscription.Spec.Channel = desiredSubChannel
 		if err := c.update(noobaaSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'mcg-operator' to %v: %v", c.subscriptionChannel, err)
+			return fmt.Errorf("failed to update subscription channel of 'noobaa-operator' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
 	return nil
@@ -658,7 +658,7 @@ func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() e
 	if c.subscriptionChannel != "" && c.subscriptionChannel != addonsSubscription.Spec.Channel {
 		addonsSubscription.Spec.Channel = c.subscriptionChannel
 		if err := c.update(addonsSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'odf-csi-addons-operator' to %v: %v", c.subscriptionChannel, err)
+			return fmt.Errorf("failed to update subscription channel of 'csi-addons' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
 	return nil
