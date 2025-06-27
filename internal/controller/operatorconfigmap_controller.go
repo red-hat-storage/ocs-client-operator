@@ -16,7 +16,10 @@ package controller
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -30,6 +33,7 @@ import (
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
+	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -39,11 +43,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/version"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -193,10 +199,12 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
-//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;delete;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -262,12 +270,25 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		//only reconcile noobaa-operator for remote clusters
-		if c.getNoobaaSubManagementConfig() {
-			if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
-				c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
-				return ctrl.Result{}, err
+		//don't reconcile noobaa-operator for remote clusters
+		if false {
+			if c.getNoobaaSubManagementConfig() {
+				if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
+					c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
+					return ctrl.Result{}, err
+				}
 			}
+		}
+
+		// remove noobaa resources installed by older version of Client
+		if err := c.removeNoobaa(); err != nil {
+			c.log.Error(err, "unable to remove Noobaa")
+			return ctrl.Result{}, err
+		}
+
+		if err := c.removeNoobaaOperator(); err != nil {
+			c.log.Error(err, "unable to remove Noobaa Operator subscription")
+			return ctrl.Result{}, err
 		}
 
 		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
@@ -411,12 +432,25 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	cniNetworkAnnotationValue := ""
+	topologyDomainLablesSet := map[string]struct{}{}
 	for i := range storageClients.Items {
-		if annotationValue := storageClients.Items[i].GetAnnotations()[cniNetworksAnnotationKey]; annotationValue != "" {
+		storageClient := &storageClients.Items[i]
+		annotations := storageClient.GetAnnotations()
+		if annotationValue := annotations[cniNetworksAnnotationKey]; annotationValue != "" {
 			if cniNetworkAnnotationValue != "" {
 				return fmt.Errorf("only one client with CNI network annotation value is supported")
 			}
 			cniNetworkAnnotationValue = annotationValue
+		}
+
+		// merge topology keys from all storage clients,
+		// as multiple storage clients hubs can have different topology keys
+		if annotationValue := annotations[utils.TopologyDomainLabelsAnnotationKey]; annotationValue != "" {
+			// if the annotation value is not empty, it should be a comma separated list of labels
+			// e.g. "region,zone"
+			for _, label := range strings.Split(annotationValue, ",") {
+				topologyDomainLablesSet[label] = struct{}{}
+			}
 		}
 	}
 
@@ -447,21 +481,49 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			}
 			driverSpecDefaults.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
 		}
+		if len(topologyDomainLablesSet) > 0 {
+			driverSpecDefaults.NodePlugin.Topology = &csiopv1a1.TopologySpec{
+				DomainLabels: slices.Collect(maps.Keys(topologyDomainLablesSet)),
+			}
+		}
+		driverSpecDefaults.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
+	}
+
+	// get the custom csi Tolerations
+	// TODO: Remove it in 4.20 release
+	customNodePluginTolerations, customControllerPluginTolerations, err := c.getCsiCustomTolerations()
+	if err != nil {
+		return fmt.Errorf("failed to get custom tolerations for csi: %v", err)
 	}
 
 	// ceph rbd driver config
 	rbdDriver := &csiopv1a1.Driver{}
 	rbdDriver.Name = templates.RBDDriverName
 	rbdDriver.Namespace = c.OperatorNamespace
-
 	if err := c.createOrUpdate(rbdDriver, func() error {
 		if err := c.own(rbdDriver); err != nil {
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
 		}
-		rbdDriver.Spec.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
+		// only update during initial creation
+		if rbdDriver.UID == "" {
+			if len(customNodePluginTolerations) > 0 {
+				rbdDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+					PodCommonSpec: csiopv1a1.PodCommonSpec{
+						Tolerations: customNodePluginTolerations,
+					},
+				}
+			}
+			if len(customControllerPluginTolerations) > 0 {
+				rbdDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
+					PodCommonSpec: csiopv1a1.PodCommonSpec{
+						Tolerations: customControllerPluginTolerations,
+					},
+				}
+			}
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -471,10 +533,26 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	cephFsDriver := &csiopv1a1.Driver{}
 	cephFsDriver.Name = templates.CephFsDriverName
 	cephFsDriver.Namespace = c.OperatorNamespace
-
 	if err := c.createOrUpdate(cephFsDriver, func() error {
 		if err := c.own(cephFsDriver); err != nil {
 			return fmt.Errorf("failed to own csi cephfs driver: %v", err)
+		}
+		// only update during initial creation
+		if cephFsDriver.UID == "" {
+			if len(customNodePluginTolerations) > 0 {
+				cephFsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+					PodCommonSpec: csiopv1a1.PodCommonSpec{
+						Tolerations: customNodePluginTolerations,
+					},
+				}
+			}
+			if len(customControllerPluginTolerations) > 0 {
+				cephFsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
+					PodCommonSpec: csiopv1a1.PodCommonSpec{
+						Tolerations: customControllerPluginTolerations,
+					},
+				}
+			}
 		}
 		return nil
 	}); err != nil {
@@ -485,10 +563,26 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	nfsDriver := &csiopv1a1.Driver{}
 	nfsDriver.Name = templates.NfsDriverName
 	nfsDriver.Namespace = c.OperatorNamespace
-
 	if err := c.createOrUpdate(nfsDriver, func() error {
 		if err := c.own(nfsDriver); err != nil {
 			return fmt.Errorf("failed to own csi nfs driver: %v", err)
+		}
+		// only update during initial creation
+		if nfsDriver.UID == "" {
+			if len(customNodePluginTolerations) > 0 {
+				nfsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+					PodCommonSpec: csiopv1a1.PodCommonSpec{
+						Tolerations: customNodePluginTolerations,
+					},
+				}
+			}
+			if len(customControllerPluginTolerations) > 0 {
+				nfsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
+					PodCommonSpec: csiopv1a1.PodCommonSpec{
+						Tolerations: customControllerPluginTolerations,
+					},
+				}
+			}
 		}
 		return nil
 	}); err != nil {
@@ -925,6 +1019,150 @@ func (c *OperatorConfigMapReconciler) deleteDelegatedCSI() error {
 	scc.Name = templates.SCCName
 	if err := c.delete(scc); err != nil {
 		return err
+	}
+	return nil
+}
+
+// TODO: Remove it in 4.20 release
+func (c *OperatorConfigMapReconciler) getCsiCustomTolerations() ([]corev1.Toleration, []corev1.Toleration, error) {
+	const (
+		rookCephOperatorConfigName  = "rook-ceph-operator-config"
+		csiPluginTolerationKey      = "CSI_PLUGIN_TOLERATIONS"
+		csiProvisionerTolerationKey = "CSI_PROVISIONER_TOLERATIONS"
+	)
+	var nodePluginTolerations, controllerPluginTolerations []corev1.Toleration
+
+	// list the rook ceph cm
+	rookCephOperatorConfig := &corev1.ConfigMap{}
+	rookCephOperatorConfig.Name = rookCephOperatorConfigName
+	rookCephOperatorConfig.Namespace = c.OperatorNamespace
+
+	if err := c.get(rookCephOperatorConfig); kerrors.IsNotFound(err) {
+		return nil, nil, nil
+	} else if err != nil {
+		return nil, nil, fmt.Errorf("failed to get Rook Ceph Operator ConfigMap: %v", err)
+	}
+
+	// Get the CSI tolerations from the Rook Ceph Operator ConfigMap
+	csiPluginTolerations := rookCephOperatorConfig.Data[csiPluginTolerationKey]
+	if csiPluginTolerations != "" {
+		var err error
+		if nodePluginTolerations, err = parseTolerations(csiPluginTolerations); err != nil {
+			return nil, nil, fmt.Errorf("failed to parse csi plugin tolerations: %v", err)
+		}
+	}
+
+	csiProvisionerToleration := rookCephOperatorConfig.Data[csiProvisionerTolerationKey]
+	if csiProvisionerToleration != "" {
+		var err error
+		if controllerPluginTolerations, err = parseTolerations(csiProvisionerToleration); err != nil {
+			return nil, nil, fmt.Errorf("failed to parse csi controllerPlugin tolerations: %v", err)
+		}
+	}
+
+	return nodePluginTolerations, controllerPluginTolerations, nil
+}
+
+func parseTolerations(csiPluginTolerations string) ([]corev1.Toleration, error) {
+	if csiPluginTolerations == "" {
+		return nil, nil
+	}
+
+	rawJSON, err := yaml.ToJSON([]byte(csiPluginTolerations))
+	if err != nil {
+		return nil, err
+	}
+
+	var tolerations []corev1.Toleration
+	err = json.Unmarshal(rawJSON, &tolerations)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range tolerations {
+		if tolerations[i].Key == "" {
+			tolerations[i].Operator = corev1.TolerationOpExists
+		}
+
+		if tolerations[i].Operator == corev1.TolerationOpExists {
+			tolerations[i].Value = ""
+		}
+	}
+	return tolerations, nil
+}
+
+func (c *OperatorConfigMapReconciler) removeNoobaa() error {
+	noobaa := &nbv1.NooBaa{}
+	noobaa.Name = "noobaa-remote"
+	noobaa.Namespace = c.OperatorNamespace
+
+	if err := c.get(noobaa); !meta.IsNoMatchError(err) && client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("failed to get remote noobaa: %v", err)
+	} else if noobaa.UID != "" && noobaa.GetDeletionTimestamp().IsZero() {
+		index := slices.IndexFunc(
+			noobaa.GetOwnerReferences(),
+			func(ref metav1.OwnerReference) bool {
+				return ref.Kind == "StorageClient"
+			},
+		)
+		if index != -1 {
+			noobaa.Spec.CleanupPolicy.AllowNoobaaDeletion = true
+			if err := c.update(noobaa); err != nil {
+				return fmt.Errorf("failed to update noobaa %v: %v", noobaa.Name, err)
+			}
+			if err := c.delete(noobaa); err != nil {
+				return fmt.Errorf("failed to delete remote noobaa: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
+
+	nb := &metav1.PartialObjectMetadataList{}
+	nb.SetGroupVersionKind(nbv1.SchemeGroupVersion.WithKind("NooBaa"))
+	if err := c.list(nb, client.Limit(1)); err != nil && !meta.IsNoMatchError(err) {
+		return fmt.Errorf("failed to list noobaa: %v", err)
+	}
+	if len(nb.Items) != 0 {
+		return nil
+	}
+
+	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
+	if client.IgnoreNotFound(err) != nil {
+		return err
+	} else if noobaaSubscription == nil {
+		return nil
+	}
+	index := slices.IndexFunc(
+		noobaaSubscription.OwnerReferences,
+		func(ref metav1.OwnerReference) bool {
+			return ref.Kind == "Subscription" && ref.Name == "odf-operator"
+		},
+	)
+	if index != -1 {
+		return nil
+	}
+
+	csv := &opv1a1.ClusterServiceVersion{}
+	csv.Name = noobaaSubscription.Status.InstalledCSV
+	csv.Namespace = c.OperatorNamespace
+	if csv.Name != "" {
+		if err := c.get(csv); client.IgnoreNotFound(err) != nil {
+			c.log.Error(err, "failed to get noobaa operator csv")
+			return err
+		} else if csv.UID != "" && csv.GetDeletionTimestamp().IsZero() {
+			if err := c.delete(csv); err != nil {
+				c.log.Error(err, "failed to delete noobaa operator csv")
+				return err
+			}
+		}
+	}
+	if noobaaSubscription.GetDeletionTimestamp().IsZero() {
+		if err = c.delete(noobaaSubscription); err != nil {
+			return err
+		}
 	}
 	return nil
 }
