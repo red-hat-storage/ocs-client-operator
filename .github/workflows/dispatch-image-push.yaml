@@ -12,6 +12,9 @@ on:
       IMAGE_TAG:
         required: false
         default: ""
+      VERSION:
+        required: false
+        default: ""
 jobs:
   docker-push:
     name: docker-push
@@ -36,6 +39,7 @@ jobs:
       run: |
         # Set IMAGE_TAG to a calculated <branch>-<sha> if not specified
         export IMAGE_TAG=${IMAGE_TAG:-${IMAGE_TAG_SHA:0:-33}}
+        ! [ x${VERSION} = x ] && export VERSION=${VERSION}
         make container-build container-push
         make bundle-build bundle-push
         make catalog-build catalog-push
