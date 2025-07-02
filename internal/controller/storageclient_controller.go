@@ -99,7 +99,6 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&v1alpha1.StorageClaim{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&nbv1.NooBaa{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Secret{}).
 		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate))
