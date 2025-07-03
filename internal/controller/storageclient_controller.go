@@ -20,14 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	quotav1 "github.com/openshift/api/quota/v1"
-	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"os"
 	"strings"
 
+	quotav1 "github.com/openshift/api/quota/v1"
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
+
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
-	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
@@ -286,27 +286,6 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 					client.ObjectKeyFromObject(secret),
 					err,
 				)
-			}
-		case "Noobaa":
-			noobaaSpec := &nbv1.NooBaaSpec{}
-			if err := json.Unmarshal(eResource.Data, &noobaaSpec); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to unmarshall noobaa spec data: %v", err)
-			}
-			nb := &nbv1.NooBaa{}
-			nb.Name = eResource.Name
-			nb.Namespace = r.OperatorNamespace
-
-			_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, nb, func() error {
-				if err := r.own(nb); err != nil {
-					return err
-				}
-				utils.AddAnnotation(nb, "remote-client-noobaa", "true")
-				noobaaSpec.JoinSecret.Namespace = r.OperatorNamespace
-				nb.Spec = *noobaaSpec
-				return nil
-			})
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to create remote noobaa: %v", err)
 			}
 		}
 	}
