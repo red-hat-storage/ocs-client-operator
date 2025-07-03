@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -31,7 +30,6 @@ import (
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
-	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -41,7 +39,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -192,13 +189,11 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
-//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
-//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclusters,verbs=get;list
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;delete;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -258,25 +253,12 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
-		//don't reconcile noobaa-operator for remote clusters
-		if false {
-			if c.getNoobaaSubManagementConfig() {
-				if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
-					c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
-					return ctrl.Result{}, err
-				}
+		//only reconcile noobaa-operator for remote clusters
+		if c.getNoobaaSubManagementConfig() {
+			if err := c.reconcileNoobaaOperatorSubscription(); err != nil {
+				c.log.Error(err, "unable to reconcile Noobaa Operator subscription")
+				return ctrl.Result{}, err
 			}
-		}
-
-		// remove noobaa resources installed by older version of Client
-		if err := c.removeNoobaa(); err != nil {
-			c.log.Error(err, "unable to remove Noobaa")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.removeNoobaaOperator(); err != nil {
-			c.log.Error(err, "unable to remove Noobaa Operator subscription")
-			return ctrl.Result{}, err
 		}
 
 		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
@@ -838,82 +820,6 @@ func (c *OperatorConfigMapReconciler) deleteDelegatedCSI() error {
 	scc.Name = templates.SCCName
 	if err := c.delete(scc); err != nil {
 		return err
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) removeNoobaa() error {
-	noobaa := &nbv1.NooBaa{}
-	noobaa.Name = "noobaa-remote"
-	noobaa.Namespace = c.OperatorNamespace
-
-	if err := c.get(noobaa); !meta.IsNoMatchError(err) && client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get remote noobaa: %v", err)
-	} else if noobaa.UID != "" && noobaa.GetDeletionTimestamp().IsZero() {
-		index := slices.IndexFunc(
-			noobaa.GetOwnerReferences(),
-			func(ref metav1.OwnerReference) bool {
-				return ref.Kind == "StorageClient"
-			},
-		)
-		if index != -1 {
-			noobaa.Spec.CleanupPolicy.AllowNoobaaDeletion = true
-			if err := c.update(noobaa); err != nil {
-				return fmt.Errorf("failed to update noobaa %v: %v", noobaa.Name, err)
-			}
-			if err := c.delete(noobaa); err != nil {
-				return fmt.Errorf("failed to delete remote noobaa: %v", err)
-			}
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
-
-	nb := &metav1.PartialObjectMetadataList{}
-	nb.SetGroupVersionKind(nbv1.SchemeGroupVersion.WithKind("NooBaa"))
-	if err := c.list(nb, client.Limit(1)); err != nil && !meta.IsNoMatchError(err) {
-		return fmt.Errorf("failed to list noobaa: %v", err)
-	}
-	if len(nb.Items) != 0 {
-		return nil
-	}
-
-	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
-	if client.IgnoreNotFound(err) != nil {
-		return err
-	} else if noobaaSubscription == nil {
-		return nil
-	}
-	index := slices.IndexFunc(
-		noobaaSubscription.OwnerReferences,
-		func(ref metav1.OwnerReference) bool {
-			return ref.Kind == "Subscription" && ref.Name == "odf-operator"
-		},
-	)
-	if index != -1 {
-		return nil
-	}
-
-	csv := &opv1a1.ClusterServiceVersion{}
-	csv.Name = noobaaSubscription.Status.InstalledCSV
-	csv.Namespace = c.OperatorNamespace
-	if csv.Name != "" {
-		if err := c.get(csv); client.IgnoreNotFound(err) != nil {
-			c.log.Error(err, "failed to get noobaa operator csv")
-			return err
-		} else if csv.UID != "" && csv.GetDeletionTimestamp().IsZero() {
-			if err := c.delete(csv); err != nil {
-				c.log.Error(err, "failed to delete noobaa operator csv")
-				return err
-			}
-		}
-	}
-	if noobaaSubscription.GetDeletionTimestamp().IsZero() {
-		if err = c.delete(noobaaSubscription); err != nil {
-			return err
-		}
 	}
 	return nil
 }
