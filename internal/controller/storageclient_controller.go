@@ -36,7 +36,6 @@ import (
 	"github.com/go-logr/logr"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
@@ -92,7 +91,6 @@ var (
 		&csiopv1a1.CephConnection{},
 		&csiopv1a1.ClientProfileMapping{},
 		&corev1.Secret{},
-		&nbv1.NooBaa{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
 		&replicationv1a1.VolumeReplicationClass{},
