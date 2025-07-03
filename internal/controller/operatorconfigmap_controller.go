@@ -81,6 +81,8 @@ const (
 	subPackageIndexName        = "index:subscriptionPackage"
 	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version"
 	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
+	noobaaCrdName              = "noobaas.noobaa.io"
+	noobaaCrName               = "noobaa-remote"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -185,6 +187,17 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
 		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
 
+	if c.AvailableCrds[noobaaCrdName] {
+		bldr.Watches(
+			&nbv1.NooBaa{},
+			enqueueConfigMapRequest,
+			builder.WithPredicates(
+				utils.NamePredicate(noobaaCrName),
+				predicate.GenerationChangedPredicate{},
+			),
+		)
+	}
+
 	return bldr.Complete(c)
 }
 
@@ -204,7 +217,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;delete;watch
+//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;update;delete
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -1074,7 +1087,7 @@ func parseTolerations(csiPluginTolerations string) ([]corev1.Toleration, error) 
 
 func (c *OperatorConfigMapReconciler) removeNoobaa() error {
 	noobaa := &nbv1.NooBaa{}
-	noobaa.Name = "noobaa-remote"
+	noobaa.Name = noobaaCrName
 	noobaa.Namespace = c.OperatorNamespace
 
 	if err := c.get(noobaa); !meta.IsNoMatchError(err) && client.IgnoreNotFound(err) != nil {
