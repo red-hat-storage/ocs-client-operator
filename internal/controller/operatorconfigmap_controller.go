@@ -512,94 +512,102 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		return fmt.Errorf("failed to get custom tolerations for csi: %v", err)
 	}
 
-	// ceph rbd driver config
-	rbdDriver := &csiopv1a1.Driver{}
-	rbdDriver.Name = templates.RBDDriverName
-	rbdDriver.Namespace = c.OperatorNamespace
-	if err := c.createOrUpdate(rbdDriver, func() error {
-		if err := c.own(rbdDriver); err != nil {
-			return fmt.Errorf("failed to own csi rbd driver: %v", err)
-		}
-		// only update during initial creation
-		if rbdDriver.UID == "" {
-			if len(customNodePluginTolerations) > 0 {
-				rbdDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
-						Tolerations: customNodePluginTolerations,
-					},
+	for i := range storageClients.Items {
+		// ceph rbd driver config
+		if storageClients.Items[i].Status.RbdDriverRequirements != nil {
+			rbdDriver := &csiopv1a1.Driver{}
+			rbdDriver.Name = templates.RBDDriverName
+			rbdDriver.Namespace = c.OperatorNamespace
+			if err := c.createOrUpdate(rbdDriver, func() error {
+				if err := c.own(rbdDriver); err != nil {
+					return fmt.Errorf("failed to own csi rbd driver: %v", err)
 				}
-			}
-			if len(customControllerPluginTolerations) > 0 {
-				rbdDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
-						Tolerations: customControllerPluginTolerations,
-					},
+				// only update during initial creation
+				if rbdDriver.UID == "" {
+					if len(customNodePluginTolerations) > 0 {
+						rbdDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+							PodCommonSpec: csiopv1a1.PodCommonSpec{
+								Tolerations: customNodePluginTolerations,
+							},
+						}
+					}
+					if len(customControllerPluginTolerations) > 0 {
+						rbdDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
+							PodCommonSpec: csiopv1a1.PodCommonSpec{
+								Tolerations: customControllerPluginTolerations,
+							},
+						}
+					}
 				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile rbd driver: %v", err)
 			}
 		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile rbd driver: %v", err)
-	}
 
-	// ceph fs driver config
-	cephFsDriver := &csiopv1a1.Driver{}
-	cephFsDriver.Name = templates.CephFsDriverName
-	cephFsDriver.Namespace = c.OperatorNamespace
-	if err := c.createOrUpdate(cephFsDriver, func() error {
-		if err := c.own(cephFsDriver); err != nil {
-			return fmt.Errorf("failed to own csi cephfs driver: %v", err)
-		}
-		// only update during initial creation
-		if cephFsDriver.UID == "" {
-			if len(customNodePluginTolerations) > 0 {
-				cephFsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
-						Tolerations: customNodePluginTolerations,
-					},
+		// ceph fs driver config
+		if storageClients.Items[i].Status.CephFsDriverRequirements != nil {
+			cephFsDriver := &csiopv1a1.Driver{}
+			cephFsDriver.Name = templates.CephFsDriverName
+			cephFsDriver.Namespace = c.OperatorNamespace
+			if err := c.createOrUpdate(cephFsDriver, func() error {
+				if err := c.own(cephFsDriver); err != nil {
+					return fmt.Errorf("failed to own csi cephfs driver: %v", err)
 				}
-			}
-			if len(customControllerPluginTolerations) > 0 {
-				cephFsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
-						Tolerations: customControllerPluginTolerations,
-					},
+				// only update during initial creation
+				if cephFsDriver.UID == "" {
+					if len(customNodePluginTolerations) > 0 {
+						cephFsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+							PodCommonSpec: csiopv1a1.PodCommonSpec{
+								Tolerations: customNodePluginTolerations,
+							},
+						}
+					}
+					if len(customControllerPluginTolerations) > 0 {
+						cephFsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
+							PodCommonSpec: csiopv1a1.PodCommonSpec{
+								Tolerations: customControllerPluginTolerations,
+							},
+						}
+					}
 				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
 			}
 		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
-	}
 
-	// nfs driver config
-	nfsDriver := &csiopv1a1.Driver{}
-	nfsDriver.Name = templates.NfsDriverName
-	nfsDriver.Namespace = c.OperatorNamespace
-	if err := c.createOrUpdate(nfsDriver, func() error {
-		if err := c.own(nfsDriver); err != nil {
-			return fmt.Errorf("failed to own csi nfs driver: %v", err)
-		}
-		// only update during initial creation
-		if nfsDriver.UID == "" {
-			if len(customNodePluginTolerations) > 0 {
-				nfsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
-						Tolerations: customNodePluginTolerations,
-					},
+		// nfs driver config
+		if storageClients.Items[i].Status.NfsDriverRequirements != nil {
+			nfsDriver := &csiopv1a1.Driver{}
+			nfsDriver.Name = templates.NfsDriverName
+			nfsDriver.Namespace = c.OperatorNamespace
+			if err := c.createOrUpdate(nfsDriver, func() error {
+				if err := c.own(nfsDriver); err != nil {
+					return fmt.Errorf("failed to own csi nfs driver: %v", err)
 				}
-			}
-			if len(customControllerPluginTolerations) > 0 {
-				nfsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
-						Tolerations: customControllerPluginTolerations,
-					},
+				// only update during initial creation
+				if nfsDriver.UID == "" {
+					if len(customNodePluginTolerations) > 0 {
+						nfsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
+							PodCommonSpec: csiopv1a1.PodCommonSpec{
+								Tolerations: customNodePluginTolerations,
+							},
+						}
+					}
+					if len(customControllerPluginTolerations) > 0 {
+						nfsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
+							PodCommonSpec: csiopv1a1.PodCommonSpec{
+								Tolerations: customControllerPluginTolerations,
+							},
+						}
+					}
 				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile nfs driver: %v", err)
 			}
 		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile nfs driver: %v", err)
 	}
 
 	return nil
