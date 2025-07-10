@@ -246,7 +246,6 @@ spec:
           resources:
           - noobaas
           verbs:
-          - create
           - delete
           - get
           - list
