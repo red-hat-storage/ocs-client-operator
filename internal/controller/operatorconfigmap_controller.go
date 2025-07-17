@@ -253,9 +253,28 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
-	var err error
-	if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
+	// TODO: this is an interim fix until we decide on who manages the subscription of client-op
+	// including it's dependents when we run in hub
+	//
+	// since odf-op is the top level operator it is guaranteed that it's existence indicates
+	// we are running in hub and we delete our webhook and unmanage subscriptions
+	csvList := &opv1a1.ClusterServiceVersionList{}
+	odfOperatorLabel := fmt.Sprintf("operators.coreos.com/odf-operator.%s", c.OperatorNamespace)
+	if err := c.list(
+		csvList,
+		client.InNamespace(c.OperatorNamespace),
+		client.MatchingLabels{odfOperatorLabel: ""},
+		client.Limit(1),
+	); err != nil {
 		return reconcile.Result{}, err
+	}
+	runningOnHub := len(csvList.Items) > 0
+
+	var err error
+	if !runningOnHub {
+		if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	if c.operatorConfigMap.GetDeletionTimestamp().IsZero() {
@@ -268,14 +287,27 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-		if err := c.reconcileWebhookService(); err != nil {
-			c.log.Error(err, "unable to reconcile webhook service")
-			return ctrl.Result{}, err
-		}
+		if runningOnHub {
+			// delete the webhook if it exists
+			whConfig := &admrv1.ValidatingWebhookConfiguration{}
+			whConfig.Name = templates.SubscriptionWebhookName
+			if err := c.get(whConfig); client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
+			} else if whConfig.UID != "" {
+				if err = c.delete(whConfig); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		} else {
+			if err := c.reconcileWebhookService(); err != nil {
+				c.log.Error(err, "unable to reconcile webhook service")
+				return ctrl.Result{}, err
+			}
 
-		if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
-			c.log.Error(err, "unable to register subscription validating webhook")
-			return ctrl.Result{}, err
+			if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
+				c.log.Error(err, "unable to register subscription validating webhook")
+				return ctrl.Result{}, err
+			}
 		}
 
 		if err := c.reconcileClientOperatorSubscription(); err != nil {
