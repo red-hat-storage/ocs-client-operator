@@ -81,6 +81,8 @@ const (
 	subPackageIndexName        = "index:subscriptionPackage"
 	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version"
 	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
+	noobaaCrdName              = "noobaas.noobaa.io"
+	noobaaCrName               = "noobaa-remote"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -185,6 +187,17 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
 		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
 
+	if c.AvailableCrds[noobaaCrdName] {
+		bldr.Watches(
+			&nbv1.NooBaa{},
+			enqueueConfigMapRequest,
+			builder.WithPredicates(
+				utils.NamePredicate(noobaaCrName),
+				predicate.GenerationChangedPredicate{},
+			),
+		)
+	}
+
 	return bldr.Complete(c)
 }
 
@@ -204,7 +217,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;delete;watch
+//+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;update;delete
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -240,9 +253,28 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
-	var err error
-	if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
+	// TODO: this is an interim fix until we decide on who manages the subscription of client-op
+	// including it's dependents when we run in hub
+	//
+	// since odf-op is the top level operator it is guaranteed that it's existence indicates
+	// we are running in hub and we delete our webhook and unmanage subscriptions
+	csvList := &opv1a1.ClusterServiceVersionList{}
+	odfOperatorLabel := fmt.Sprintf("operators.coreos.com/odf-operator.%s", c.OperatorNamespace)
+	if err := c.list(
+		csvList,
+		client.InNamespace(c.OperatorNamespace),
+		client.MatchingLabels{odfOperatorLabel: ""},
+		client.Limit(1),
+	); err != nil {
 		return reconcile.Result{}, err
+	}
+	runningOnHub := len(csvList.Items) > 0
+
+	var err error
+	if !runningOnHub {
+		if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	if c.operatorConfigMap.GetDeletionTimestamp().IsZero() {
@@ -255,14 +287,27 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-		if err := c.reconcileWebhookService(); err != nil {
-			c.log.Error(err, "unable to reconcile webhook service")
-			return ctrl.Result{}, err
-		}
+		if runningOnHub {
+			// delete the webhook if it exists
+			whConfig := &admrv1.ValidatingWebhookConfiguration{}
+			whConfig.Name = templates.SubscriptionWebhookName
+			if err := c.get(whConfig); client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, err
+			} else if whConfig.UID != "" {
+				if err = c.delete(whConfig); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		} else {
+			if err := c.reconcileWebhookService(); err != nil {
+				c.log.Error(err, "unable to reconcile webhook service")
+				return ctrl.Result{}, err
+			}
 
-		if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
-			c.log.Error(err, "unable to register subscription validating webhook")
-			return ctrl.Result{}, err
+			if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
+				c.log.Error(err, "unable to register subscription validating webhook")
+				return ctrl.Result{}, err
+			}
 		}
 
 		if err := c.reconcileClientOperatorSubscription(); err != nil {
@@ -1093,7 +1138,7 @@ func parseTolerations(csiPluginTolerations string) ([]corev1.Toleration, error) 
 
 func (c *OperatorConfigMapReconciler) removeNoobaa() error {
 	noobaa := &nbv1.NooBaa{}
-	noobaa.Name = "noobaa-remote"
+	noobaa.Name = noobaaCrName
 	noobaa.Namespace = c.OperatorNamespace
 
 	if err := c.get(noobaa); !meta.IsNoMatchError(err) && client.IgnoreNotFound(err) != nil {

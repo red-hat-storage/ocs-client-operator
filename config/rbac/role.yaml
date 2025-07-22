@@ -207,7 +207,6 @@ rules:
   resources:
   - noobaas
   verbs:
-  - create
   - delete
   - get
   - list
@@ -297,6 +296,17 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - replication.storage.openshift.io
+  resources:
+  - volumegroupreplicationclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
 - apiGroups:
   - replication.storage.openshift.io
   resources:
