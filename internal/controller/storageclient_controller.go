@@ -248,24 +248,27 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 			secret := &corev1.Secret{}
 			secret.Name = eResource.Name
 			secret.Namespace = r.OperatorNamespace
-			_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
-				if err := r.own(secret); err != nil {
-					return err
+			// a 4.16 provider can send this secret to 4.17 client, skip reconcile as it'll overwrite rook info
+			if secret.Name != "rook-ceph-mon" {
+				_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, secret, func() error {
+					if err := r.own(secret); err != nil {
+						return err
+					}
+					if secret.Data == nil {
+						secret.Data = map[string][]byte{}
+					}
+					for k, v := range data {
+						secret.Data[k] = []byte(v)
+					}
+					return nil
+				})
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf(
+						"failed to create or update secret %v: %v",
+						client.ObjectKeyFromObject(secret),
+						err,
+					)
 				}
-				if secret.Data == nil {
-					secret.Data = map[string][]byte{}
-				}
-				for k, v := range data {
-					secret.Data[k] = []byte(v)
-				}
-				return nil
-			})
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf(
-					"failed to create or update secret %v: %v",
-					client.ObjectKeyFromObject(secret),
-					err,
-				)
 			}
 		case "Noobaa":
 			noobaaSpec := &nbv1.NooBaaSpec{}
