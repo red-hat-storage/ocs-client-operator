@@ -386,7 +386,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	storageClientResponse, err := externalClusterClient.GetDesiredClientState(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
 		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
-			r.log.Info("Client does not meet hub requirements, stopping reconciliation")
+			r.log.Info("Client does not meet hub requirements, stopping reconciliation", "reason", st.Message())
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
