@@ -15,6 +15,7 @@ package controller
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,6 +73,7 @@ const (
 	// openshift cluster.
 	clusterVersionName                 = "version"
 	manageNoobaaSubKey                 = "manageNoobaaSubscription"
+	disableVersionChecksKey            = "disableVersionChecks"
 	subscriptionLabelKey               = "managed-by"
 	subscriptionLabelValue             = "webhook.subscription.ocs.openshift.io"
 	generateRbdOMapInfoKey             = "generateRbdOMapInfo"
@@ -253,25 +255,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
-	// TODO: this is an interim fix until we decide on who manages the subscription of client-op
-	// including it's dependents when we run in hub
-	//
-	// since odf-op is the top level operator it is guaranteed that it's existence indicates
-	// we are running in hub and we delete our webhook and unmanage subscriptions
-	csvList := &opv1a1.ClusterServiceVersionList{}
-	odfOperatorLabel := fmt.Sprintf("operators.coreos.com/odf-operator.%s", c.OperatorNamespace)
-	if err := c.list(
-		csvList,
-		client.InNamespace(c.OperatorNamespace),
-		client.MatchingLabels{odfOperatorLabel: ""},
-		client.Limit(1),
-	); err != nil {
-		return reconcile.Result{}, err
+	disableVersionChecks, err := strconv.ParseBool(cmp.Or(c.operatorConfigMap.Data[disableVersionChecksKey], "false"))
+	if err != nil {
+		c.log.Error(err, "failed to parse configmap key data", "key", disableVersionChecksKey)
 	}
-	runningOnHub := len(csvList.Items) > 0
-
-	var err error
-	if !runningOnHub {
+	if !disableVersionChecks {
 		if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -287,7 +275,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-		if runningOnHub {
+		if disableVersionChecks {
 			// delete the webhook if it exists
 			whConfig := &admrv1.ValidatingWebhookConfiguration{}
 			whConfig.Name = templates.SubscriptionWebhookName

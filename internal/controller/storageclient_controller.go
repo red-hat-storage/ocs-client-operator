@@ -30,6 +30,8 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"go.uber.org/multierr"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -385,6 +387,10 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	storageClientResponse, err := externalClusterClient.GetDesiredClientState(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+			r.log.Info("Client does not meet hub requirements, stopping reconciliation")
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
 	}
 
