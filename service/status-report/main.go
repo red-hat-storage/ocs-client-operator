@@ -18,16 +18,19 @@ package main
 
 import (
 	"context"
-	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"math"
 	"os"
+
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -112,11 +115,27 @@ func main() {
 
 	status := providerclient.NewStorageClientStatus().
 		SetClientName(storageClientName).
-		SetClientID(string(storageClient.UID))
+		SetClientID(string(storageClient.UID)).
+		SetOperatorNamespace(operatorNamespace)
 	setPlatformInformation(ctx, cl, status)
-	setOperatorInformation(status, operatorVersion, operatorNamespace)
 	setClusterInformation(ctx, cl, status)
 	setStorageQuotaUtilizationRatio(ctx, cl, status)
+
+	providerReady := true
+	// if GetDesiredClientState RPC is not implemented, it means the provider is not yet upgraded to 4.19
+	if _, err := providerClient.GetDesiredClientState(ctx, storageClient.Status.ConsumerID); err != nil {
+		if st, ok := grpcstatus.FromError(err); ok && st.Code() == grpccodes.Unimplemented {
+			klog.Infof("GetDesiredClientState returned Unimplemented, provider still on 4.18: %v", err)
+			providerReady = false
+		}
+	}
+	if providerReady {
+		status.SetOperatorVersion(operatorVersion)
+	} else {
+		// keep the consumer version as 4.18 till the provider is upgraded to 4.19 to avoid making provider not upgradable
+		status.SetOperatorVersion("4.18.99")
+	}
+
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
@@ -171,12 +190,6 @@ func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, stat
 		}
 	}
 
-}
-
-func setOperatorInformation(status interfaces.StorageClientStatus, operatorVersion, operatorNamespace string) {
-	status.
-		SetOperatorVersion(operatorVersion).
-		SetOperatorNamespace(operatorNamespace)
 }
 
 func setPlatformInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
