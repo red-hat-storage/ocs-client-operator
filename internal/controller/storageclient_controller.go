@@ -33,7 +33,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
@@ -93,14 +93,14 @@ var (
 	}
 	kindsToReconcile = []client.Object{
 		&quotav1.ClusterResourceQuota{},
-		&csiopv1a1.CephConnection{},
-		&csiopv1a1.ClientProfileMapping{},
+		&csiopv1.CephConnection{},
+		&csiopv1.ClientProfileMapping{},
 		&corev1.Secret{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
 		&replicationv1a1.VolumeReplicationClass{},
 		&replicationv1a1.VolumeGroupReplicationClass{},
-		&csiopv1a1.ClientProfile{},
+		&csiopv1.ClientProfile{},
 		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
 		&groupsnapapi.VolumeGroupSnapshotClass{},
 	}
@@ -164,7 +164,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
-	if err := mgr.GetCache().IndexField(ctx, &csiopv1a1.ClientProfile{}, ownerUIDIndexName, func(obj client.Object) []string {
+	if err := mgr.GetCache().IndexField(ctx, &csiopv1.ClientProfile{}, ownerUIDIndexName, func(obj client.Object) []string {
 		refs := obj.GetOwnerReferences()
 		owners := []string{}
 		for i := range refs {
@@ -195,12 +195,12 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&corev1.Secret{}).
-		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{}).
 		Owns(&replicationv1a1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(
 			&extv1.CustomResourceDefinition{},
 			enqueueStorageClients,
@@ -785,7 +785,7 @@ func (r *storageClientReconcile) hasOdfVolumeGroupSnapshotContents(clientProfile
 }
 
 func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {
-	clientProfileList := &csiopv1a1.ClientProfileList{}
+	clientProfileList := &csiopv1.ClientProfileList{}
 	if err := r.list(clientProfileList, client.MatchingFields{ownerUIDIndexName: string(r.storageClient.UID)}); err != nil {
 		return nil, fmt.Errorf("failed to list clientprofiles owned by storageclient %s: %v", r.storageClient.Name, err)
 	}

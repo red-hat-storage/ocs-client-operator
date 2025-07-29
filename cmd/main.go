@@ -33,7 +33,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	replicationv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -85,7 +85,7 @@ func init() {
 	utilruntime.Must(opv1a1.AddToScheme(scheme))
 	utilruntime.Must(extv1.AddToScheme(scheme))
 	utilruntime.Must(quotav1.AddToScheme(scheme))
-	utilruntime.Must(csiopv1a1.AddToScheme(scheme))
+	utilruntime.Must(csiopv1.AddToScheme(scheme))
 	utilruntime.Must(nbapis.AddToScheme(scheme))
 	utilruntime.Must(ramenv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(replicationv1alpha1.AddToScheme(scheme))
