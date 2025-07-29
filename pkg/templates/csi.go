@@ -3,7 +3,7 @@ package templates
 import (
 	"fmt"
 
-	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -75,13 +75,13 @@ func SetSecurityContextConstraintsDesiredState(scc *secv1.SecurityContextConstra
 // Ceph CSI Operator Config
 const CSIOperatorConfigName = "ceph-csi-operator-config"
 
-var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
-	DriverSpecDefaults: &csiopv1a1.DriverSpec{
+var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
+	DriverSpecDefaults: &csiopv1.DriverSpec{
 		EnableMetadata: ptr.To(true),
-		Log: &csiopv1a1.LogSpec{
+		Log: &csiopv1.LogSpec{
 			Verbosity: 5,
-			Rotation: &csiopv1a1.LogRotationSpec{
-				Periodicity: csiopv1a1.DailyPeriod,
+			Rotation: &csiopv1.LogRotationSpec{
+				Periodicity: csiopv1.DailyPeriod,
 				MaxLogSize:  resource.MustParse("500M"),
 				MaxFiles:    7,
 				LogHostPath: "/var/lib/cephcsi",
@@ -90,9 +90,9 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 		AttachRequired:  ptr.To(true),
 		DeployCsiAddons: ptr.To(true),
 		FsGroupPolicy:   storagev1.FileFSGroupPolicy,
-		ControllerPlugin: &csiopv1a1.ControllerPluginSpec{
+		ControllerPlugin: &csiopv1.ControllerPluginSpec{
 			Privileged: ptr.To(true),
-			Resources: csiopv1a1.ControllerPluginResourcesSpec{
+			Resources: csiopv1.ControllerPluginResourcesSpec{
 				LogRotator: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -174,7 +174,7 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 					},
 				},
 			},
-			PodCommonSpec: csiopv1a1.PodCommonSpec{
+			PodCommonSpec: csiopv1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-cluster-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{
@@ -189,9 +189,9 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 			Replicas:    ptr.To(int32(2)),
 			HostNetwork: ptr.To(true),
 		},
-		NodePlugin: &csiopv1a1.NodePluginSpec{
+		NodePlugin: &csiopv1.NodePluginSpec{
 			EnableSeLinuxHostMount: ptr.To(true),
-			Resources: csiopv1a1.NodePluginResourcesSpec{
+			Resources: csiopv1.NodePluginResourcesSpec{
 				LogRotator: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -234,7 +234,7 @@ var CSIOperatorConfigSpec = csiopv1a1.OperatorConfigSpec{
 				},
 			},
 			KubeletDirPath: "/var/lib/kubelet",
-			PodCommonSpec: csiopv1a1.PodCommonSpec{
+			PodCommonSpec: csiopv1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-node-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{
