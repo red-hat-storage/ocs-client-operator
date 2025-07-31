@@ -15,6 +15,7 @@ package controller
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,7 +32,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
-	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	"github.com/go-logr/logr"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
@@ -72,6 +73,7 @@ const (
 	// openshift cluster.
 	clusterVersionName                 = "version"
 	manageNoobaaSubKey                 = "manageNoobaaSubscription"
+	disableVersionChecksKey            = "disableVersionChecks"
 	subscriptionLabelKey               = "managed-by"
 	subscriptionLabelValue             = "webhook.subscription.ocs.openshift.io"
 	generateRbdOMapInfoKey             = "generateRbdOMapInfo"
@@ -166,8 +168,8 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}, configMapPredicates).
 		Owns(&corev1.Service{}, servicePredicate).
-		Owns(&csiopv1a1.OperatorConfig{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.Driver{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.OperatorConfig{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.Driver{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
 		Watches(
 			&extv1.CustomResourceDefinition{},
@@ -253,25 +255,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
-	// TODO: this is an interim fix until we decide on who manages the subscription of client-op
-	// including it's dependents when we run in hub
-	//
-	// since odf-op is the top level operator it is guaranteed that it's existence indicates
-	// we are running in hub and we delete our webhook and unmanage subscriptions
-	csvList := &opv1a1.ClusterServiceVersionList{}
-	odfOperatorLabel := fmt.Sprintf("operators.coreos.com/odf-operator.%s", c.OperatorNamespace)
-	if err := c.list(
-		csvList,
-		client.InNamespace(c.OperatorNamespace),
-		client.MatchingLabels{odfOperatorLabel: ""},
-		client.Limit(1),
-	); err != nil {
-		return reconcile.Result{}, err
+	disableVersionChecks, err := strconv.ParseBool(cmp.Or(c.operatorConfigMap.Data[disableVersionChecksKey], "false"))
+	if err != nil {
+		c.log.Error(err, "failed to parse configmap key data", "key", disableVersionChecksKey)
 	}
-	runningOnHub := len(csvList.Items) > 0
-
-	var err error
-	if !runningOnHub {
+	if !disableVersionChecks {
 		if c.subscriptionChannel, err = c.getDesiredSubscriptionChannel(storageClients); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -287,7 +275,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-		if runningOnHub {
+		if disableVersionChecks {
 			// delete the webhook if it exists
 			whConfig := &admrv1.ValidatingWebhookConfiguration{}
 			whConfig.Name = templates.SubscriptionWebhookName
@@ -504,7 +492,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	if err != nil {
 		return fmt.Errorf("failed to get desired imageset configmap name: %v", err)
 	}
-	csiOperatorConfig := &csiopv1a1.OperatorConfig{}
+	csiOperatorConfig := &csiopv1.OperatorConfig{}
 	csiOperatorConfig.Name = templates.CSIOperatorConfigName
 	csiOperatorConfig.Namespace = c.OperatorNamespace
 	if err := c.createOrUpdate(csiOperatorConfig, func() error {
@@ -516,7 +504,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		driverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		driverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
-			driverSpecDefaults.SnapshotPolicy = csiopv1a1.VolumeGroupSnapshotPolicy
+			driverSpecDefaults.SnapshotPolicy = csiopv1.VolumeGroupSnapshotPolicy
 		}
 		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])
 		driverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
@@ -527,7 +515,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			driverSpecDefaults.ControllerPlugin.Annotations[cniNetworksAnnotationKey] = cniNetworkAnnotationValue
 		}
 		if len(topologyDomainLablesSet) > 0 {
-			driverSpecDefaults.NodePlugin.Topology = &csiopv1a1.TopologySpec{
+			driverSpecDefaults.NodePlugin.Topology = &csiopv1.TopologySpec{
 				DomainLabels: slices.Collect(maps.Keys(topologyDomainLablesSet)),
 			}
 		}
@@ -545,7 +533,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	// ceph rbd driver config
-	rbdDriver := &csiopv1a1.Driver{}
+	rbdDriver := &csiopv1.Driver{}
 	rbdDriver.Name = templates.RBDDriverName
 	rbdDriver.Namespace = c.OperatorNamespace
 	if err := c.createOrUpdate(rbdDriver, func() error {
@@ -555,15 +543,15 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		// only update during initial creation
 		if rbdDriver.UID == "" {
 			if len(customNodePluginTolerations) > 0 {
-				rbdDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
+				rbdDriver.Spec.NodePlugin = &csiopv1.NodePluginSpec{
+					PodCommonSpec: csiopv1.PodCommonSpec{
 						Tolerations: customNodePluginTolerations,
 					},
 				}
 			}
 			if len(customControllerPluginTolerations) > 0 {
-				rbdDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
+				rbdDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{
+					PodCommonSpec: csiopv1.PodCommonSpec{
 						Tolerations: customControllerPluginTolerations,
 					},
 				}
@@ -575,7 +563,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	// ceph fs driver config
-	cephFsDriver := &csiopv1a1.Driver{}
+	cephFsDriver := &csiopv1.Driver{}
 	cephFsDriver.Name = templates.CephFsDriverName
 	cephFsDriver.Namespace = c.OperatorNamespace
 	if err := c.createOrUpdate(cephFsDriver, func() error {
@@ -585,15 +573,15 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		// only update during initial creation
 		if cephFsDriver.UID == "" {
 			if len(customNodePluginTolerations) > 0 {
-				cephFsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
+				cephFsDriver.Spec.NodePlugin = &csiopv1.NodePluginSpec{
+					PodCommonSpec: csiopv1.PodCommonSpec{
 						Tolerations: customNodePluginTolerations,
 					},
 				}
 			}
 			if len(customControllerPluginTolerations) > 0 {
-				cephFsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
+				cephFsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{
+					PodCommonSpec: csiopv1.PodCommonSpec{
 						Tolerations: customControllerPluginTolerations,
 					},
 				}
@@ -605,7 +593,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	// nfs driver config
-	nfsDriver := &csiopv1a1.Driver{}
+	nfsDriver := &csiopv1.Driver{}
 	nfsDriver.Name = templates.NfsDriverName
 	nfsDriver.Namespace = c.OperatorNamespace
 	if err := c.createOrUpdate(nfsDriver, func() error {
@@ -615,15 +603,15 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		// only update during initial creation
 		if nfsDriver.UID == "" {
 			if len(customNodePluginTolerations) > 0 {
-				nfsDriver.Spec.NodePlugin = &csiopv1a1.NodePluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
+				nfsDriver.Spec.NodePlugin = &csiopv1.NodePluginSpec{
+					PodCommonSpec: csiopv1.PodCommonSpec{
 						Tolerations: customNodePluginTolerations,
 					},
 				}
 			}
 			if len(customControllerPluginTolerations) > 0 {
-				nfsDriver.Spec.ControllerPlugin = &csiopv1a1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1a1.PodCommonSpec{
+				nfsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{
+					PodCommonSpec: csiopv1.PodCommonSpec{
 						Tolerations: customControllerPluginTolerations,
 					},
 				}

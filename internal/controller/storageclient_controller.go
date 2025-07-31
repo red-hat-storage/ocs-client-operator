@@ -30,14 +30,17 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"go.uber.org/multierr"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
-	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
+	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -73,12 +76,14 @@ const (
 	storageClientDefaultAnnotationKey = "ocs.openshift.io/storageclient.default"
 
 	// indexes for caching
-	ownerUIDIndexName      = "index:ownerUID"
-	pvClusterIDIndexName   = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName  = "index:volumeSnapshotContentCSIDriver"
-	vgscClusterIDIndexName = "index:volumeGroupSnapshotContentCSIDriver"
+	ownerUIDIndexName         = "index:ownerUID"
+	pvClusterIDIndexName      = "index:persistentVolumeClusterID"
+	vscClusterIDIndexName     = "index:volumeSnapshotContentCSIDriver"
+	vgscClusterIDIndexName    = "index:volumeGroupSnapshotContentCSIDriver"
+	odfvgscClusterIDIndexName = "index:odfVolumeGroupSnapshotContentCSIDriver"
 
-	VolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
+	VolumeGroupSnapshotClassCrdName    = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
+	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
 )
 
 var (
@@ -88,14 +93,15 @@ var (
 	}
 	kindsToReconcile = []client.Object{
 		&quotav1.ClusterResourceQuota{},
-		&csiopv1a1.CephConnection{},
-		&csiopv1a1.ClientProfileMapping{},
+		&csiopv1.CephConnection{},
+		&csiopv1.ClientProfileMapping{},
 		&corev1.Secret{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
 		&replicationv1a1.VolumeReplicationClass{},
 		&replicationv1a1.VolumeGroupReplicationClass{},
-		&csiopv1a1.ClientProfile{},
+		&csiopv1.ClientProfile{},
+		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
 		&groupsnapapi.VolumeGroupSnapshotClass{},
 	}
 )
@@ -158,7 +164,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
-	if err := mgr.GetCache().IndexField(ctx, &csiopv1a1.ClientProfile{}, ownerUIDIndexName, func(obj client.Object) []string {
+	if err := mgr.GetCache().IndexField(ctx, &csiopv1.ClientProfile{}, ownerUIDIndexName, func(obj client.Object) []string {
 		refs := obj.GetOwnerReferences()
 		owners := []string{}
 		for i := range refs {
@@ -189,12 +195,12 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&corev1.Secret{}).
-		Owns(&csiopv1a1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{}).
 		Owns(&replicationv1a1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1a1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.ClientProfile{}, builder.WithPredicates(generationChangePredicate)).
 		Watches(
 			&extv1.CustomResourceDefinition{},
 			enqueueStorageClients,
@@ -212,6 +218,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.controller = controller
 	r.cache = mgr.GetCache()
 	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
+	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, false)
 
 	return err
 }
@@ -234,6 +241,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
+//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;delete;patch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -275,6 +284,17 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *storageClientReconcile) reconcileDynamicWatches() error {
+	if err := r.reconcileVolumeGroupSnapshot(); err != nil {
+		return err
+	}
+
+	if err := r.reconcileOdfVolumeGroupSnapshot(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *storageClientReconcile) reconcileVolumeGroupSnapshot() error {
 	if watchExists, foundCrd := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
 		return nil
 	}
@@ -327,6 +347,62 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 		return fmt.Errorf("unable to set up FieldIndexer for VGSC csi driver name: %v", err)
 	}
 	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, true)
+	return nil
+}
+
+func (r *storageClientReconcile) reconcileOdfVolumeGroupSnapshot() error {
+	if watchExists, foundCrd := r.crdsBeingWatched.Load(OdfVolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
+		return nil
+	}
+
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	crd.Name = OdfVolumeGroupSnapshotClassCrdName
+	if err := r.get(crd); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	// CRD doesn't exist in the cluster
+	if crd.UID == "" {
+		return nil
+	}
+
+	// establish a watch
+	if err := r.controller.Watch(
+		source.Kind(
+			r.cache,
+			client.Object(&odfgsapiv1b1.VolumeGroupSnapshotContent{}),
+			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []ctrl.Request {
+				owner := metav1.GetControllerOf(o)
+				if owner != nil &&
+					owner.Kind == "StorageClient" &&
+					owner.APIVersion == v1alpha1.GroupVersion.String() {
+					return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: owner.Name}}}
+				}
+				return nil
+			}),
+		),
+	); err != nil {
+		return fmt.Errorf("failed to setup dynamic watch on %s: %v", crd.Name, err)
+	}
+
+	// add an index
+	if err := r.cache.IndexField(r.ctx, &odfgsapiv1b1.VolumeGroupSnapshotContent{}, odfvgscClusterIDIndexName, func(o client.Object) []string {
+		vgsc := o.(*odfgsapiv1b1.VolumeGroupSnapshotContent)
+		if vgsc != nil &&
+			templates.CephFsDriverName == vgsc.Spec.Driver &&
+			vgsc.Status != nil &&
+			vgsc.Status.VolumeGroupSnapshotHandle != nil {
+			parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
+			if len(parts) == 9 {
+				// second entry in the volumeID is clusterID which is unique across the cluster
+				return []string{parts[2]}
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for VGSC csi driver name: %v", err)
+	}
+	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, true)
 	return nil
 }
 
@@ -385,6 +461,10 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	storageClientResponse, err := externalClusterClient.GetDesiredClientState(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+			r.log.Info("Client does not meet hub requirements, stopping reconciliation", "reason", st.Message())
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
 	}
 
@@ -500,6 +580,11 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		}
+		if exist, err := r.hasOdfVolumeGroupSnapshotContents(names); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify odf-volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more odf-volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
 	}
 
@@ -652,7 +737,7 @@ func (r *storageClientReconcile) hasPersistentVolumes(clientProfileNames []strin
 func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []string) (bool, error) {
 	for _, name := range clientProfileNames {
 		vscList := &snapapi.VolumeSnapshotContentList{}
-		if err := r.list(vscList, client.MatchingFields{vscClusterIDIndexName: name}); err != nil {
+		if err := r.list(vscList, client.MatchingFields{vscClusterIDIndexName: name}, client.Limit(1)); err != nil {
 			return false, fmt.Errorf("failed to list volume snapshot content resources: %v", err)
 		}
 		if len(vscList.Items) != 0 {
@@ -669,7 +754,7 @@ func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNam
 	}
 	for _, name := range clientProfileNames {
 		vscList := &groupsnapapi.VolumeGroupSnapshotContentList{}
-		if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: name}); err != nil {
+		if err := r.list(vscList, client.MatchingFields{vgscClusterIDIndexName: name}, client.Limit(1)); err != nil {
 			return false, fmt.Errorf("failed to list volume group snapshot content resources: %v", err)
 		}
 		if len(vscList.Items) != 0 {
@@ -681,8 +766,26 @@ func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNam
 	return false, nil
 }
 
+func (r *storageClientReconcile) hasOdfVolumeGroupSnapshotContents(clientProfileNames []string) (bool, error) {
+	if val, _ := r.crdsBeingWatched.Load(OdfVolumeGroupSnapshotClassCrdName); !val.(bool) {
+		return false, nil
+	}
+	for _, name := range clientProfileNames {
+		vscList := &odfgsapiv1b1.VolumeGroupSnapshotContentList{}
+		if err := r.list(vscList, client.MatchingFields{odfvgscClusterIDIndexName: name}, client.Limit(1)); err != nil {
+			return false, fmt.Errorf("failed to list odf-volume group snapshot content resources: %v", err)
+		}
+		if len(vscList.Items) != 0 {
+			r.log.Info(fmt.Sprintf("Odf-VolumeGroupSnapshotContent referring storageclient %q exists", r.storageClient.Name))
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {
-	clientProfileList := &csiopv1a1.ClientProfileList{}
+	clientProfileList := &csiopv1.ClientProfileList{}
 	if err := r.list(clientProfileList, client.MatchingFields{ownerUIDIndexName: string(r.storageClient.UID)}); err != nil {
 		return nil, fmt.Errorf("failed to list clientprofiles owned by storageclient %s: %v", r.storageClient.Name, err)
 	}
