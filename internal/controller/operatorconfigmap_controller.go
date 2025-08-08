@@ -1148,22 +1148,23 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 	if err := c.list(csvList, client.InNamespace(c.OperatorNamespace)); err != nil {
 		return fmt.Errorf("failed to list csv: %v", err)
 	}
-	mcgCsvList := utils.Filter(csvList.Items, func(csv metav1.PartialObjectMetadata) bool {
+
+	// If client is installed alongside the odf-op and we don't need to remove noobaa csv and subs
+	if slices.ContainsFunc(csvList.Items, func(csv metav1.PartialObjectMetadata) bool {
+		return strings.HasPrefix(csv.Name, "odf-operator")
+	}) {
+		return nil
+	}
+
+	mcgCsvList := utils.Filter(csvList.Items, func(csv *metav1.PartialObjectMetadata) bool {
 		return strings.HasPrefix(csv.Name, "mcg-operator")
 	})
 	for i := range mcgCsvList {
 		csv := &mcgCsvList[i]
-		if index := slices.IndexFunc(
-			csv.OwnerReferences,
-			func(ref metav1.OwnerReference) bool {
-				return ref.Kind == "Subscription" && ref.Name == "odf-operator"
-			},
-		); index == -1 {
-			if csv.GetDeletionTimestamp().IsZero() {
-				if err := c.delete(csv); err != nil {
-					c.log.Error(err, "failed to delete noobaa operator csv")
-					return err
-				}
+		if csv.GetDeletionTimestamp().IsZero() {
+			if err := c.delete(csv); err != nil {
+				c.log.Error(err, "failed to delete noobaa operator csv")
+				return err
 			}
 		}
 	}
@@ -1174,16 +1175,9 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 	} else if noobaaSubscription == nil {
 		return nil
 	}
-	if index := slices.IndexFunc(
-		noobaaSubscription.OwnerReferences,
-		func(ref metav1.OwnerReference) bool {
-			return ref.Kind == "Subscription" && ref.Name == "odf-operator"
-		},
-	); index == -1 {
-		if noobaaSubscription.GetDeletionTimestamp().IsZero() {
-			if err = c.delete(noobaaSubscription); err != nil {
-				return err
-			}
+	if noobaaSubscription.GetDeletionTimestamp().IsZero() {
+		if err = c.delete(noobaaSubscription); err != nil {
+			return err
 		}
 	}
 
