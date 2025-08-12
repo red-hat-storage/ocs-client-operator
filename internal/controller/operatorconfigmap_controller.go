@@ -215,7 +215,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
-//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete;list
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
@@ -1162,40 +1162,43 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 		return nil
 	}
 
-	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
-	if client.IgnoreNotFound(err) != nil {
-		return err
-	} else if noobaaSubscription == nil {
-		return nil
+	csvList := &metav1.PartialObjectMetadataList{}
+	csvList.SetGroupVersionKind(opv1a1.SchemeGroupVersion.WithKind("ClusterServiceVersion"))
+	if err := c.list(csvList, client.InNamespace(c.OperatorNamespace)); err != nil {
+		return fmt.Errorf("failed to list csv: %v", err)
 	}
-	index := slices.IndexFunc(
-		noobaaSubscription.OwnerReferences,
-		func(ref metav1.OwnerReference) bool {
-			return ref.Kind == "Subscription" && ref.Name == "odf-operator"
-		},
-	)
-	if index != -1 {
+
+	// If client is installed alongside the odf-op and we don't need to remove noobaa csv and subs
+	if slices.ContainsFunc(csvList.Items, func(csv metav1.PartialObjectMetadata) bool {
+		return strings.HasPrefix(csv.Name, "odf-operator")
+	}) {
 		return nil
 	}
 
-	csv := &opv1a1.ClusterServiceVersion{}
-	csv.Name = noobaaSubscription.Status.InstalledCSV
-	csv.Namespace = c.OperatorNamespace
-	if csv.Name != "" {
-		if err := c.get(csv); client.IgnoreNotFound(err) != nil {
-			c.log.Error(err, "failed to get noobaa operator csv")
-			return err
-		} else if csv.UID != "" && csv.GetDeletionTimestamp().IsZero() {
+	mcgCsvList := utils.Filter(csvList.Items, func(csv *metav1.PartialObjectMetadata) bool {
+		return strings.HasPrefix(csv.Name, "mcg-operator")
+	})
+	for i := range mcgCsvList {
+		csv := &mcgCsvList[i]
+		if csv.GetDeletionTimestamp().IsZero() {
 			if err := c.delete(csv); err != nil {
 				c.log.Error(err, "failed to delete noobaa operator csv")
 				return err
 			}
 		}
 	}
+
+	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
+	if client.IgnoreNotFound(err) != nil {
+		return err
+	} else if noobaaSubscription == nil {
+		return nil
+	}
 	if noobaaSubscription.GetDeletionTimestamp().IsZero() {
 		if err = c.delete(noobaaSubscription); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
