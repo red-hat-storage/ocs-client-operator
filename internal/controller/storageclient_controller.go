@@ -71,9 +71,8 @@ const (
 	OffboardConsumer = "OffboardConsumer"
 	GetStorageConfig = "GetStorageConfig"
 
-	storageClientNameLabel            = "ocs.openshift.io/storageclient.name"
-	storageClientFinalizer            = "storageclient.ocs.openshift.io"
-	storageClientDefaultAnnotationKey = "ocs.openshift.io/storageclient.default"
+	storageClientNameLabel = "ocs.openshift.io/storageclient.name"
+	storageClientFinalizer = "storageclient.ocs.openshift.io"
 
 	// indexes for caching
 	ownerUIDIndexName         = "index:ownerUID"
@@ -411,6 +410,15 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, err
 	}
 
+	r.storageClient.Status.Phase = v1alpha1.StorageClientInitializing
+	if controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
+		r.log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
+		if err := r.update(&r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("Failed adding a finalizer to StorageClient: %v", err)
+		}
+		return reconcile.Result{Requeue: true}, nil
+	}
+
 	externalClusterClient, err := r.newExternalClusterClient()
 	if err != nil {
 		return reconcile.Result{}, err
@@ -420,28 +428,6 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	// deletion phase
 	if !r.storageClient.GetDeletionTimestamp().IsZero() {
 		return r.deletionPhase(externalClusterClient)
-	}
-
-	updateStorageClient := false
-	storageClients := &v1alpha1.StorageClientList{}
-	if err := r.list(storageClients); err != nil {
-		r.log.Error(err, "unable to list storage clients")
-		return ctrl.Result{}, err
-	}
-	if len(storageClients.Items) == 1 && storageClients.Items[0].Name == r.storageClient.Name {
-		if utils.AddAnnotation(&r.storageClient, storageClientDefaultAnnotationKey, "true") {
-			updateStorageClient = true
-		}
-	}
-	if controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
-		r.storageClient.Status.Phase = v1alpha1.StorageClientInitializing
-		r.log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
-		updateStorageClient = true
-	}
-	if updateStorageClient {
-		if err := r.update(&r.storageClient); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient: %v", err)
-		}
 	}
 
 	operatorVersion, err := r.getOperatorVersion()
@@ -454,6 +440,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			return reconcile.Result{}, err
 		}
 	}
+	r.storageClient.Status.Phase = v1alpha1.StorageClientConnected
 
 	if res, err := r.reconcileClientStatusReporterJob(operatorVersion); err != nil {
 		return res, err
@@ -632,7 +619,6 @@ func (r *storageClientReconcile) onboardConsumer(externalClusterClient *provider
 	}
 
 	r.storageClient.Status.ConsumerID = response.StorageConsumerUUID
-	r.storageClient.Status.Phase = v1alpha1.StorageClientConnected
 
 	r.log.Info("onboarding completed")
 	return nil
