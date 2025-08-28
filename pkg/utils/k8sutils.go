@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -24,8 +25,11 @@ import (
 	"os"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -170,4 +174,35 @@ func IsForbiddenError(err error) bool {
 		}
 	}
 	return false
+}
+
+func SetClusterInformation(
+	ctx context.Context,
+	kubeClient client.Client,
+	status interfaces.StorageClientInfo,
+) error {
+
+	clusterVersion := &configv1.ClusterVersion{}
+	clusterVersion.Name = "version"
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(clusterVersion), clusterVersion); err != nil {
+		return fmt.Errorf("failed to get cluster version: %v", err)
+	}
+	status.SetClusterID(string(clusterVersion.UID))
+
+	historyRecord := Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
+		return record.State == configv1.CompletedUpdate
+	})
+	if historyRecord == nil {
+		return fmt.Errorf("unable to find the updated cluster version")
+	}
+	status.SetClientPlatformVersion(historyRecord.Version)
+
+	clusterDNS := &configv1.DNS{}
+	clusterDNS.Name = "cluster"
+	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(clusterDNS), clusterDNS); err != nil {
+		return fmt.Errorf("failed to get clusterDNS %q: %v", clusterDNS.Name, err)
+	}
+	status.SetClusterName(clusterDNS.Spec.BaseDomain)
+
+	return nil
 }
