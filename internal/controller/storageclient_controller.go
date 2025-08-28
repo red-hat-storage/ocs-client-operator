@@ -235,6 +235,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclaims,verbs=get;list;watch;delete;patch
+//+kubebuilder:rbac:groups=config.openshift.io,resources=dnses,verbs=get;list;watch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -536,9 +537,17 @@ func (r *storageClientReconcile) newExternalClusterClient() (*providerClient.OCS
 
 // onboardConsumer makes an API call to the external storage provider cluster for onboarding
 func (r *storageClientReconcile) onboardConsumer(externalClusterClient *providerClient.OCSProviderClient, operatorVersion string) error {
-	onboardRequest := providerClient.NewOnboardConsumerRequest().
-		SetOnboardingTicket(r.storageClient.Spec.OnboardingTicket).
-		SetClientOperatorVersion(operatorVersion)
+	onboardRequest := providerClient.NewOnboardConsumerRequest()
+	onboardRequest.SetOnboardingTicket(r.storageClient.Spec.OnboardingTicket)
+	onboardRequest.SetClientOperatorVersion(operatorVersion)
+	onboardRequest.SetClientOperatorNamespace(r.OperatorNamespace)
+	onboardRequest.SetClientName(r.storageClient.Name)
+	onboardRequest.SetClientID(string(r.storageClient.UID))
+
+	if err := utils.SetClusterInformation(r.ctx, r.Client, onboardRequest); err != nil {
+		return fmt.Errorf("failed to set cluster information: %v", err)
+	}
+
 	response, err := externalClusterClient.OnboardConsumer(r.ctx, onboardRequest)
 	if err != nil {
 		return fmt.Errorf("failed to onboard consumer: %v", err)
