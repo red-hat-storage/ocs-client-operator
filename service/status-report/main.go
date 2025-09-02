@@ -18,10 +18,11 @@ package main
 
 import (
 	"context"
-	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"math"
 	"os"
+
+	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
 	quotav1 "github.com/openshift/api/quota/v1"
@@ -29,15 +30,10 @@ import (
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
-)
-
-const (
-	clusterDNSResourceName = "cluster"
 )
 
 func main() {
@@ -110,13 +106,17 @@ func main() {
 	}
 	defer providerClient.Close()
 
-	status := providerclient.NewStorageClientStatus().
-		SetClientName(storageClientName).
-		SetClientID(string(storageClient.UID))
-	setPlatformInformation(ctx, cl, status)
-	setOperatorInformation(status, operatorVersion, operatorNamespace)
-	setClusterInformation(ctx, cl, status)
+	status := providerclient.NewStorageClientStatus()
+	status.SetClientOperatorVersion(operatorVersion)
+	status.SetClientOperatorNamespace(operatorNamespace)
+	status.SetClientName(storageClientName)
+	status.SetClientID(string(storageClient.UID))
 	setStorageQuotaUtilizationRatio(ctx, cl, status)
+
+	if err := utils.SetClusterInformation(ctx, cl, status); err != nil {
+		klog.Warningf("Failed to set cluster information: %v", err)
+	}
+
 	statusResponse, err := providerClient.ReportStatus(ctx, storageClient.Status.ConsumerID, status)
 	if err != nil {
 		klog.Exitf("Failed to report status of storageClient %v: %v", storageClient.Status.ConsumerID, err)
@@ -127,30 +127,6 @@ func main() {
 			klog.Exitf("Failed to annotate storageclient %q: %v", storageClient.Name, err)
 		}
 	}
-}
-
-func setClusterInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
-	var clusterID configv1.ClusterID
-	clusterVersion := &configv1.ClusterVersion{}
-	clusterVersion.Name = "version"
-	if err := cl.Get(ctx, types.NamespacedName{Name: clusterVersion.Name}, clusterVersion); err != nil {
-		klog.Warningf("Failed to get clusterVersion: %v", err)
-	} else {
-		clusterID = clusterVersion.Spec.ClusterID
-	}
-	status.SetClusterID(string(clusterID))
-
-	clusterDNS := &configv1.DNS{}
-	clusterDNS.Name = clusterDNSResourceName
-	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterDNS), clusterDNS); err != nil {
-		klog.Warningf("Failed to get clusterDNS %q: %v", clusterDNS.Name, err)
-	}
-
-	if len(clusterDNS.Spec.BaseDomain) == 0 {
-		klog.Warningf("Cluster Base Domain is empty.")
-	}
-	status.SetClusterName(clusterDNS.Spec.BaseDomain)
-
 }
 
 func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
@@ -171,30 +147,4 @@ func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, stat
 		}
 	}
 
-}
-
-func setOperatorInformation(status interfaces.StorageClientStatus, operatorVersion, operatorNamespace string) {
-	status.
-		SetOperatorVersion(operatorVersion).
-		SetOperatorNamespace(operatorNamespace)
-}
-
-func setPlatformInformation(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus) {
-	var platformVersion string
-	clusterVersion := &configv1.ClusterVersion{}
-	clusterVersion.Name = "version"
-	if err := cl.Get(ctx, client.ObjectKeyFromObject(clusterVersion), clusterVersion); err != nil {
-		klog.Warningf("Failed to get clusterVersion: %v", err)
-	} else {
-		item := utils.Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
-			return record.State == configv1.CompletedUpdate
-		})
-		if item != nil {
-			platformVersion = item.Version
-		}
-	}
-	if platformVersion == "" {
-		klog.Warningf("Unable to find ocp version with completed update")
-	}
-	status.SetPlatformVersion(platformVersion)
 }
