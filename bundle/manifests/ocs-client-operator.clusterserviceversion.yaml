@@ -525,6 +525,7 @@ spec:
                 volumeMounts:
                 - mountPath: /etc/tls/private
                   name: webhook-cert-secret
+              priorityClassName: system-cluster-critical
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
@@ -542,6 +543,7 @@ spec:
           app.kubernetes.io/name: ocs-client-operator-console
         name: ocs-client-operator-console
         spec:
+          replicas: 1
           selector:
             matchLabels:
               app.kubernetes.io/name: ocs-client-operator-console
@@ -590,6 +592,7 @@ spec:
                   name: ocs-client-operator-console-nginx-log
                 - mountPath: /var/lib/nginx/tmp
                   name: ocs-client-operator-console-nginx-tmp
+              priorityClassName: system-cluster-critical
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
