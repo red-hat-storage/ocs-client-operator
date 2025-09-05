@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -50,7 +49,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/version"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -525,13 +523,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
 	}
 
-	// get the custom csi Tolerations
-	// TODO: Remove it in 4.20 release
-	customNodePluginTolerations, customControllerPluginTolerations, err := c.getCsiCustomTolerations()
-	if err != nil {
-		return fmt.Errorf("failed to get custom tolerations for csi: %v", err)
-	}
-
 	// ceph rbd driver config
 	rbdDriver := &csiopv1.Driver{}
 	rbdDriver.Name = templates.RBDDriverName
@@ -539,23 +530,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	if err := c.createOrUpdate(rbdDriver, func() error {
 		if err := c.own(rbdDriver); err != nil {
 			return fmt.Errorf("failed to own csi rbd driver: %v", err)
-		}
-		// only update during initial creation
-		if rbdDriver.UID == "" {
-			if len(customNodePluginTolerations) > 0 {
-				rbdDriver.Spec.NodePlugin = &csiopv1.NodePluginSpec{
-					PodCommonSpec: csiopv1.PodCommonSpec{
-						Tolerations: customNodePluginTolerations,
-					},
-				}
-			}
-			if len(customControllerPluginTolerations) > 0 {
-				rbdDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1.PodCommonSpec{
-						Tolerations: customControllerPluginTolerations,
-					},
-				}
-			}
 		}
 		return nil
 	}); err != nil {
@@ -570,23 +544,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		if err := c.own(cephFsDriver); err != nil {
 			return fmt.Errorf("failed to own csi cephfs driver: %v", err)
 		}
-		// only update during initial creation
-		if cephFsDriver.UID == "" {
-			if len(customNodePluginTolerations) > 0 {
-				cephFsDriver.Spec.NodePlugin = &csiopv1.NodePluginSpec{
-					PodCommonSpec: csiopv1.PodCommonSpec{
-						Tolerations: customNodePluginTolerations,
-					},
-				}
-			}
-			if len(customControllerPluginTolerations) > 0 {
-				cephFsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1.PodCommonSpec{
-						Tolerations: customControllerPluginTolerations,
-					},
-				}
-			}
-		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
@@ -599,23 +556,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	if err := c.createOrUpdate(nfsDriver, func() error {
 		if err := c.own(nfsDriver); err != nil {
 			return fmt.Errorf("failed to own csi nfs driver: %v", err)
-		}
-		// only update during initial creation
-		if nfsDriver.UID == "" {
-			if len(customNodePluginTolerations) > 0 {
-				nfsDriver.Spec.NodePlugin = &csiopv1.NodePluginSpec{
-					PodCommonSpec: csiopv1.PodCommonSpec{
-						Tolerations: customNodePluginTolerations,
-					},
-				}
-			}
-			if len(customControllerPluginTolerations) > 0 {
-				nfsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{
-					PodCommonSpec: csiopv1.PodCommonSpec{
-						Tolerations: customControllerPluginTolerations,
-					},
-				}
-			}
 		}
 		return nil
 	}); err != nil {
@@ -1054,74 +994,6 @@ func (c *OperatorConfigMapReconciler) deleteDelegatedCSI() error {
 		return err
 	}
 	return nil
-}
-
-// TODO: Remove it in 4.20 release
-func (c *OperatorConfigMapReconciler) getCsiCustomTolerations() ([]corev1.Toleration, []corev1.Toleration, error) {
-	const (
-		rookCephOperatorConfigName  = "rook-ceph-operator-config"
-		csiPluginTolerationKey      = "CSI_PLUGIN_TOLERATIONS"
-		csiProvisionerTolerationKey = "CSI_PROVISIONER_TOLERATIONS"
-	)
-	var nodePluginTolerations, controllerPluginTolerations []corev1.Toleration
-
-	// list the rook ceph cm
-	rookCephOperatorConfig := &corev1.ConfigMap{}
-	rookCephOperatorConfig.Name = rookCephOperatorConfigName
-	rookCephOperatorConfig.Namespace = c.OperatorNamespace
-
-	if err := c.get(rookCephOperatorConfig); kerrors.IsNotFound(err) {
-		return nil, nil, nil
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("failed to get Rook Ceph Operator ConfigMap: %v", err)
-	}
-
-	// Get the CSI tolerations from the Rook Ceph Operator ConfigMap
-	csiPluginTolerations := rookCephOperatorConfig.Data[csiPluginTolerationKey]
-	if csiPluginTolerations != "" {
-		var err error
-		if nodePluginTolerations, err = parseTolerations(csiPluginTolerations); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse csi plugin tolerations: %v", err)
-		}
-	}
-
-	csiProvisionerToleration := rookCephOperatorConfig.Data[csiProvisionerTolerationKey]
-	if csiProvisionerToleration != "" {
-		var err error
-		if controllerPluginTolerations, err = parseTolerations(csiProvisionerToleration); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse csi controllerPlugin tolerations: %v", err)
-		}
-	}
-
-	return nodePluginTolerations, controllerPluginTolerations, nil
-}
-
-func parseTolerations(csiPluginTolerations string) ([]corev1.Toleration, error) {
-	if csiPluginTolerations == "" {
-		return nil, nil
-	}
-
-	rawJSON, err := yaml.ToJSON([]byte(csiPluginTolerations))
-	if err != nil {
-		return nil, err
-	}
-
-	var tolerations []corev1.Toleration
-	err = json.Unmarshal(rawJSON, &tolerations)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range tolerations {
-		if tolerations[i].Key == "" {
-			tolerations[i].Operator = corev1.TolerationOpExists
-		}
-
-		if tolerations[i].Operator == corev1.TolerationOpExists {
-			tolerations[i].Value = ""
-		}
-	}
-	return tolerations, nil
 }
 
 func (c *OperatorConfigMapReconciler) removeNoobaa() error {
