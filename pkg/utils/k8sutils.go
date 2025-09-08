@@ -187,7 +187,7 @@ func SetClusterInformation(
 	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(clusterVersion), clusterVersion); err != nil {
 		return fmt.Errorf("failed to get cluster version: %v", err)
 	}
-	status.SetClusterID(string(clusterVersion.UID))
+	status.SetClusterID(string(clusterVersion.Spec.ClusterID))
 
 	historyRecord := Find(clusterVersion.Status.History, func(record *configv1.UpdateHistory) bool {
 		return record.State == configv1.CompletedUpdate
