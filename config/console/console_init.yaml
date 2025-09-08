@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: console
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: ocs-client-operator-console
@@ -69,3 +70,4 @@ spec:
         key: node.ocs.openshift.io/storage
         operator: Equal
         value: "true"
+      priorityClassName: system-cluster-critical
