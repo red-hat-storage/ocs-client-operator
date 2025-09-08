@@ -515,7 +515,7 @@ spec:
                 volumeMounts:
                 - mountPath: /etc/tls/private
                   name: webhook-cert-secret
-              priorityClassName: system-cluster-critical
+              priorityClassName: openshift-user-critical
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
@@ -582,7 +582,7 @@ spec:
                   name: ocs-client-operator-console-nginx-log
                 - mountPath: /var/lib/nginx/tmp
                   name: ocs-client-operator-console-nginx-tmp
-              priorityClassName: system-cluster-critical
+              priorityClassName: openshift-user-critical
               securityContext:
                 runAsNonRoot: true
               serviceAccountName: ocs-client-operator-controller-manager
