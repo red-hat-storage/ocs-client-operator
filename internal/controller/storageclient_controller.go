@@ -457,7 +457,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
-	kubeObjectsByGvk := map[string]desiredKubeObjects{}
+	kubeObjectsByGk := map[string]desiredKubeObjects{}
 	for _, kubeObj := range storageClientResponse.KubeObjects {
 		if kubeObj == nil {
 			continue
@@ -466,9 +466,9 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		if err := json.Unmarshal(kubeObj.Bytes, objectMeta); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to unmarshal metadata for the Object: %w", err)
 		}
-		gvk := objectMeta.GroupVersionKind().String()
-		kubeObjectsByGvk[gvk] = append(
-			kubeObjectsByGvk[gvk],
+		gk := objectMeta.GroupVersionKind().GroupKind().String()
+		kubeObjectsByGk[gk] = append(
+			kubeObjectsByGk[gk],
 			desiredKubeObject{
 				NamespacedName: client.ObjectKeyFromObject(objectMeta),
 				bytes:          kubeObj.Bytes,
@@ -477,7 +477,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 	var combinedErr error
 	for _, kind := range kindsToReconcile {
-		r.reconcileResourcesByGVK(kind, kubeObjectsByGvk, combinedErr)
+		r.reconcileResourcesByGK(kind, kubeObjectsByGk, combinedErr)
 	}
 	if combinedErr != nil {
 		return reconcile.Result{}, combinedErr
@@ -776,7 +776,7 @@ func (r *storageClientReconcile) own(dependent metav1.Object) error {
 	return controllerutil.SetControllerReference(&r.storageClient, dependent, r.Scheme)
 }
 
-func (r *storageClientReconcile) reconcileResourcesByGVK(
+func (r *storageClientReconcile) reconcileResourcesByGK(
 	kind client.Object,
 	desiredObjects map[string]desiredKubeObjects,
 	combinedErr error,
@@ -788,7 +788,7 @@ func (r *storageClientReconcile) reconcileResourcesByGVK(
 		return
 	}
 
-	objectsToReconcile := desiredObjects[gvk.String()]
+	objectsToReconcile := desiredObjects[gvk.GroupKind().String()]
 	reconciledObjects := make(map[types.NamespacedName]bool, len(objectsToReconcile))
 	for idx := range objectsToReconcile {
 		// object supplied to reconcile mutates it, we either need to send
