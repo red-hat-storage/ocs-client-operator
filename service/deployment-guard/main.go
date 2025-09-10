@@ -95,7 +95,7 @@ func allowOperatorToRun(ctx context.Context, cl client.Client, namespace string)
 			klog.Info("StorageCluster CR does not exist")
 			return false
 		}
-		klog.Info("Checking if StorageCluster indicates ODF is deployed in provider mode")
+		klog.Info("Waiting on deployment mode verification, no user action needed.")
 		if storageClusters.Items[0].GetAnnotations()["ocs.openshift.io/deployment-mode"] != "provider" {
 			return false
 		}
