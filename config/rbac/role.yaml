@@ -277,6 +277,14 @@ rules:
 - apiGroups:
   - operators.coreos.com
   resources:
+  - installplans
+  verbs:
+  - get
+  - list
+  - patch
+- apiGroups:
+  - operators.coreos.com
+  resources:
   - subscriptions
   verbs:
   - delete
