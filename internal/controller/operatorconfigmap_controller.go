@@ -74,6 +74,7 @@ const (
 	clusterVersionName                 = "version"
 	manageNoobaaSubKey                 = "manageNoobaaSubscription"
 	disableVersionChecksKey            = "disableVersionChecks"
+	disableInstallPlanAutoApprovalKey  = "disableInstallPlanAutoApproval"
 	subscriptionLabelKey               = "managed-by"
 	subscriptionLabelValue             = "webhook.subscription.ocs.openshift.io"
 	generateRbdOMapInfoKey             = "generateRbdOMapInfo"
@@ -189,6 +190,18 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.OnlyMetadata,
 		).
 		Watches(&opv1a1.Subscription{}, enqueueConfigMapRequest, subscriptionPredicates).
+		Watches(
+			&opv1a1.InstallPlan{},
+			enqueueConfigMapRequest,
+			builder.WithPredicates(
+				utils.EventTypePredicate(
+					true,
+					false,
+					false,
+					false,
+				),
+			),
+		).
 		Watches(&admrv1.ValidatingWebhookConfiguration{}, enqueueConfigMapRequest, webhookPredicates).
 		Watches(&v1alpha1.StorageClient{}, enqueueConfigMapRequest, builder.WithPredicates(predicate.AnnotationChangedPredicate{}))
 
@@ -218,6 +231,8 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete;list
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=installplans,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete;list
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
@@ -342,6 +357,13 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
+		if c.shouldAutoApproveInstallPlans() {
+			if err := c.reconcileInstallPlans(); err != nil {
+				c.log.Error(err, "unable to reconcile InstallPlans")
+				return ctrl.Result{}, err
+			}
+		}
+
 		if err := c.ensureConsolePlugin(); err != nil {
 			c.log.Error(err, "unable to deploy client console")
 			return ctrl.Result{}, err
@@ -384,6 +406,38 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (c *OperatorConfigMapReconciler) shouldAutoApproveInstallPlans() bool {
+	valueAsString, exist := c.operatorConfigMap.Data[disableInstallPlanAutoApprovalKey]
+	if !exist {
+		return true
+	}
+
+	disableInstallPlanAutoApproval, err := strconv.ParseBool(valueAsString)
+	if err != nil {
+		c.log.Error(err, "failed to parse configmap key data", "key", disableInstallPlanAutoApprovalKey)
+		return true
+	}
+
+	return !disableInstallPlanAutoApproval
+}
+
+func (c *OperatorConfigMapReconciler) reconcileInstallPlans() error {
+	approvePatch := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"approved":true}}`))
+	installPlans := &opv1a1.InstallPlanList{}
+	if err := c.list(installPlans, client.InNamespace(c.OperatorNamespace)); err != nil {
+		return err
+	}
+	for idx := range installPlans.Items {
+		installPlan := &installPlans.Items[idx]
+		if !installPlan.Spec.Approved {
+			if err := c.Patch(c.ctx, installPlan, approvePatch); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *OperatorConfigMapReconciler) errorOnRookOwnedCsi() error {
