@@ -257,7 +257,7 @@ github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapsh
 # github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000 => ./api
 ## explicit; go 1.23.0
 github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
-# github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20250902083935-29606f2cd7f6
+# github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20250902083935-29606f2cd7f6 => ../ocs-operator/services/provider/api/
 ## explicit; go 1.24.3
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client
@@ -1149,5 +1149,6 @@ sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 # github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3
 # github.com/red-hat-storage/ocs-client-operator/api => ./api
+# github.com/red-hat-storage/ocs-operator/services/provider/api/v4 => ../ocs-operator/services/provider/api/
 # k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 # vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
