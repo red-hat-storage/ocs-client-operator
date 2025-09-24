@@ -126,7 +126,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 				Resizer: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceCPU:    resource.MustParse("50m"),
 						corev1.ResourceMemory: resource.MustParse("100Mi"),
 					},
 					Limits: corev1.ResourceList{
@@ -136,7 +136,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 				Provisioner: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceCPU:    resource.MustParse("50m"),
 						corev1.ResourceMemory: resource.MustParse("100Mi"),
 					},
 					Limits: corev1.ResourceList{
@@ -146,7 +146,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 				OMapGenerator: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceCPU:    resource.MustParse("50m"),
 						corev1.ResourceMemory: resource.MustParse("125Mi"),
 					},
 					Limits: corev1.ResourceList{
@@ -166,7 +166,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 				Plugin: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("250m"),
+						corev1.ResourceCPU:    resource.MustParse("100m"),
 						corev1.ResourceMemory: resource.MustParse("250Mi"),
 					},
 					Limits: corev1.ResourceList{
@@ -225,8 +225,8 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 				Plugin: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("250m"),
-						corev1.ResourceMemory: resource.MustParse("500Mi"),
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("250Mi"),
 					},
 					Limits: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("1"),
