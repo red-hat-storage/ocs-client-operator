@@ -483,6 +483,27 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, combinedErr
 	}
 
+	if storageClientResponse.RbdDriverRequirements != nil {
+		r.storageClient.Status.RbdDriverRequirements = &v1alpha1.RbdDriverRequirements{}
+		if err := r.Status().Update(r.ctx, &r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient status with Rbd CSI driver requirement: %v", err)
+		}
+	}
+
+	if storageClientResponse.CephFsDriverRequirements != nil {
+		r.storageClient.Status.CephFsDriverRequirements = &v1alpha1.CephFsDriverRequirements{}
+		if err := r.Status().Update(r.ctx, &r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient status with CephFs CSI driver requirement: %v", err)
+		}
+	}
+
+	if storageClientResponse.NfsDriverRequirements != nil {
+		r.storageClient.Status.NfsDriverRequirements = &v1alpha1.NfsDriverRequirements{}
+		if err := r.Status().Update(r.ctx, &r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient status with NFS CSI driver requirement: %v", err)
+		}
+	}
+
 	update := false
 	if storageClientResponse.ClientOperatorChannel != "" {
 		if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
