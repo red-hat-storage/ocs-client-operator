@@ -26,7 +26,7 @@ RUN make go-build
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM registry.access.redhat.com/ubi9/ubi-minimal
 WORKDIR /
-COPY --from=builder /workspace/bin/manager .
+COPY --from=builder /workspace/bin/ocs-client-operator .
 COPY --from=builder /workspace/bin/status-reporter .
 COPY --from=builder /workspace/hack/entrypoint.sh entrypoint
 USER 65532:65532
