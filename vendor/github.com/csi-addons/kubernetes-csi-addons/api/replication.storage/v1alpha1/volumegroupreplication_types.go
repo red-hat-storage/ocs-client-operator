@@ -21,6 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	VolumeGroupReplicationNameAnnotation = "replication.storage.openshift.io/volume-group-replication-name"
+)
+
 // VolumeGroupReplicationSpec defines the desired state of VolumeGroupReplication
 type VolumeGroupReplicationSpec struct {
 	// volumeGroupReplicationClassName is the volumeGroupReplicationClass name for this VolumeGroupReplication resource
@@ -28,9 +32,10 @@ type VolumeGroupReplicationSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumeGroupReplicationClassName is immutable"
 	VolumeGroupReplicationClassName string `json:"volumeGroupReplicationClassName"`
 
-	// volumeReplicationClassName is the volumeReplicationClass name for VolumeReplication object
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumReplicationClassName is immutable"
+	// volumeReplicationClassName is the volumeReplicationClass name for the VolumeReplication object
+	// created for this volumeGroupReplication
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumeReplicationClassName is immutable"
 	VolumeReplicationClassName string `json:"volumeReplicationClassName"`
 
 	// Name of the VolumeReplication object created for this volumeGroupReplication
@@ -59,13 +64,19 @@ type VolumeGroupReplicationSpec struct {
 	// ReplicationState is "secondary"
 	// +kubebuilder:default:=false
 	AutoResync bool `json:"autoResync"`
+
+	// External represents if VolumeGroupReplication should be reconciled by the csi-addons controller
+	// or an external controller managed by the storage vendor.
+	// +kubebuilder:default:=false
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source is immutable"
+	External bool `json:"external,omitempty"`
 }
 
 // VolumeGroupReplicationSource specifies the source for the the volumeGroupReplication
 type VolumeGroupReplicationSource struct {
 	// Selector is a label query over persistent volume claims that are to be
 	// grouped together for replication.
-	// +optional
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="selector is immutable"
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 }
