@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 4.20.0
+VERSION ?= 4.21.0
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
@@ -161,9 +161,9 @@ DEFAULT_CSI_IMG_SNAPSHOTTER_VERSION ?= v8.2.0
 DEFAULT_CSI_IMG_REGISTRAR_NAME ?= csi-node-driver-registrar
 DEFAULT_CSI_IMG_REGISTRAR_VERSION ?= v2.14.0
 DEFAULT_CSI_IMG_ADDONS_NAME ?= k8s-sidecar
-DEFAULT_CSI_IMG_ADDONS_VERSION ?= v0.12.0
+DEFAULT_CSI_IMG_ADDONS_VERSION ?= v0.13.0
 DEFAULT_CSI_IMG_CEPH_CSI_NAME ?= cephcsi
-DEFAULT_CSI_IMG_CEPH_CSI_VERSION ?= v3.14.1
+DEFAULT_CSI_IMG_CEPH_CSI_VERSION ?= v3.15.0
 DEFAULT_CSI_IMG_ODF_SNAPSHOTTER_NAME ?= csi-snapshotter
 DEFAULT_CSI_IMG_ODF_SNAPSHOTTER_VERSION ?= latest
 
@@ -196,4 +196,4 @@ CSI_IMG_ODF_SNAPSHOTTER ?= $(IMAGE_LOCATION_ODF_SNAPSHOTTER)/$(DEFAULT_CSI_IMG_O
 #   CSI_IMG_ODF_SNAPSHOTTER_v4_x ?= $(IMAGE_LOCATION_ODF_SNAPSHOTTER)/$(CSI_IMG_ODF_SNAPSHOTTER_NAME):v1
 
 # we will maintain N (VERSION var in this file) through and including N-2 versions
-CSI_OCP_VERSIONS ?= v4.18 v4.19 v4.20
+CSI_OCP_VERSIONS ?= v4.19 v4.20 v4.21
