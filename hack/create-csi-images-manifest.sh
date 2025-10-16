@@ -19,6 +19,9 @@ for version in ${CSI_OCP_VERSIONS}; do
   snapshotter="CSI_IMG_SNAPSHOTTER_${VER}"
   SNAPSHOTTER=${!snapshotter:-${CSI_IMG_SNAPSHOTTER}}
 
+  snapshot_metadata="CSI_IMG_SNAPSHOT_METADATA_${VER}"
+  SNAPSHOT_METADATA=${!snapshot_metadata:-${CSI_IMG_SNAPSHOT_METADATA}}
+
   registrar="CSI_IMG_REGISTRAR_${VER}"
   REGISTRAR=${!registrar:-${CSI_IMG_REGISTRAR}}
 
@@ -43,6 +46,7 @@ data:
   attacher: "$ATTACHER"
   resizer: "$RESIZER"
   snapshotter: "$SNAPSHOTTER"
+  snapshot-metadata: "$SNAPSHOT_METADATA"
   registrar: "$REGISTRAR"
   plugin: "$PLUGIN"
   addons: "$ADDONS"
