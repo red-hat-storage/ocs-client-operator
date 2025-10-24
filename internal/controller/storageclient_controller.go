@@ -608,6 +608,10 @@ func (r *storageClientReconcile) onboardConsumer(externalClusterClient *provider
 
 // offboardConsumer makes an API call to the external storage provider cluster for offboarding
 func (r *storageClientReconcile) offboardConsumer(externalClusterClient *providerClient.OCSProviderClient) error {
+	// the client wasn't onboarded at all
+	if r.storageClient.Status.ConsumerID == "" {
+		return nil
+	}
 	if _, err := externalClusterClient.OffboardConsumer(r.ctx, r.storageClient.Status.ConsumerID); err != nil {
 		return fmt.Errorf("failed to offboard consumer: %v", err)
 	}
