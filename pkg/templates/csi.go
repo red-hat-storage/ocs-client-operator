@@ -89,7 +89,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 		},
 		AttachRequired:  ptr.To(true),
 		DeployCsiAddons: ptr.To(true),
-		EnableFencing:   ptr.To(true),
+		EnableFencing:   ptr.To(false),
 		FsGroupPolicy:   storagev1.FileFSGroupPolicy,
 		ControllerPlugin: &csiopv1.ControllerPluginSpec{
 			Privileged: ptr.To(true),
