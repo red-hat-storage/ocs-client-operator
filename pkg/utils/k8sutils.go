@@ -57,6 +57,9 @@ const (
 
 	TopologyDomainLabelsAnnotationKey = "ocs.openshift.io/csi-rbd-topology-domain-labels"
 
+	// ConfigMap key for topology configuration
+	TopologyFailureDomainLabelsKey = "topologyFailureDomainLabels"
+
 	CronScheduleWeekly = "@weekly"
 
 	ExitCodeThatShouldRestartTheProcess = 42
