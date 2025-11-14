@@ -500,6 +500,39 @@ func (c *OperatorConfigMapReconciler) shouldEnableDriver(driverKey string) bool 
 	return enableDriver
 }
 
+// getTopologyLabels returns a map of topology labels from the storage clients status and if the
+// storage clients status does not have any topology labels, it uses the configmap default values.
+func (c *OperatorConfigMapReconciler) getTopologyLabels(storageClients *v1alpha1.StorageClientList) map[string]struct{} {
+	topologyDomainLablesSet := map[string]struct{}{}
+
+	// First, merge topology keys from StorageClient Status
+	// Multiple storage clients hubs can have different topology keys
+	for i := range storageClients.Items {
+		storageClient := &storageClients.Items[i]
+		if storageClient.Status.RbdDriverRequirements != nil {
+			// if the topology domain labels value is not empty, it should be a list of labels
+			// e.g. "region,zone"
+			for _, label := range storageClient.Status.RbdDriverRequirements.TopologyDomainLabels {
+				topologyDomainLablesSet[label] = struct{}{}
+			}
+		}
+	}
+
+	// If no topology labels from StorageClient status, use ConfigMap defaults
+	if len(topologyDomainLablesSet) == 0 {
+		if configMapTopologyLabels := c.operatorConfigMap.Data[utils.TopologyFailureDomainLabelsKey]; configMapTopologyLabels != "" {
+			for label := range strings.SplitSeq(configMapTopologyLabels, ",") {
+				label = strings.TrimSpace(label)
+				if label != "" {
+					topologyDomainLablesSet[label] = struct{}{}
+				}
+			}
+		}
+	}
+
+	return topologyDomainLablesSet
+}
+
 func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1alpha1.StorageClientList) error {
 	// Wait for CSI deployed by rook to be absent as not to race for resources at node level
 	// NOTE: in next minor version this should be removed
@@ -532,7 +565,8 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	cniNetworkAnnotationValue := ""
-	topologyDomainLablesSet := map[string]struct{}{}
+	topologyDomainLablesSet := c.getTopologyLabels(storageClients)
+
 	for i := range storageClients.Items {
 		storageClient := &storageClients.Items[i]
 		annotations := storageClient.GetAnnotations()
@@ -541,16 +575,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 				return fmt.Errorf("only one client with CNI network annotation value is supported")
 			}
 			cniNetworkAnnotationValue = annotationValue
-		}
-
-		// merge topology keys from all storage clients,
-		// as multiple storage clients hubs can have different topology keys
-		if storageClient.Status.RbdDriverRequirements != nil {
-			// if the topology domain labels value is not empty, it should be a list of labels
-			// e.g. "region,zone"
-			for _, label := range storageClient.Status.RbdDriverRequirements.TopologyDomainLabels {
-				topologyDomainLablesSet[label] = struct{}{}
-			}
 		}
 	}
 
