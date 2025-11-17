@@ -597,8 +597,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 			driverSpecDefaults.SnapshotPolicy = csiopv1.VolumeGroupSnapshotPolicy
 		}
-		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])
-		driverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
+		if csiCtrlPluginHostNetworkVal, exists := c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey]; exists {
+			csiCtrlPluginHostNetwork, _ := strconv.ParseBool(csiCtrlPluginHostNetworkVal)
+			driverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
+		}
 		if cniNetworkAnnotationValue != "" {
 			if driverSpecDefaults.ControllerPlugin.Annotations == nil {
 				driverSpecDefaults.ControllerPlugin.Annotations = map[string]string{}
