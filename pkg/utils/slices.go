@@ -34,3 +34,13 @@ func AssertEqual[T comparable](actual T, expected T, exitCode int) {
 		os.Exit(exitCode)
 	}
 }
+
+func Filter[T any](s []T, predicate func(*T) bool) []T {
+	result := make([]T, 0, len(s))
+	for _, v := range s {
+		if predicate(&v) {
+			result = append(result, v)
+		}
+	}
+	return result
+}
