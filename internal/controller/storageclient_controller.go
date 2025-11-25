@@ -431,16 +431,18 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		update = true
 	}
 
-	if storageClientResponse.RbdDriverRequirements != nil && len(storageClientResponse.RbdDriverRequirements.TopologyDomainLables) > 0 {
-		annotationValue := strings.Join(storageClientResponse.RbdDriverRequirements.TopologyDomainLables, ",")
-		if utils.AddAnnotation(&r.storageClient, utils.TopologyDomainLabelsAnnotationKey, annotationValue) {
-			update = true
+	if storageClientResponse.RbdDriverRequirements != nil {
+		r.storageClient.Status.RbdDriverRequirements = &v1alpha1.RbdDriverRequirements{
+			TopologyDomainLabels: append([]string{}, storageClientResponse.RbdDriverRequirements.TopologyDomainLables...),
 		}
-	} else {
-		// remove the annotation if it exists
-		if utils.RemoveAnnotation(&r.storageClient, utils.TopologyDomainLabelsAnnotationKey) {
-			update = true
-		}
+	}
+
+	if storageClientResponse.CephFsDriverRequirements != nil {
+		r.storageClient.Status.CephFsDriverRequirements = &v1alpha1.CephFsDriverRequirements{}
+	}
+
+	if storageClientResponse.NfsDriverRequirements != nil {
+		r.storageClient.Status.NfsDriverRequirements = &v1alpha1.NfsDriverRequirements{}
 	}
 
 	if update {
