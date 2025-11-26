@@ -187,8 +187,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 					},
 				},
 			},
-			Replicas:    ptr.To(int32(2)),
-			HostNetwork: ptr.To(true),
+			Replicas: ptr.To(int32(2)),
 		},
 		NodePlugin: &csiopv1.NodePluginSpec{
 			EnableSeLinuxHostMount: ptr.To(true),

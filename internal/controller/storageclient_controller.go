@@ -498,16 +498,21 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	if storageClientResponse.RbdDriverRequirements != nil {
 		r.storageClient.Status.RbdDriverRequirements = &v1alpha1.RbdDriverRequirements{
-			TopologyDomainLabels: append([]string{}, storageClientResponse.RbdDriverRequirements.TopologyDomainLables...),
+			TopologyDomainLabels:  append([]string{}, storageClientResponse.RbdDriverRequirements.TopologyDomainLables...),
+			CtrlPluginHostNetwork: storageClientResponse.RbdDriverRequirements.CtrlPluginHostNetwork,
 		}
 	}
 
 	if storageClientResponse.CephFsDriverRequirements != nil {
-		r.storageClient.Status.CephFsDriverRequirements = &v1alpha1.CephFsDriverRequirements{}
+		r.storageClient.Status.CephFsDriverRequirements = &v1alpha1.CephFsDriverRequirements{
+			CtrlPluginHostNetwork: storageClientResponse.CephFsDriverRequirements.CtrlPluginHostNetwork,
+		}
 	}
 
 	if storageClientResponse.NfsDriverRequirements != nil {
-		r.storageClient.Status.NfsDriverRequirements = &v1alpha1.NfsDriverRequirements{}
+		r.storageClient.Status.NfsDriverRequirements = &v1alpha1.NfsDriverRequirements{
+			CtrlPluginHostNetwork: storageClientResponse.NfsDriverRequirements.CtrlPluginHostNetwork,
+		}
 	}
 
 	if update {
