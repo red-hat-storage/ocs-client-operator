@@ -62,12 +62,15 @@ type StorageClientStatus struct {
 
 type RbdDriverRequirements struct {
 	TopologyDomainLabels []string `json:"topologyDomainLabels,omitempty"`
+	CtrlPluginHostNet    *bool    `json:"ctrlPluginHostNet,omitempty"`
 }
 
 type CephFsDriverRequirements struct {
+	CtrlPluginHostNet *bool `json:"ctrlPluginHostNet,omitempty"`
 }
 
 type NfsDriverRequirements struct {
+	CtrlPluginHostNet *bool `json:"ctrlPluginHostNet,omitempty"`
 }
 
 //+kubebuilder:object:root=true
