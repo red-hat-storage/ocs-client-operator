@@ -33,6 +33,7 @@ import (
 
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	"github.com/go-logr/logr"
+	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
@@ -85,6 +86,9 @@ const (
 	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
 	noobaaCrdName              = "noobaas.noobaa.io"
 	noobaaCrName               = "noobaa-remote"
+
+	pvDriverIndexName  = "index:persistentVolumeDriver"
+	vscDriverIndexName = "index:volumeSnapshotContentDriver"
 )
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
@@ -112,6 +116,28 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return nil
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for subscription package name: %v", err)
+	}
+
+	// Index PVs by CSI driver name
+	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, pvDriverIndexName, func(o client.Object) []string {
+		pv := o.(*corev1.PersistentVolume)
+		if pv != nil && pv.Spec.CSI != nil && pv.Spec.CSI.Driver != "" {
+			return []string{pv.Spec.CSI.Driver}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for persistent volume driver name: %v", err)
+	}
+
+	// Index VolumeSnapshotContent by CSI driver name
+	if err := mgr.GetCache().IndexField(ctx, &snapapi.VolumeSnapshotContent{}, vscDriverIndexName, func(o client.Object) []string {
+		vsc := o.(*snapapi.VolumeSnapshotContent)
+		if vsc != nil && vsc.Spec.Driver != "" {
+			return []string{vsc.Spec.Driver}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for volume snapshot content driver name: %v", err)
 	}
 
 	clusterVersionPredicates := builder.WithPredicates(
@@ -627,10 +653,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	// nfs driver config
+	nfsDriver := &csiopv1.Driver{}
+	nfsDriver.Name = templates.NfsDriverName
+	nfsDriver.Namespace = c.OperatorNamespace
 	if enableNfsDriver {
-		nfsDriver := &csiopv1.Driver{}
-		nfsDriver.Name = templates.NfsDriverName
-		nfsDriver.Namespace = c.OperatorNamespace
 		if err := c.createOrUpdate(nfsDriver, func() error {
 			if err := c.own(nfsDriver); err != nil {
 				return fmt.Errorf("failed to own csi nfs driver: %v", err)
@@ -642,6 +668,22 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile nfs driver: %v", err)
+		}
+	} else {
+		if hasPvs, err := c.hasPersistentVolumesWithNfsDriver(); err != nil {
+			return fmt.Errorf("failed to check if NFS driver has PVs: %v", err)
+		} else if hasPvs {
+			c.log.Info("NFS driver has PVs, skipping deletion")
+			return nil
+		}
+		if hasVscs, err := c.hasVolumeSnapshotContentsWithNfsDriver(); err != nil {
+			return fmt.Errorf("failed to check if NFS driver has volumesnapshotcontents: %v", err)
+		} else if hasVscs {
+			c.log.Info("NFS driver has volumesnapshotcontents, skipping deletion")
+			return nil
+		}
+		if err := c.delete(nfsDriver); err != nil {
+			return fmt.Errorf("failed to delete csi nfs driver: %v", err)
 		}
 	}
 
@@ -1156,4 +1198,20 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 	}
 
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) hasPersistentVolumesWithNfsDriver() (bool, error) {
+	pvList := &corev1.PersistentVolumeList{}
+	if err := c.list(pvList, client.MatchingFields{pvDriverIndexName: templates.NfsDriverName}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list NFS driver PVs: %v", err)
+	}
+	return len(pvList.Items) != 0, nil
+}
+
+func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithNfsDriver() (bool, error) {
+	vscList := &snapapi.VolumeSnapshotContentList{}
+	if err := c.list(vscList, client.MatchingFields{vscDriverIndexName: templates.NfsDriverName}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list NFS driver VolumeSnapshotContents: %v", err)
+	}
+	return len(vscList.Items) != 0, nil
 }
