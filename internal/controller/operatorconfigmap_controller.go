@@ -69,17 +69,16 @@ const (
 	operatorConfigMapName = "ocs-client-operator-config"
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
-	clusterVersionName                 = "version"
-	manageNoobaaSubKey                 = "manageNoobaaSubscription"
-	disableVersionChecksKey            = "disableVersionChecks"
-	disableInstallPlanAutoApprovalKey  = "disableInstallPlanAutoApproval"
-	subscriptionLabelKey               = "managed-by"
-	subscriptionLabelValue             = "webhook.subscription.ocs.openshift.io"
-	generateRbdOMapInfoKey             = "generateRbdOMapInfo"
-	useHostNetworkForCsiControllersKey = "useHostNetworkForCsiControllers"
-	enableRbdDriverKey                 = "enableRbdDriver"
-	enableCephFsDriverKey              = "enableCephFsDriver"
-	enableNfsDriverKey                 = "enableNfsDriver"
+	clusterVersionName                = "version"
+	manageNoobaaSubKey                = "manageNoobaaSubscription"
+	disableVersionChecksKey           = "disableVersionChecks"
+	disableInstallPlanAutoApprovalKey = "disableInstallPlanAutoApproval"
+	subscriptionLabelKey              = "managed-by"
+	subscriptionLabelValue            = "webhook.subscription.ocs.openshift.io"
+	generateRbdOMapInfoKey            = "generateRbdOMapInfo"
+	enableRbdDriverKey                = "enableRbdDriver"
+	enableCephFsDriverKey             = "enableCephFsDriver"
+	enableNfsDriverKey                = "enableNfsDriver"
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
@@ -597,8 +596,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 			driverSpecDefaults.SnapshotPolicy = csiopv1.VolumeGroupSnapshotPolicy
 		}
-		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])
-		driverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
 		if cniNetworkAnnotationValue != "" {
 			if driverSpecDefaults.ControllerPlugin.Annotations == nil {
 				driverSpecDefaults.ControllerPlugin.Annotations = map[string]string{}
@@ -620,16 +617,27 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	enableCephFsDriver := c.shouldEnableDriver(enableCephFsDriverKey)
 	enableNfsDriver := c.shouldEnableDriver(enableNfsDriverKey)
 
+	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin bool
+
 	// if the storage client status has the driver requirements info, then it has higher precedence than the configmap.
 	for i := range storageClients.Items {
 		if storageClients.Items[i].Status.RbdDriverRequirements != nil {
 			enableRbdDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.RbdDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForRbdCtrlPlugin = useHostNetForRbdCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
 		}
 		if storageClients.Items[i].Status.CephFsDriverRequirements != nil {
 			enableCephFsDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.CephFsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForCephFsCtrlPlugin = useHostNetForCephFsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
 		}
 		if storageClients.Items[i].Status.NfsDriverRequirements != nil {
 			enableNfsDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.NfsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForNfsCtrlPlugin = useHostNetForNfsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
 		}
 	}
 
@@ -642,6 +650,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(rbdDriver); err != nil {
 				return fmt.Errorf("failed to own csi rbd driver: %v", err)
 			}
+			rbdDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForRbdCtrlPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -657,6 +666,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(cephFsDriver); err != nil {
 				return fmt.Errorf("failed to own csi cephfs driver: %v", err)
 			}
+			cephFsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForCephFsCtrlPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
@@ -672,6 +682,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(nfsDriver); err != nil {
 				return fmt.Errorf("failed to own csi nfs driver: %v", err)
 			}
+			nfsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNfsCtrlPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile nfs driver: %v", err)
