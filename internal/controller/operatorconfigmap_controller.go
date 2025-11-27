@@ -650,6 +650,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(rbdDriver); err != nil {
 				return fmt.Errorf("failed to own csi rbd driver: %v", err)
 			}
+			if rbdDriver.Spec.ControllerPlugin == nil {
+				rbdDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
 			rbdDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForRbdCtrlPlugin)
 			return nil
 		}); err != nil {
@@ -666,6 +669,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(cephFsDriver); err != nil {
 				return fmt.Errorf("failed to own csi cephfs driver: %v", err)
 			}
+			if cephFsDriver.Spec.ControllerPlugin == nil {
+				cephFsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
 			cephFsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForCephFsCtrlPlugin)
 			return nil
 		}); err != nil {
@@ -681,6 +687,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		if err := c.createOrUpdate(nfsDriver, func() error {
 			if err := c.own(nfsDriver); err != nil {
 				return fmt.Errorf("failed to own csi nfs driver: %v", err)
+			}
+			if nfsDriver.Spec.ControllerPlugin == nil {
+				nfsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
 			}
 			nfsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNfsCtrlPlugin)
 			return nil
