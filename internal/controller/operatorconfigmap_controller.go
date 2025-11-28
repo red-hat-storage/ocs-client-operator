@@ -69,17 +69,16 @@ const (
 	operatorConfigMapName = "ocs-client-operator-config"
 	// ClusterVersionName is the name of the ClusterVersion object in the
 	// openshift cluster.
-	clusterVersionName                 = "version"
-	manageNoobaaSubKey                 = "manageNoobaaSubscription"
-	disableVersionChecksKey            = "disableVersionChecks"
-	disableInstallPlanAutoApprovalKey  = "disableInstallPlanAutoApproval"
-	subscriptionLabelKey               = "managed-by"
-	subscriptionLabelValue             = "webhook.subscription.ocs.openshift.io"
-	generateRbdOMapInfoKey             = "generateRbdOMapInfo"
-	useHostNetworkForCsiControllersKey = "useHostNetworkForCsiControllers"
-	enableRbdDriverKey                 = "enableRbdDriver"
-	enableCephFsDriverKey              = "enableCephFsDriver"
-	enableNfsDriverKey                 = "enableNfsDriver"
+	clusterVersionName                = "version"
+	manageNoobaaSubKey                = "manageNoobaaSubscription"
+	disableVersionChecksKey           = "disableVersionChecks"
+	disableInstallPlanAutoApprovalKey = "disableInstallPlanAutoApproval"
+	subscriptionLabelKey              = "managed-by"
+	subscriptionLabelValue            = "webhook.subscription.ocs.openshift.io"
+	generateRbdOMapInfoKey            = "generateRbdOMapInfo"
+	enableRbdDriverKey                = "enableRbdDriver"
+	enableCephFsDriverKey             = "enableCephFsDriver"
+	enableNfsDriverKey                = "enableNfsDriver"
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
@@ -500,6 +499,39 @@ func (c *OperatorConfigMapReconciler) shouldEnableDriver(driverKey string) bool 
 	return enableDriver
 }
 
+// getTopologyLabels returns a map of topology labels from the storage clients status and if the
+// storage clients status does not have any topology labels, it uses the configmap default values.
+func (c *OperatorConfigMapReconciler) getTopologyLabels(storageClients *v1alpha1.StorageClientList) map[string]struct{} {
+	topologyDomainLablesSet := map[string]struct{}{}
+
+	// First, merge topology keys from StorageClient Status
+	// Multiple storage clients hubs can have different topology keys
+	for i := range storageClients.Items {
+		storageClient := &storageClients.Items[i]
+		if storageClient.Status.RbdDriverRequirements != nil {
+			// if the topology domain labels value is not empty, it should be a list of labels
+			// e.g. "region,zone"
+			for _, label := range storageClient.Status.RbdDriverRequirements.TopologyDomainLabels {
+				topologyDomainLablesSet[label] = struct{}{}
+			}
+		}
+	}
+
+	// If no topology labels from StorageClient status, use ConfigMap defaults
+	if len(topologyDomainLablesSet) == 0 {
+		if configMapTopologyLabels := c.operatorConfigMap.Data[utils.TopologyFailureDomainLabelsKey]; configMapTopologyLabels != "" {
+			for label := range strings.SplitSeq(configMapTopologyLabels, ",") {
+				label = strings.TrimSpace(label)
+				if label != "" {
+					topologyDomainLablesSet[label] = struct{}{}
+				}
+			}
+		}
+	}
+
+	return topologyDomainLablesSet
+}
+
 func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1alpha1.StorageClientList) error {
 	// Wait for CSI deployed by rook to be absent as not to race for resources at node level
 	// NOTE: in next minor version this should be removed
@@ -532,7 +564,8 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	}
 
 	cniNetworkAnnotationValue := ""
-	topologyDomainLablesSet := map[string]struct{}{}
+	topologyDomainLablesSet := c.getTopologyLabels(storageClients)
+
 	for i := range storageClients.Items {
 		storageClient := &storageClients.Items[i]
 		annotations := storageClient.GetAnnotations()
@@ -541,16 +574,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 				return fmt.Errorf("only one client with CNI network annotation value is supported")
 			}
 			cniNetworkAnnotationValue = annotationValue
-		}
-
-		// merge topology keys from all storage clients,
-		// as multiple storage clients hubs can have different topology keys
-		if storageClient.Status.RbdDriverRequirements != nil {
-			// if the topology domain labels value is not empty, it should be a list of labels
-			// e.g. "region,zone"
-			for _, label := range storageClient.Status.RbdDriverRequirements.TopologyDomainLabels {
-				topologyDomainLablesSet[label] = struct{}{}
-			}
 		}
 	}
 
@@ -573,8 +596,6 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
 			driverSpecDefaults.SnapshotPolicy = csiopv1.VolumeGroupSnapshotPolicy
 		}
-		csiCtrlPluginHostNetwork, _ := strconv.ParseBool(c.operatorConfigMap.Data[useHostNetworkForCsiControllersKey])
-		driverSpecDefaults.ControllerPlugin.HostNetwork = ptr.To(csiCtrlPluginHostNetwork)
 		if cniNetworkAnnotationValue != "" {
 			if driverSpecDefaults.ControllerPlugin.Annotations == nil {
 				driverSpecDefaults.ControllerPlugin.Annotations = map[string]string{}
@@ -596,16 +617,27 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	enableCephFsDriver := c.shouldEnableDriver(enableCephFsDriverKey)
 	enableNfsDriver := c.shouldEnableDriver(enableNfsDriverKey)
 
+	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin bool
+
 	// if the storage client status has the driver requirements info, then it has higher precedence than the configmap.
 	for i := range storageClients.Items {
 		if storageClients.Items[i].Status.RbdDriverRequirements != nil {
 			enableRbdDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.RbdDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForRbdCtrlPlugin = useHostNetForRbdCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
 		}
 		if storageClients.Items[i].Status.CephFsDriverRequirements != nil {
 			enableCephFsDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.CephFsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForCephFsCtrlPlugin = useHostNetForCephFsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
 		}
 		if storageClients.Items[i].Status.NfsDriverRequirements != nil {
 			enableNfsDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.NfsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForNfsCtrlPlugin = useHostNetForNfsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
 		}
 	}
 
@@ -618,6 +650,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(rbdDriver); err != nil {
 				return fmt.Errorf("failed to own csi rbd driver: %v", err)
 			}
+			if rbdDriver.Spec.ControllerPlugin == nil {
+				rbdDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
+			rbdDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForRbdCtrlPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -633,6 +669,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(cephFsDriver); err != nil {
 				return fmt.Errorf("failed to own csi cephfs driver: %v", err)
 			}
+			if cephFsDriver.Spec.ControllerPlugin == nil {
+				cephFsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
+			cephFsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForCephFsCtrlPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
@@ -648,6 +688,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			if err := c.own(nfsDriver); err != nil {
 				return fmt.Errorf("failed to own csi nfs driver: %v", err)
 			}
+			if nfsDriver.Spec.ControllerPlugin == nil {
+				nfsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
+			nfsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNfsCtrlPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile nfs driver: %v", err)

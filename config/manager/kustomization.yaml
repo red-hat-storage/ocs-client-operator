@@ -11,6 +11,7 @@ configMapGenerator:
   name: manager-config
 - literals:
   - generateRbdOMapInfo=true
+  - topologyFailureDomainLabels=""
   name: config
 
 apiVersion: kustomize.config.k8s.io/v1beta1
