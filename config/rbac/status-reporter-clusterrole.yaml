@@ -11,6 +11,7 @@ rules:
       - get
       - list
       - update
+      - patch
   - apiGroups:
       - ""
     resources:
