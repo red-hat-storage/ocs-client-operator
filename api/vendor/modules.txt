@@ -24,14 +24,15 @@ github.com/modern-go/reflect2
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16
-# golang.org/x/net v0.26.0
-## explicit; go 1.18
+# golang.org/x/net v0.42.0
+## explicit; go 1.23.0
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
-# golang.org/x/text v0.16.0
-## explicit; go 1.18
+golang.org/x/net/internal/httpcommon
+# golang.org/x/text v0.27.0
+## explicit; go 1.23.0
 golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
