@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2026-01-22T06:52:52Z"
+    createdAt: "2026-02-09T08:28:19Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -70,8 +70,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - ""
+          resources:
+          - secrets/finalizers
+          verbs:
+          - update
         - apiGroups:
           - ""
           resources:
@@ -167,8 +174,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - csi.ceph.io
+          resources:
+          - cephconnections/finalizers
+          verbs:
+          - update
         - apiGroups:
           - csi.ceph.io
           resources:
@@ -178,8 +192,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - csi.ceph.io
+          resources:
+          - clientprofilemappings/finalizers
+          verbs:
+          - update
         - apiGroups:
           - csi.ceph.io
           resources:
@@ -189,8 +210,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - csi.ceph.io
+          resources:
+          - clientprofiles/finalizers
+          verbs:
+          - update
         - apiGroups:
           - csi.ceph.io
           resources:
@@ -222,8 +250,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - csiaddons.openshift.io
+          resources:
+          - networkfenceclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - groupsnapshot.storage.k8s.io
           resources:
@@ -233,8 +268,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - groupsnapshot.storage.k8s.io
+          resources:
+          - volumegroupsnapshotclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - groupsnapshot.storage.k8s.io
           resources:
@@ -252,8 +294,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - groupsnapshot.storage.openshift.io
+          resources:
+          - volumegroupsnapshotclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - groupsnapshot.storage.openshift.io
           resources:
@@ -344,8 +393,15 @@ spec:
           - create
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - quota.openshift.io
+          resources:
+          - clusterresourcequotas/finalizers
+          verbs:
+          - update
         - apiGroups:
           - ramendr.openshift.io
           resources:
@@ -374,8 +430,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - replication.storage.openshift.io
+          resources:
+          - volumegroupreplicationclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - replication.storage.openshift.io
           resources:
@@ -385,8 +448,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - replication.storage.openshift.io
+          resources:
+          - volumereplicationclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - security.openshift.io
           resources:
@@ -408,8 +478,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - snapshot.storage.k8s.io
+          resources:
+          - volumesnapshotclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - snapshot.storage.k8s.io
           resources:
@@ -427,8 +504,15 @@ spec:
           - delete
           - get
           - list
+          - patch
           - update
           - watch
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses/finalizers
+          verbs:
+          - update
         - apiGroups:
           - authentication.k8s.io
           resources:
