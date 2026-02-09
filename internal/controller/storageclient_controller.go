@@ -84,6 +84,8 @@ const (
 
 	VolumeGroupSnapshotClassCrdName    = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
 	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
+
+	childFinalizer = "storageclient.ocs.openshift.io/child"
 )
 
 var (
@@ -224,26 +226,38 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return err
 }
 
-//+kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=quota.openshift.io,resources=clusterresourcequotas/finalizers,verbs=update
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients/finalizers,verbs=update
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;create;update;watch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
-//+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
-//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
-//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete;update
-//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;delete;update
-//+kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch;create;delete;update
-//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;delete;update
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete;patch
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete;patch
+//+kubebuilder:rbac:groups="",resources=secrets/finalizers,verbs=update
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete;patch
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings/finalizers,verbs=update
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete;patch
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles/finalizers,verbs=update
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete;update
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch
-//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
-//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
+//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update;patch
+//+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotclasses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=config.openshift.io,resources=dnses,verbs=get;list;watch
 
@@ -480,7 +494,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 	var combinedErr error
 	for _, kind := range kindsToReconcile {
-		r.reconcileResourcesByGK(kind, kubeObjectsByGk, combinedErr)
+		r.reconcileResourcesByGK(kind, kubeObjectsByGk, &combinedErr)
 	}
 	if combinedErr != nil {
 		return reconcile.Result{}, combinedErr
@@ -793,12 +807,12 @@ func (r *storageClientReconcile) own(dependent metav1.Object) error {
 func (r *storageClientReconcile) reconcileResourcesByGK(
 	kind client.Object,
 	desiredObjects map[string]desiredKubeObjects,
-	combinedErr error,
+	combinedErr *error,
 ) {
 	gvk, err := apiutil.GVKForObject(kind, r.Scheme)
 	if err != nil {
 		r.log.Error(err, "failed to get gvk")
-		multierr.AppendInto(&combinedErr, err)
+		multierr.AppendInto(combinedErr, err)
 		return
 	}
 
@@ -814,7 +828,7 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 
 		desiredState := objectsToReconcile[idx]
 		if err := r.reconcileResource(kubeObject, desiredState); err != nil {
-			multierr.AppendInto(&combinedErr, err)
+			multierr.AppendInto(combinedErr, err)
 		} else {
 			reconciledObjects[desiredState.NamespacedName] = true
 		}
@@ -823,14 +837,22 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 	existingObjList := &metav1.PartialObjectMetadataList{}
 	existingObjList.SetGroupVersionKind(gvk)
 	if err := r.list(existingObjList); err != nil && !meta.IsNoMatchError(err) {
-		multierr.AppendInto(&combinedErr, err)
+		multierr.AppendInto(combinedErr, err)
 		r.log.Error(err, "failed to list resources")
 	}
 	for idx := range existingObjList.Items {
 		obj := &existingObjList.Items[idx]
 		if !reconciledObjects[client.ObjectKeyFromObject(obj)] && metav1.IsControlledBy(obj, &r.storageClient) {
+			partialMetaCopy := &metav1.PartialObjectMetadata{}
+			obj.DeepCopyInto(partialMetaCopy)
+			if controllerutil.RemoveFinalizer(partialMetaCopy, childFinalizer) {
+				if err := r.Patch(r.ctx, partialMetaCopy, client.MergeFrom(obj)); err != nil {
+					multierr.AppendInto(combinedErr, err)
+					continue
+				}
+			}
 			if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
-				multierr.AppendInto(&combinedErr, err)
+				multierr.AppendInto(combinedErr, err)
 				r.log.Error(err, "failed to delete object", "Name", client.ObjectKeyFromObject(obj))
 			}
 		}
@@ -848,6 +870,7 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 			return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
 		}
 		obj.SetCreationTimestamp(creationTimestamp)
+		controllerutil.AddFinalizer(obj, childFinalizer)
 		if err := r.own(obj); err != nil {
 			return fmt.Errorf("failed to own %s resource: %v", obj.GetName(), err)
 		}
