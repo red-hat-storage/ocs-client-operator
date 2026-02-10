@@ -480,7 +480,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 	var combinedErr error
 	for _, kind := range kindsToReconcile {
-		r.reconcileResourcesByGK(kind, kubeObjectsByGk, combinedErr)
+		r.reconcileResourcesByGK(kind, kubeObjectsByGk, &combinedErr)
 	}
 	if combinedErr != nil {
 		return reconcile.Result{}, combinedErr
@@ -793,12 +793,12 @@ func (r *storageClientReconcile) own(dependent metav1.Object) error {
 func (r *storageClientReconcile) reconcileResourcesByGK(
 	kind client.Object,
 	desiredObjects map[string]desiredKubeObjects,
-	combinedErr error,
+	combinedErr *error,
 ) {
 	gvk, err := apiutil.GVKForObject(kind, r.Scheme)
 	if err != nil {
 		r.log.Error(err, "failed to get gvk")
-		multierr.AppendInto(&combinedErr, err)
+		multierr.AppendInto(combinedErr, err)
 		return
 	}
 
@@ -814,7 +814,7 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 
 		desiredState := objectsToReconcile[idx]
 		if err := r.reconcileResource(kubeObject, desiredState); err != nil {
-			multierr.AppendInto(&combinedErr, err)
+			multierr.AppendInto(combinedErr, err)
 		} else {
 			reconciledObjects[desiredState.NamespacedName] = true
 		}
@@ -823,14 +823,14 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 	existingObjList := &metav1.PartialObjectMetadataList{}
 	existingObjList.SetGroupVersionKind(gvk)
 	if err := r.list(existingObjList); err != nil && !meta.IsNoMatchError(err) {
-		multierr.AppendInto(&combinedErr, err)
+		multierr.AppendInto(combinedErr, err)
 		r.log.Error(err, "failed to list resources")
 	}
 	for idx := range existingObjList.Items {
 		obj := &existingObjList.Items[idx]
 		if !reconciledObjects[client.ObjectKeyFromObject(obj)] && metav1.IsControlledBy(obj, &r.storageClient) {
 			if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
-				multierr.AppendInto(&combinedErr, err)
+				multierr.AppendInto(combinedErr, err)
 				r.log.Error(err, "failed to delete object", "Name", client.ObjectKeyFromObject(obj))
 			}
 		}
