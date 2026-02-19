@@ -243,6 +243,15 @@ rules:
   - update
   - watch
 - apiGroups:
+  - objectbucket.io
+  resources:
+  - objectbucketclaims
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
   - ocs.openshift.io
   resources:
   - storageclients
