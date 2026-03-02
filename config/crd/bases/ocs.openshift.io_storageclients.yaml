@@ -66,6 +66,12 @@ spec:
                   ctrlPluginHostNetwork:
                     type: boolean
                 type: object
+              externalEndpoints:
+                additionalProperties:
+                  type: string
+                description: ExternalEndpoints holds info about external endpoints
+                  deployed on the provider (e.g. NooBaa S3, NooBaa IAM, RGW S3 etc.)
+                type: object
               id:
                 description: ConsumerID will hold the identity of this cluster inside
                   the attached provider cluster

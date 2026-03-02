@@ -55,6 +55,9 @@ type StorageClientStatus struct {
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
 	ConsumerID string `json:"id,omitempty"`
 
+	// ExternalEndpoints holds info about external endpoints deployed on the provider (e.g. NooBaa S3, NooBaa IAM, RGW S3 etc.)
+	ExternalEndpoints map[string]string `json:"externalEndpoints,omitempty"`
+
 	RbdDriverRequirements    *RbdDriverRequirements    `json:"rbdDriverRequirements,omitempty"`
 	CephFsDriverRequirements *CephFsDriverRequirements `json:"cephFsDriverRequirements,omitempty"`
 	NfsDriverRequirements    *NfsDriverRequirements    `json:"nfsDriverRequirements,omitempty"`
