@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -27,6 +28,7 @@ import (
 	"sync"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"go.uber.org/multierr"
@@ -42,6 +44,7 @@ import (
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	providerpb "github.com/red-hat-storage/ocs-operator/services/provider/api/v4"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -84,6 +87,21 @@ const (
 
 	VolumeGroupSnapshotClassCrdName    = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
 	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
+
+	// disableExternalEndpointProxyKey is the key in ocs-client-operator-config; when "true", no proxy config is applied.
+	disableExternalEndpointProxyKey = "disableExternalEndpointProxy"
+
+	// nginx proxy config key pattern per client: proxy-<clientuid>.conf (all locations for this client in one key).
+	nginxProxyConfigKeyPrefix = "proxy-"
+	nginxProxyConfigKeySuffix = ".conf"
+
+	// defaultCertsPath is the default system CA bundle used by nginx for TLS verification.
+	defaultCertsPath = "/etc/pki/tls/certs/ca-bundle.crt"
+	// externalEndpointCASecretName is the optional Secret for custom CA certs; keys are "<clientuid>-<exposeas>.crt".
+	externalEndpointCASecretName  = "ocs-client-operator-console-external-endpoint-ca-certs"
+	externalEndpointCertKeySuffix = ".crt"
+	// externalEndpointCertsMountPath is the mount path for that secret in the console pod.
+	externalEndpointCertsMountPath = "/etc/ssl/certs/external-endpoint-ca-certs"
 )
 
 var (
@@ -232,6 +250,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;update
+//+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete;update
@@ -460,6 +480,9 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
+	// Reflect all external endpoints from provider in status.
+	r.storageClient.Status.ExternalEndpoints = externalEndpointsFromResponse(storageClientResponse)
+
 	kubeObjectsByGk := map[string]desiredKubeObjects{}
 	for _, kubeObj := range storageClientResponse.KubeObjects {
 		if kubeObj == nil {
@@ -521,7 +544,222 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	// Keeping external endpoint proxy config as the last step
+	// so it does not block other reconciliation steps.
+	if err := r.reconcileExternalEndpointProxy(storageClientResponse); err != nil {
+		r.log.Error(err, "failed to reconcile external endpoint proxy config")
+		return reconcile.Result{}, err
+	}
+
 	return reconcile.Result{}, nil
+}
+
+// reconcileExternalEndpointProxy updates the console nginx ConfigMap with proxy location(s) for this
+// StorageClient's external endpoints (HTTPS only). Key is proxy-<clientuid>.conf. If the ConfigMap
+// is updated, the console pod is restarted so nginx picks up the new config.
+func (r *storageClientReconcile) reconcileExternalEndpointProxy(storageClientResponse *providerpb.GetDesiredClientStateResponse) error {
+	clientUID := string(r.storageClient.UID)
+	configKey := nginxProxyConfigKeyPrefix + clientUID + nginxProxyConfigKeySuffix
+
+	desiredContent, err := r.buildExternalEndpointProxyConfig(clientUID, storageClientResponse)
+	if err != nil {
+		return err
+	}
+
+	// When there are no endpoints to expose, skip fetching operator config; only nginx ConfigMap may need key removal.
+	if desiredContent != "" {
+		operatorConfigMap := &corev1.ConfigMap{}
+		operatorConfigMap.Namespace = r.OperatorNamespace
+		operatorConfigMap.Name = operatorConfigMapName
+		if err := r.get(operatorConfigMap); err != nil {
+			if kerrors.IsNotFound(err) {
+				r.log.Info("operator ConfigMap not found, skipping external endpoint proxy reconcile", "configmap", operatorConfigMapName)
+				return nil
+			}
+			return fmt.Errorf("failed to get operator ConfigMap %q: %w", operatorConfigMapName, err)
+		}
+		if strings.ToLower(strings.TrimSpace(operatorConfigMap.Data[disableExternalEndpointProxyKey])) == "true" {
+			r.log.Info("external endpoint proxy is disabled via ConfigMap", "key", disableExternalEndpointProxyKey)
+			return nil
+		}
+	}
+
+	nginxConfigMap := &corev1.ConfigMap{}
+	nginxConfigMap.Name = console.NginxConfigMapName
+	nginxConfigMap.Namespace = r.OperatorNamespace
+	if err := r.get(nginxConfigMap); err != nil {
+		if kerrors.IsNotFound(err) {
+			r.log.Info("nginx ConfigMap not found, skipping external endpoint proxy", "configmap", console.NginxConfigMapName)
+			return nil
+		}
+		return fmt.Errorf("failed to get nginx ConfigMap %q: %w", console.NginxConfigMapName, err)
+	}
+	existingContent := ""
+	if nginxConfigMap.Data != nil {
+		existingContent = nginxConfigMap.Data[configKey]
+	}
+	if desiredContent == "" && (nginxConfigMap.Data == nil || nginxConfigMap.Data[configKey] == "") {
+		return nil
+	}
+	if existingContent == desiredContent {
+		return nil
+	}
+
+	opResult, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, nginxConfigMap, func() error {
+		// Ensure root config exists before we restart the pod (which will reload the nginx config).
+		// Operator ConfigMap controller normally creates the ConfigMap with "nginx.conf", both cases below are safety only before restart.
+		if nginxConfigMap.Data == nil {
+			r.log.Info("nginx ConfigMap data was nil, initializing with root config", "configmap", console.NginxConfigMapName)
+			nginxConfigMap.Data = map[string]string{"nginx.conf": console.GetNginxRootConf()}
+		} else if nginxConfigMap.Data["nginx.conf"] == "" {
+			r.log.Info("nginx ConfigMap missing root config, setting nginx.conf", "configmap", console.NginxConfigMapName)
+			nginxConfigMap.Data["nginx.conf"] = console.GetNginxRootConf()
+		}
+		if desiredContent == "" {
+			delete(nginxConfigMap.Data, configKey)
+		} else {
+			nginxConfigMap.Data[configKey] = desiredContent
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update nginx ConfigMap: %w", err)
+	}
+	if opResult == controllerutil.OperationResultCreated || opResult == controllerutil.OperationResultUpdated {
+		r.log.Info("nginx ConfigMap created/updated for external endpoint proxy, restarting console pod to pick up new config")
+		// This pod also serves the UI assets, so in edge cases those will not be served until the pod restarts.
+		// ToDo: Find a better "graceful" way to restart the pod, if issue is prominent.
+		utils.RestartPod(r.ctx, r.Client, r.log, console.DeploymentName, r.OperatorNamespace)
+	}
+	return nil
+}
+
+// externalEndpointsFromResponse returns all external endpoints from the provider response for status
+func externalEndpointsFromResponse(storageClientResponse *providerpb.GetDesiredClientStateResponse) map[string]string {
+	configs := storageClientResponse.GetExternalEndpointConfig()
+	if len(configs) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, cfg := range configs {
+		exposeAs := strings.TrimSpace(cfg.GetExposeAs())
+		endpointURL := strings.TrimSpace(cfg.GetEndpointUrl())
+		if exposeAs == "" || endpointURL == "" {
+			continue
+		}
+		if _, err := url.Parse(endpointURL); err != nil {
+			continue
+		}
+		out[exposeAs] = endpointURL
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// buildExternalEndpointProxyConfig returns the nginx proxy config content for this client (all HTTPS
+// endpoints). Returns empty string if there are no HTTPS endpoints to expose.
+func (r *storageClientReconcile) buildExternalEndpointProxyConfig(clientUID string, storageClientResponse *providerpb.GetDesiredClientStateResponse) (string, error) {
+	configs := storageClientResponse.GetExternalEndpointConfig()
+	if len(configs) == 0 {
+		return "", nil
+	}
+
+	secret := &corev1.Secret{}
+	secret.Namespace = r.OperatorNamespace
+	secret.Name = externalEndpointCASecretName
+	hasCustomCA := false
+	if err := r.get(secret); err != nil {
+		if !kerrors.IsNotFound(err) {
+			return "", fmt.Errorf("failed to get external endpoint CA secret %q: %w", externalEndpointCASecretName, err)
+		}
+	} else {
+		hasCustomCA = true
+	}
+
+	var sb strings.Builder
+	for _, cfg := range configs {
+		exposeAs := strings.TrimSpace(cfg.GetExposeAs())
+		endpointURL := strings.TrimSpace(cfg.GetEndpointUrl())
+		if exposeAs == "" || endpointURL == "" {
+			continue
+		}
+		parsed, err := url.Parse(endpointURL)
+		if err != nil {
+			r.log.Error(err, "skipping invalid endpoint URL", "url", endpointURL, "exposeAs", exposeAs)
+			continue
+		}
+		if parsed.Scheme != "https" {
+			r.log.Info("skipping non-HTTPS endpoint", "url", endpointURL, "exposeAs", exposeAs)
+			continue
+		}
+		endpointHost := parsed.Host
+
+		certsPath := defaultCertsPath
+		certKey := clientUID + "-" + exposeAs + externalEndpointCertKeySuffix
+		if hasCustomCA {
+			if _, ok := secret.Data[certKey]; ok {
+				certsPath = externalEndpointCertsMountPath + "/" + certKey
+			}
+		}
+
+		data := console.NginxProxyConfData{
+			ClientUID:    clientUID,
+			ExposeAs:     exposeAs,
+			EndpointURL:  endpointURL,
+			EndpointHost: endpointHost,
+			CertsPath:    certsPath,
+		}
+		snippet, err := console.GetNginxProxyConf(data)
+		if err != nil {
+			return "", fmt.Errorf("failed to build proxy config for %q: %w", exposeAs, err)
+		}
+		sb.WriteString(snippet)
+	}
+	return sb.String(), nil
+}
+
+// cleanupExternalEndpointProxy removes this client's proxy config key (proxy-<clientuid>.conf) from
+// the console nginx ConfigMap and restarts the console pod so nginx stops serving that client's
+// proxy locations.
+func (r *storageClientReconcile) cleanupExternalEndpointProxy() error {
+	clientUID := string(r.storageClient.UID)
+	configKey := nginxProxyConfigKeyPrefix + clientUID + nginxProxyConfigKeySuffix
+
+	nginxConfigMap := &corev1.ConfigMap{}
+	nginxConfigMap.Name = console.NginxConfigMapName
+	nginxConfigMap.Namespace = r.OperatorNamespace
+	if err := r.get(nginxConfigMap); err != nil {
+		if kerrors.IsNotFound(err) {
+			r.log.Info("nginx ConfigMap not found during cleanup, skipping", "configmap", console.NginxConfigMapName)
+			return nil
+		}
+		return fmt.Errorf("failed to get nginx ConfigMap %q: %w", console.NginxConfigMapName, err)
+	}
+	if nginxConfigMap.Data == nil || nginxConfigMap.Data[configKey] == "" {
+		return nil
+	}
+
+	opResult, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, nginxConfigMap, func() error {
+		delete(nginxConfigMap.Data, configKey)
+		// Ensure root config exists before we restart the pod (which will reload the nginx config).
+		// Operator ConfigMap controller normally creates the ConfigMap with "nginx.conf", case below is safety only before restart.
+		if nginxConfigMap.Data["nginx.conf"] == "" {
+			nginxConfigMap.Data["nginx.conf"] = console.GetNginxRootConf()
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to remove proxy config from nginx ConfigMap: %w", err)
+	}
+	if opResult == controllerutil.OperationResultUpdated {
+		r.log.Info("removed proxy config for deleted StorageClient, restarting console pod", "key", configKey)
+		// This pod also serves the UI assets, so in edge cases those will not be served until the pod restarts.
+		// ToDo: Find a better "graceful" way to restart the pod, if issue is prominent.
+		utils.RestartPod(r.ctx, r.Client, r.log, console.DeploymentName, r.OperatorNamespace)
+	}
+	return nil
 }
 
 func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerClient.OCSProviderClient) (ctrl.Result, error) {
@@ -552,6 +790,10 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more odf-volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
+	}
+
+	if err := r.cleanupExternalEndpointProxy(); err != nil {
+		return reconcile.Result{}, err
 	}
 
 	if err := r.offboardConsumer(externalClusterClient); err != nil {

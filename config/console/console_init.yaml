@@ -17,10 +17,10 @@ spec:
           image: ocs-client-operator-console:latest
           resources:
             limits:
-              cpu: "100m"
+              cpu: "250m"
               memory: "512Mi"
             requests:
-              cpu: 10m
+              cpu: 50m
               memory: 256Mi
           livenessProbe:
             httpGet:
@@ -47,6 +47,13 @@ spec:
             - name: ocs-client-operator-console-nginx-conf
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
+              readOnly: true
+            - name: ocs-client-operator-console-nginx-conf
+              mountPath: /opt/app-root/etc/nginx.d
+              readOnly: true
+            - name: ocs-client-operator-console-external-endpoint-ca-certs
+              mountPath: /etc/ssl/certs/external-endpoint-ca-certs
+              readOnly: true
             - name: ocs-client-operator-console-nginx-log
               mountPath: /var/log/nginx
             - name: ocs-client-operator-console-nginx-tmp
@@ -58,6 +65,10 @@ spec:
         - name: ocs-client-operator-console-nginx-conf
           configMap:
             name: ocs-client-operator-console-nginx-conf
+        - name: ocs-client-operator-console-external-endpoint-ca-certs
+          secret:
+            secretName: ocs-client-operator-console-external-endpoint-ca-certs
+            optional: true
         - name: ocs-client-operator-console-nginx-log
           emptyDir: {}
         - name: ocs-client-operator-console-nginx-tmp

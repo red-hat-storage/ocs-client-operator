@@ -23,10 +23,13 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,6 +180,27 @@ func IsForbiddenError(err error) bool {
 		}
 	}
 	return false
+}
+
+// RestartPod restarts pods whose name contains the given name in the
+// given namespace by deleting them so the deployment controller creates new ones.
+func RestartPod(ctx context.Context, kubeClient client.Client, logger logr.Logger, name string, namespace string) {
+	logger.Info("restarting pod", "name", name, "namespace", namespace)
+	podList := &corev1.PodList{}
+	err := kubeClient.List(ctx, podList, client.InNamespace(namespace))
+	if err != nil {
+		logger.Error(err, "failed to list pods", "namespace", namespace)
+		return
+	}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if strings.Contains(pod.Name, name) {
+			err = kubeClient.Delete(ctx, pod)
+			if err != nil {
+				logger.Error(err, "failed to delete pod", "name", pod.Name, "namespace", namespace)
+			}
+		}
+	}
 }
 
 func SetClusterInformation(
