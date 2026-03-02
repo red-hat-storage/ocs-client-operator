@@ -718,20 +718,25 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		return err
 	}
 
-	nginxConf := console.GetNginxConf()
+	nginxRootConf := console.GetNginxRootConf()
 	nginxConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      console.NginxConfigMapName,
 			Namespace: c.OperatorNamespace,
 		},
 		Data: map[string]string{
-			"nginx.conf": nginxConf,
+			"nginx.conf": nginxRootConf,
 		},
 	}
 	err = c.createOrUpdate(nginxConfigMap, func() error {
-		if consoleConfigMapData := nginxConfigMap.Data["nginx.conf"]; consoleConfigMapData != nginxConf {
-			nginxConfigMap.Data["nginx.conf"] = nginxConf
+		// Only update the nginx root config key which is managed by this (operator ConfigMap) controller.
+		// Preserve all other keys (e.g. proxy-*.conf) which are managed by the StorageClient controller.
+		// Root config is mandatory for nginx to start. Proxy configs are optional, needed per client.
+		// Do not replace nginxConfigMap.Data entirely otherwise proxy configs would be reverted.
+		if nginxConfigMap.Data == nil {
+			nginxConfigMap.Data = make(map[string]string)
 		}
+		nginxConfigMap.Data["nginx.conf"] = nginxRootConf
 		return controllerutil.SetControllerReference(c.consoleDeployment, nginxConfigMap, c.Scheme)
 	})
 

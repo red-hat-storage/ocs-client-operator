@@ -2,6 +2,8 @@ package console
 
 import (
 	"fmt"
+	"strings"
+	"text/template"
 
 	consolev1 "github.com/openshift/api/console/v1"
 	apiv1 "k8s.io/api/core/v1"
@@ -66,17 +68,29 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 				Service: &consolev1.ConsolePluginService{
 					Name:      DeploymentName,
 					Namespace: serviceNamespace,
-					Port:      int32(consolePort),
+					Port:      consolePort,
 					BasePath:  pluginBasePath,
 				},
 			},
-			Proxy: getConsolePluginProxy(serviceNamespace),
+			Proxy: getConsolePluginProxy(consolePort, serviceNamespace),
 		},
 	}
 }
 
-func GetNginxConf() string {
-	return nginxConf
+func GetNginxRootConf() string {
+	return nginxRootConf
+}
+
+func GetNginxProxyConf(data NginxProxyConfData) (string, error) {
+	t, err := template.New("nginxProxyConf").Parse(nginxProxyConf)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	if err := t.Execute(&sb, data); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
 }
 
 func GetNginxConfConfigMap(namespace string) *apiv1.ConfigMap {
@@ -86,21 +100,21 @@ func GetNginxConfConfigMap(namespace string) *apiv1.ConfigMap {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"nginx.conf": nginxConf,
+			"nginx.conf": nginxRootConf,
 		},
 	}
 }
 
-func getConsolePluginProxy(serviceNamespace string) []consolev1.ConsolePluginProxy {
+func getConsolePluginProxy(port int32, serviceNamespace string) []consolev1.ConsolePluginProxy {
 	return []consolev1.ConsolePluginProxy{
 		{
-			Alias: "s3",
+			Alias: "externalEndpointProxy",
 			Endpoint: consolev1.ConsolePluginProxyEndpoint{
 				Type: consolev1.ProxyTypeService,
 				Service: &consolev1.ConsolePluginProxyServiceConfig{
-					Name:      "s3-endpoint-proxy",
+					Name:      DeploymentName,
 					Namespace: serviceNamespace,
-					Port:      443,
+					Port:      port,
 				},
 			},
 			Authorization: consolev1.None,
