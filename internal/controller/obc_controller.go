@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-logr/logr"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
@@ -162,19 +163,16 @@ func (r *OBCReconciler) getStorageClientFromStorageClass(storageClassName string
 	if err := r.Get(r.ctx, types.NamespacedName{Name: storageClassName}, sc); err != nil {
 		return nil, fmt.Errorf("get StorageClass %q: %w", storageClassName, err)
 	}
-	var ownerRef *metav1.OwnerReference
-	for _, ref := range sc.OwnerReferences {
-		if ref.Kind == "StorageClient" {
-			ownerRef = &ref
-			break
-		}
-	}
-	if ownerRef == nil {
+	ownerStorageClientIndex := slices.IndexFunc(sc.OwnerReferences, func(owner metav1.OwnerReference) bool {
+		return owner.Kind == "StorageClient"
+	})
+	if ownerStorageClientIndex == -1 {
 		return nil, fmt.Errorf("StorageClass %q has no StorageClient ownerReference", storageClassName)
 	}
 	storageClient := &v1alpha1.StorageClient{}
-	if err := r.Get(r.ctx, types.NamespacedName{Name: ownerRef.Name}, storageClient); err != nil {
-		return nil, fmt.Errorf("get StorageClient %q (owner of StorageClass %q): %w", ownerRef.Name, storageClassName, err)
+	storageClientName := sc.OwnerReferences[ownerStorageClientIndex].Name
+	if err := r.Get(r.ctx, types.NamespacedName{Name: storageClientName}, storageClient); err != nil {
+		return nil, fmt.Errorf("get StorageClient %q (owner of StorageClass %q): %w", storageClientName, storageClassName, err)
 	}
 	if storageClient.Status.ConsumerID == "" || storageClient.Spec.StorageProviderEndpoint == "" {
 		return nil, fmt.Errorf("StorageClient %q has no ConsumerID or StorageProviderEndpoint", storageClient.Name)
