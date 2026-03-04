@@ -9,7 +9,6 @@ import (
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"go.uber.org/multierr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -182,9 +181,9 @@ func (r *OBCReconciler) getStorageClientFromStorageClass(storageClassName string
 
 // notifyObcCreated notifies the provider of the creation of an OBC.
 func (r *OBCReconciler) notifyObcCreated(storageClient *v1alpha1.StorageClient, obc *nbv1.ObjectBucketClaim) error {
-	pc, err := NewProviderClientForStorageClient(r.ctx, storageClient)
+	pc, err := utils.NewProviderClientForStorageClient(r.ctx, storageClient.Spec.StorageProviderEndpoint)
 	if err != nil {
-		return fmt.Errorf("create provider client: %w", err)
+		return err
 	}
 	defer pc.Close()
 	_, err = pc.NotifyObcCreated(r.ctx, storageClient.Status.ConsumerID, obc)
@@ -197,9 +196,9 @@ func (r *OBCReconciler) notifyObcCreated(storageClient *v1alpha1.StorageClient, 
 
 // notifyObcDeleted notifies the provider of the deletion of an OBC.
 func (r *OBCReconciler) notifyObcDeleted(storageClient *v1alpha1.StorageClient, obcDetails types.NamespacedName) error {
-	pc, err := NewProviderClientForStorageClient(r.ctx, storageClient)
+	pc, err := utils.NewProviderClientForStorageClient(r.ctx, storageClient.Spec.StorageProviderEndpoint)
 	if err != nil {
-		return fmt.Errorf("create provider client: %w", err)
+		return err
 	}
 	defer pc.Close()
 	_, err = pc.NotifyObcDeleted(r.ctx, storageClient.Status.ConsumerID, obcDetails)
@@ -208,15 +207,6 @@ func (r *OBCReconciler) notifyObcDeleted(storageClient *v1alpha1.StorageClient, 
 	}
 	r.log.Info("Notify of OBC deleted completed", "namespace", obcDetails.Namespace, "name", obcDetails.Name)
 	return nil
-}
-
-// NewProviderClientForStorageClient creates an OCS provider gRPC client for the given StorageClient.
-func NewProviderClientForStorageClient(ctx context.Context, sc *v1alpha1.StorageClient) (*providerClient.OCSProviderClient, error) {
-	pc, err := providerClient.NewProviderClient(ctx, sc.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create provider client with endpoint %v: %w", sc.Spec.StorageProviderEndpoint, err)
-	}
-	return pc, nil
 }
 
 // getResources gets the resources that were created as part of the OBC provisioning.
