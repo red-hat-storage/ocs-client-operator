@@ -158,9 +158,6 @@ func (r *OBCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 // getStorageClientFromStorageClass returns the StorageClient that owns the given StorageClass (via ownerReference).
 func (r *OBCReconciler) getStorageClientFromStorageClass(storageClassName string) (*v1alpha1.StorageClient, error) {
-	if storageClassName == "" {
-		return nil, fmt.Errorf("storageClassName is empty")
-	}
 	sc := &storagev1.StorageClass{}
 	if err := r.Get(r.ctx, types.NamespacedName{Name: storageClassName}, sc); err != nil {
 		return nil, fmt.Errorf("get StorageClass %q: %w", storageClassName, err)
