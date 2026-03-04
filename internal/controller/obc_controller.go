@@ -270,7 +270,7 @@ func (r *OBCReconciler) deleteResources(ob *nbv1.ObjectBucket, cm *corev1.Config
 	return combinedErr
 }
 
-// The OB does not have an ownerReference and must be explicitly deleted after its finalizer is removed.
+// The OB does not have an ownerReference of the OBC and must be explicitly deleted after its finalizer is removed.
 func (r *OBCReconciler) releaseAndDeleteOB(ob *nbv1.ObjectBucket) error {
 	if ob == nil {
 		r.log.Info("got nil OB, skipping")
