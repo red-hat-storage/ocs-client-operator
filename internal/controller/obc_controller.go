@@ -10,7 +10,6 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,7 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -39,22 +37,13 @@ type OBCReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager
 func (r *OBCReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Reconcile on Create, Delete, and Update when the object is being deleted (deletionTimestamp set) or when the spec changes.
-	obcPredicate := predicate.Funcs{
-		CreateFunc: func(event.CreateEvent) bool { return true },
-		DeleteFunc: func(event.DeleteEvent) bool { return true },
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectOld == nil || e.ObjectNew == nil {
-				return false
-			}
-			obcOld := e.ObjectOld.(*nbv1.ObjectBucketClaim)
-			obcNew := e.ObjectNew.(*nbv1.ObjectBucketClaim)
-			if !obcNew.GetDeletionTimestamp().IsZero() {
-				return true
-			}
-			return !equality.Semantic.DeepEqual(obcOld.Spec, obcNew.Spec)
-		},
-	}
+	// Reconcile on Create, Delete, and Update when the object is being deleted or when the spec (generation) changes.
+	obcPredicate := predicate.Or(
+		predicate.GenerationChangedPredicate{},
+		predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			return !obj.GetDeletionTimestamp().IsZero()
+		}),
+	)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("ObjectBucketClaim").
