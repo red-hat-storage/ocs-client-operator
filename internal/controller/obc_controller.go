@@ -10,6 +10,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,7 +39,7 @@ type OBCReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager
 func (r *OBCReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Reconcile on Create, Delete, and Update when the object is being deleted (deletionTimestamp set).
+	// Reconcile on Create, Delete, and Update when the object is being deleted (deletionTimestamp set) or when the spec changes.
 	obcPredicate := predicate.Funcs{
 		CreateFunc: func(event.CreateEvent) bool { return true },
 		DeleteFunc: func(event.DeleteEvent) bool { return true },
@@ -46,11 +47,21 @@ func (r *OBCReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if e.ObjectNew == nil {
 				return false
 			}
-			obc, ok := e.ObjectNew.(*nbv1.ObjectBucketClaim)
+			obcNew, ok := e.ObjectNew.(*nbv1.ObjectBucketClaim)
 			if !ok {
 				return false
 			}
-			return !obc.GetDeletionTimestamp().IsZero()
+			if !obcNew.GetDeletionTimestamp().IsZero() {
+				return true
+			}
+			if e.ObjectOld == nil {
+				return false
+			}
+			obcOld, ok := e.ObjectOld.(*nbv1.ObjectBucketClaim)
+			if !ok {
+				return false
+			}
+			return !equality.Semantic.DeepEqual(obcOld.Spec, obcNew.Spec)
 		},
 	}
 
