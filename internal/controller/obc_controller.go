@@ -44,22 +44,13 @@ func (r *OBCReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		CreateFunc: func(event.CreateEvent) bool { return true },
 		DeleteFunc: func(event.DeleteEvent) bool { return true },
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectNew == nil {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
 				return false
 			}
-			obcNew, ok := e.ObjectNew.(*nbv1.ObjectBucketClaim)
-			if !ok {
-				return false
-			}
+			obcOld := e.ObjectOld.(*nbv1.ObjectBucketClaim)
+			obcNew := e.ObjectNew.(*nbv1.ObjectBucketClaim)
 			if !obcNew.GetDeletionTimestamp().IsZero() {
 				return true
-			}
-			if e.ObjectOld == nil {
-				return false
-			}
-			obcOld, ok := e.ObjectOld.(*nbv1.ObjectBucketClaim)
-			if !ok {
-				return false
 			}
 			return !equality.Semantic.DeepEqual(obcOld.Spec, obcNew.Spec)
 		},
