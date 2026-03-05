@@ -9,7 +9,6 @@ import (
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -99,11 +98,6 @@ func (r *OBCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		if err := r.notifyObcDeleted(storageClient, types.NamespacedName{Namespace: obc.Namespace, Name: obc.Name}); err != nil {
 			r.log.Error(err, "failed to notify provider of OBC deletion", "namespaced/name", client.ObjectKeyFromObject(obc))
 			return reconcile.Result{}, fmt.Errorf("failed to in Notify gRPC call of OBC deleted: %v", err)
-		}
-		r.log.Info("releasing OBC related resources", "namespaced/name", client.ObjectKeyFromObject(obc))
-		if err := r.ReleaseAndDeleteRelatedObcResources(obc); err != nil {
-			r.log.Error(err, "failed to delete resources for OBC delete")
-			return reconcile.Result{}, fmt.Errorf("failed to delete resources for OBC delete: %v", err)
 		}
 		if controllerutil.RemoveFinalizer(obc, ObcFinalizer) {
 			r.log.Info("removing finalizer from OBC", "namespaced/name", client.ObjectKeyFromObject(obc))
@@ -201,82 +195,5 @@ func (r *OBCReconciler) notifyObcDeleted(storageClient *v1alpha1.StorageClient, 
 		return fmt.Errorf("NotifyObcDeleted: %w", err)
 	}
 	r.log.Info("Notify of OBC deleted completed", "namespace", obcDetails.Namespace, "name", obcDetails.Name)
-	return nil
-}
-
-// ReleaseAndDeleteRelatedObcResources handles the related resources that were created as part of the OBC provisioning
-// The names of the ConfigMap and Secret are always the same as the OBC name.
-// The names of the OB's are of the following format: "obc-<namespace_of_OBC>-<OBC_name>"
-// Since the secret and configmap's ownerReference is the OBC they will be garbage collected once their finalizers are removed.
-// The OB must be explicitly deleted since it is a global resource and cannot have a namespaced ownerReference.
-func (r *OBCReconciler) ReleaseAndDeleteRelatedObcResources(obc *nbv1.ObjectBucketClaim) (err error) {
-	obName := fmt.Sprintf("obc-%s-%s", obc.Namespace, obc.Name)
-	ob := &nbv1.ObjectBucket{}
-	if err := r.Get(r.ctx, types.NamespacedName{Name: obName}, ob); err != nil {
-		ob = nil
-		if errors.IsNotFound(err) {
-			r.log.Info("OB not found, skipping")
-		} else {
-			r.log.Error(err, "failed to get OB", "name", obName)
-			return fmt.Errorf("failed to get OB %s: %w", obName, err)
-		}
-	}
-	if ob != nil {
-		if controllerutil.RemoveFinalizer(ob, nbv1.ObjectBucketFinalizer) {
-			r.log.Info("removing finalizer from OB", "name", ob.Name)
-			if err := r.Update(r.ctx, ob); err != nil {
-				r.log.Error(err, "Failed to remove finalizer from OB", "name", ob.Name)
-				return fmt.Errorf("failed to remove finalizer from OB: %v", err)
-			}
-		}
-		r.log.Info("deleting OB", "name", ob.Name)
-		if err := r.Delete(r.ctx, ob); err != nil {
-			r.log.Error(err, "Failed to delete OB", "name", ob.Name)
-			return fmt.Errorf("failed to delete OB %s: %w", ob.Name, err)
-		}
-		r.log.Info("OB deleted", "name", ob.Name)
-	}
-
-	cm := &corev1.ConfigMap{}
-	if err := r.Get(r.ctx, types.NamespacedName{Namespace: obc.Namespace, Name: obc.Name}, cm); err != nil {
-		cm = nil
-		if errors.IsNotFound(err) {
-			r.log.Info("config map not found, skipping")
-		} else {
-			r.log.Error(err, "failed to get config map", "namespace", obc.Namespace, "name", obc.Name)
-			return fmt.Errorf("failed to get config map %s/%s: %w", obc.Namespace, obc.Name, err)
-		}
-	}
-	if cm != nil {
-		if controllerutil.RemoveFinalizer(cm, nbv1.ObjectBucketFinalizer) {
-			r.log.Info("removing finalizer from configmap", "name", cm.Name)
-			if err := r.Update(r.ctx, cm); err != nil {
-				r.log.Error(err, "Failed to remove finalizer from configmap", "namespaced/name", client.ObjectKeyFromObject(cm))
-				return fmt.Errorf("failed to remove finalizer from configmap: %v", err)
-			}
-			r.log.Info("configmap finalizer removed", "namespaced/name", client.ObjectKeyFromObject(cm))
-		}
-	}
-
-	secret := &corev1.Secret{}
-	if err := r.Get(r.ctx, types.NamespacedName{Namespace: obc.Namespace, Name: obc.Name}, secret); err != nil {
-		secret = nil
-		if errors.IsNotFound(err) {
-			r.log.Info("secret not found, skipping")
-		} else {
-			r.log.Error(err, "failed to get secret", "namespace", obc.Namespace, "name", obc.Name)
-			return fmt.Errorf("failed to get secret %s/%s: %w", obc.Namespace, obc.Name, err)
-		}
-	}
-	if secret != nil {
-		if controllerutil.RemoveFinalizer(secret, nbv1.ObjectBucketFinalizer) {
-			r.log.Info("removing finalizer from secret", "name", secret.Name)
-			if err := r.Update(r.ctx, secret); err != nil {
-				r.log.Error(err, "Failed to remove finalizer from secret", "namespaced/name", client.ObjectKeyFromObject(secret))
-				return fmt.Errorf("failed to remove finalizer from secret: %v", err)
-			}
-			r.log.Info("secret finalizer removed", "namespaced/name", client.ObjectKeyFromObject(secret))
-		}
-	}
 	return nil
 }
