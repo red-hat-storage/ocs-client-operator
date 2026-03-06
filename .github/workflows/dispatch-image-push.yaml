@@ -35,6 +35,7 @@ jobs:
       env:
         REGISTRY_NAMESPACE: ${{ github.event.inputs.REGISTRY_NAMESPACE }}
         IMAGE_TAG: ${{ github.event.inputs.IMAGE_TAG }}
+        VERSION: ${{ github.event.inputs.VERSION }}
         IMAGE_TAG_SHA: ${{ github.ref_name }}-${{ github.sha }}
       run: |
         # Set IMAGE_TAG to a calculated <branch>-<sha> if not specified
