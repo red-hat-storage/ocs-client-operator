@@ -208,9 +208,10 @@ func (r *obcReconcile) getStorageClientFromStorageClass(storageClassName string)
 	return storageClient, nil
 }
 
-// setFailedPhaseIfNotDeleting sets the OBC phase to Failed only when the OBC is not being deleted.
+// setFailedPhaseIfNotDeleting sets the OBC phase to Failed only when the OBC is not being deleted
+// and the phase is empty (not overwriting provider-set phases like Bound or Pending).
 func (r *obcReconcile) setFailedPhaseIfNotDeleting() {
-	if r.obc.GetDeletionTimestamp().IsZero() {
+	if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
 		r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
 	}
 }
