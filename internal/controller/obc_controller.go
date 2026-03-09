@@ -11,7 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -67,9 +67,8 @@ func (r *OBCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	r.log.Info("Starting reconcile iteration for OBC", "req", req)
 
 	obc := &nbv1.ObjectBucketClaim{}
-	err := r.Get(r.ctx, req.NamespacedName, obc)
-	if err != nil {
-		if errors.IsNotFound(err) {
+	if err := r.Get(r.ctx, req.NamespacedName, obc); err != nil {
+		if kerr.IsNotFound(err) {
 			r.log.Info("OBC resource not found. Ignoring since object must be deleted.")
 			return reconcile.Result{}, nil
 		}
