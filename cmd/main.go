@@ -286,6 +286,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	alertCollector := controller.NewAlertCollector(mgr.GetClient())
+	if err := mgr.Add(alertCollector); err != nil {
+		setupLog.Error(err, "unable to add alert collector to manager")
+		os.Exit(1)
+	}
+
 	if metricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(metricsCertWatcher); err != nil {

@@ -217,11 +217,27 @@ func (cc *OCSProviderClient) notifyWithReason(ctx context.Context, consumerUUID 
 }
 
 // NotifyObcCreated RPC call for Notify API request with OBC_CREATED reason
-func (cc *OCSProviderClient) NotifyObcCreated(ctx context.Context, consumerUUID string, obcDetails *nbv1.ObjectBucketClaim) (*pb.NotifyResponse, error) {
-	return cc.notifyWithReason(ctx, consumerUUID, pb.NotifyReason_OBC_CREATED, obcDetails)
+func (cc *OCSProviderClient) NotifyObcCreated(ctx context.Context, consumerUUID string, obc *nbv1.ObjectBucketClaim) (*pb.NotifyResponse, error) {
+	return cc.notifyWithReason(ctx, consumerUUID, pb.NotifyReason_OBC_CREATED, obc)
 }
 
 // NotifyObcDeleted RPC call for Notify API request with OBC_DELETED reason
-func (cc *OCSProviderClient) NotifyObcDeleted(ctx context.Context, consumerUUID string, obcDetails types.NamespacedName) (*pb.NotifyResponse, error) {
-	return cc.notifyWithReason(ctx, consumerUUID, pb.NotifyReason_OBC_DELETED, obcDetails)
+func (cc *OCSProviderClient) NotifyObcDeleted(ctx context.Context, consumerUUID string, obcNamespacedName types.NamespacedName) (*pb.NotifyResponse, error) {
+	return cc.notifyWithReason(ctx, consumerUUID, pb.NotifyReason_OBC_DELETED, obcNamespacedName)
+}
+
+// GetClientAlerts RPC call to get firing alerts relevant to a specific storage consumer
+func (cc *OCSProviderClient) GetClientAlerts(ctx context.Context, consumerUUID string) (*pb.GetClientAlertsResponse, error) {
+	if cc.Client == nil || cc.clientConn == nil {
+		return nil, fmt.Errorf("provider client is closed")
+	}
+
+	req := &pb.GetClientAlertsRequest{
+		StorageConsumerUUID: consumerUUID,
+	}
+
+	apiCtx, cancel := context.WithTimeout(ctx, cc.timeout)
+	defer cancel()
+
+	return cc.Client.GetClientAlerts(apiCtx, req)
 }
