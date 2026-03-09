@@ -348,7 +348,7 @@ func main() {
 		}
 	}
 
-	if err = (&controller.OBCReconciler{
+	if err = (&controller.ObcReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
