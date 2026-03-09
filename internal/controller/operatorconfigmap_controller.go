@@ -65,8 +65,10 @@ import (
 
 var (
 	//go:embed pvc-rules.yaml
-	pvcPrometheusRules          string
-	subPackageIndexerRegistered bool
+	pvcPrometheusRules string
+	//go:embed provider-alert-rules.yaml
+	providerAlertPrometheusRules string
+	subPackageIndexerRegistered  bool
 )
 
 const (
@@ -410,6 +412,25 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 
 		c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+
+		providerAlertRule := &monitoringv1.PrometheusRule{}
+		if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(providerAlertPrometheusRules), 1000).Decode(providerAlertRule); err != nil {
+			c.log.Error(err, "Unable to retrieve provider alert prometheus rules.", "prometheusRule", klog.KRef(providerAlertRule.Namespace, providerAlertRule.Name))
+			return ctrl.Result{}, err
+		}
+
+		providerAlertRule.SetNamespace(c.OperatorNamespace)
+
+		err = c.createOrUpdate(providerAlertRule, func() error {
+			applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &providerAlertRule.ObjectMeta)
+			return c.own(providerAlertRule)
+		})
+		if err != nil {
+			c.log.Error(err, "failed to create/update provider alert prometheus rules")
+			return ctrl.Result{}, err
+		}
+
+		c.log.Info("provider alert prometheus rules deployed", "prometheusRule", klog.KRef(providerAlertRule.Namespace, providerAlertRule.Name))
 	} else {
 		// deletion phase
 		if err := c.deletionPhase(); err != nil {
