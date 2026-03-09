@@ -8,10 +8,13 @@ import (
 )
 
 // NewProviderClientForStorageClient creates an OCS provider gRPC client for the given StorageClient.
-func NewProviderClientForStorageClient(ctx context.Context, storageProviderEndpoint string) (*providerClient.OCSProviderClient, error) {
-	pc, err := providerClient.NewProviderClient(ctx, storageProviderEndpoint, OcsClientTimeout)
+func NewProviderClientForStorageClient(
+	ctx context.Context,
+	storageProviderEndpoint string,
+) (*providerClient.OCSProviderClient, error) {
+	ocsProviderClient, err := providerClient.NewProviderClient(ctx, storageProviderEndpoint, OcsClientTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider client with endpoint %v: %w", storageProviderEndpoint, err)
 	}
-	return pc, nil
+	return ocsProviderClient, nil
 }
