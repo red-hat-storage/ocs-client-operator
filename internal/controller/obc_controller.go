@@ -150,9 +150,6 @@ func (r *OBCReconciler) getStorageClientFromStorageClass(storageClassName string
 	if err := r.Get(r.ctx, types.NamespacedName{Name: storageClientName}, storageClient); err != nil {
 		return nil, fmt.Errorf("get StorageClient %q (owner of StorageClass %q): %w", storageClientName, storageClassName, err)
 	}
-	if storageClient.Status.ConsumerID == "" || storageClient.Spec.StorageProviderEndpoint == "" {
-		return nil, fmt.Errorf("StorageClient %q has no ConsumerID or StorageProviderEndpoint", storageClient.Name)
-	}
 	return storageClient, nil
 }
 
