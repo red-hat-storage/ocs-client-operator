@@ -117,7 +117,10 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %w", err)
 	}
 
-	ocsProviderClient, err := utils.NewProviderClientForStorageClient(r.ctx, storageClient.Spec.StorageProviderEndpoint)
+	ocsProviderClient, err := utils.NewProviderClientForStorageClient(
+		r.ctx,
+		storageClient.Spec.StorageProviderEndpoint,
+	)
 	if err != nil {
 		r.setFailedPhaseIfNotDeleting()
 		r.log.Error(err, "failed to create provider client")
@@ -133,8 +136,11 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 }
 
 // createOrUpdatePhase handles the create/update phase of the OBC reconciliation.
-func (r *obcReconcile) createOrUpdatePhase(ocsProviderClient *providerClient.OCSProviderClient, storageClient *v1alpha1.StorageClient) (ctrl.Result, error) {
-	r.log.Info("OBC created", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
+func (r *obcReconcile) createOrUpdatePhase(
+	ocsProviderClient *providerClient.OCSProviderClient,
+	storageClient *v1alpha1.StorageClient,
+) (ctrl.Result, error) {
+	r.log.Info("OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 	if controllerutil.AddFinalizer(&r.obc, ObcFinalizer) {
 		r.log.Info("Finalizer not found for OBC. Adding finalizer", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 		if err := r.Update(r.ctx, &r.obc); err != nil {
@@ -145,11 +151,11 @@ func (r *obcReconcile) createOrUpdatePhase(ocsProviderClient *providerClient.OCS
 	}
 
 	if _, err := ocsProviderClient.NotifyObcCreated(r.ctx, storageClient.Status.ConsumerID, &r.obc); err != nil {
-		r.log.Error(err, "failed to notify provider of OBC creation", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
+		r.log.Error(err, "failed to notify provider of OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 		r.setFailedPhaseIfNotDeleting()
-		return reconcile.Result{}, fmt.Errorf("failed to in Notify gRPC call ofNotifyObcCreated: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcCreated: %w", err)
 	}
-	r.log.Info("Notify of OBC created completed", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
+	r.log.Info("Notify of OBC created/updated completed", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 
 	// Clear Failed status when a retry succeeds
 	if r.obc.Status.Phase == ObjectBucketClaimStatusPhaseFailed {
@@ -160,13 +166,16 @@ func (r *obcReconcile) createOrUpdatePhase(ocsProviderClient *providerClient.OCS
 }
 
 // deletionPhase handles the deletion phase of the OBC reconciliation.
-func (r *obcReconcile) deletionPhase(ocsProviderClient *providerClient.OCSProviderClient, storageClient *v1alpha1.StorageClient) (ctrl.Result, error) {
+func (r *obcReconcile) deletionPhase(
+	ocsProviderClient *providerClient.OCSProviderClient,
+	storageClient *v1alpha1.StorageClient,
+) (ctrl.Result, error) {
 	r.log.Info("OBC deleted", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 
 	obcNamespacedName := types.NamespacedName{Namespace: r.obc.Namespace, Name: r.obc.Name}
 	if _, err := ocsProviderClient.NotifyObcDeleted(r.ctx, storageClient.Status.ConsumerID, obcNamespacedName); err != nil {
 		r.log.Error(err, "failed to notify provider of OBC deletion", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
-		return reconcile.Result{}, fmt.Errorf("failed to in Notify gRPC call of NotifyObcDeleted: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcDeleted: %w", err)
 	}
 	r.log.Info("Notify of OBC deleted completed", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 	if controllerutil.RemoveFinalizer(&r.obc, ObcFinalizer) {
