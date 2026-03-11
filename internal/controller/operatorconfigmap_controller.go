@@ -62,8 +62,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-//go:embed pvc-rules.yaml
-var pvcPrometheusRules string
+var (
+	//go:embed pvc-rules.yaml
+	pvcPrometheusRules          string
+	subPackageIndexerRegistered bool
+)
 
 const (
 	operatorConfigMapName = "ocs-client-operator-config"
@@ -107,13 +110,8 @@ type OperatorConfigMapReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	ctx := context.Background()
-	if err := mgr.GetCache().IndexField(ctx, &opv1a1.Subscription{}, subPackageIndexName, func(o client.Object) []string {
-		if sub := o.(*opv1a1.Subscription); sub != nil {
-			return []string{sub.Spec.Package}
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("unable to set up FieldIndexer for subscription package name: %v", err)
+	if err := addSubscriptionPackageIndexer(ctx, mgr); err != nil {
+		return err
 	}
 
 	clusterVersionPredicates := builder.WithPredicates(
@@ -863,7 +861,7 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 
 func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() error {
 
-	clientSubscription, err := c.getSubscriptionByPackageName("ocs-client-operator")
+	clientSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ocs-client-operator")
 	if err != nil {
 		return err
 	}
@@ -886,9 +884,9 @@ func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() erro
 }
 
 func (c *OperatorConfigMapReconciler) reconcileNoobaaOperatorSubscription() error {
-	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
+	noobaaSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "mcg-operator")
 	if kerrors.IsNotFound(err) {
-		noobaaSubscription, err = c.getSubscriptionByPackageName("noobaa-operator")
+		noobaaSubscription, err = getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "noobaa-operator")
 	}
 	if err != nil {
 		return err
@@ -903,9 +901,9 @@ func (c *OperatorConfigMapReconciler) reconcileNoobaaOperatorSubscription() erro
 }
 
 func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() error {
-	addonsSubscription, err := c.getSubscriptionByPackageName("odf-csi-addons-operator")
+	addonsSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "odf-csi-addons-operator")
 	if kerrors.IsNotFound(err) {
-		addonsSubscription, err = c.getSubscriptionByPackageName("csi-addons")
+		addonsSubscription, err = getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "csi-addons")
 	}
 	if err != nil {
 		return err
@@ -920,9 +918,9 @@ func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() e
 }
 
 func (c *OperatorConfigMapReconciler) reconcileCephCSIOperatorSubscription() error {
-	cephCsiOperatorSubscription, err := c.getSubscriptionByPackageName("cephcsi-operator")
+	cephCsiOperatorSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "cephcsi-operator")
 	if kerrors.IsNotFound(err) {
-		cephCsiOperatorSubscription, err = c.getSubscriptionByPackageName("ceph-csi-operator")
+		cephCsiOperatorSubscription, err = getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ceph-csi-operator")
 	}
 	if err != nil {
 		return err
@@ -937,7 +935,7 @@ func (c *OperatorConfigMapReconciler) reconcileCephCSIOperatorSubscription() err
 }
 
 func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() error {
-	recipeOperatorSubscription, err := c.getSubscriptionByPackageName("recipe")
+	recipeOperatorSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "recipe")
 	if err != nil {
 		return err
 	}
@@ -951,7 +949,7 @@ func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() erro
 }
 
 func (c *OperatorConfigMapReconciler) reconcileODFSnapshotterSubscription() error {
-	odfSnapshotterSubscription, err := c.getSubscriptionByPackageName("odf-external-snapshotter-operator")
+	odfSnapshotterSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "odf-external-snapshotter-operator")
 	if err != nil {
 		return err
 	}
@@ -998,12 +996,18 @@ func (c *OperatorConfigMapReconciler) delete(obj client.Object, opts ...client.D
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) getSubscriptionByPackageName(pkgName string) (*opv1a1.Subscription, error) {
+func getSubscriptionByPackageName(
+	ctx context.Context,
+	kubeClient client.Client,
+	namespace string,
+	pkgName string,
+) (*opv1a1.Subscription, error) {
 	subList := &opv1a1.SubscriptionList{}
-	if err := c.list(
+	if err := kubeClient.List(
+		ctx,
 		subList,
 		client.MatchingFields{subPackageIndexName: pkgName},
-		client.InNamespace(c.OperatorNamespace),
+		client.InNamespace(namespace),
 		client.Limit(1),
 	); err != nil {
 		return nil, fmt.Errorf("failed to list subscriptions: %v", err)
@@ -1152,7 +1156,7 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 		}
 	}
 
-	noobaaSubscription, err := c.getSubscriptionByPackageName("mcg-operator")
+	noobaaSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "mcg-operator")
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	} else if noobaaSubscription == nil {
@@ -1164,5 +1168,23 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 		}
 	}
 
+	return nil
+}
+
+func addSubscriptionPackageIndexer(ctx context.Context, mgr ctrl.Manager) error {
+	if subPackageIndexerRegistered {
+		return nil
+	}
+
+	if err := mgr.GetCache().IndexField(ctx, &opv1a1.Subscription{}, subPackageIndexName, func(o client.Object) []string {
+		if sub := o.(*opv1a1.Subscription); sub != nil {
+			return []string{sub.Spec.Package}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("unable to set up FieldIndexer for subscription package name: %v", err)
+	}
+
+	subPackageIndexerRegistered = true
 	return nil
 }
