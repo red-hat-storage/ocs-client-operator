@@ -112,7 +112,9 @@ func (r *obcReconcile) reconcile(ctx context.Context, req ctrl.Request) (reconci
 func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 	storageClient, err := r.getStorageClientFromStorageClass(r.obc.Spec.StorageClassName)
 	if err != nil {
-		r.setFailedPhaseIfNotDeleting()
+		if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
+			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
+		}
 		r.log.Error(err, "failed to get StorageClient")
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %w", err)
 	}
@@ -122,7 +124,9 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		storageClient.Spec.StorageProviderEndpoint,
 	)
 	if err != nil {
-		r.setFailedPhaseIfNotDeleting()
+		if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
+			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
+		}
 		r.log.Error(err, "failed to create provider client")
 		return reconcile.Result{}, err
 	}
@@ -162,7 +166,9 @@ func (r *obcReconcile) createOrUpdatePhase(
 
 	if _, err := ocsProviderClient.NotifyObcCreated(r.ctx, storageClient.Status.ConsumerID, &r.obc); err != nil {
 		r.log.Error(err, "failed to notify provider of OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
-		r.setFailedPhaseIfNotDeleting()
+		if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
+			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
+		}
 		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcCreated: %w", err)
 	}
 	r.log.Info("Notify of OBC created/updated completed", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
@@ -216,12 +222,4 @@ func (r *obcReconcile) getStorageClientFromStorageClass(storageClassName string)
 		return nil, fmt.Errorf("get StorageClient %q (owner of StorageClass %q): %w", storageClientName, storageClassName, err)
 	}
 	return storageClient, nil
-}
-
-// setFailedPhaseIfNotDeleting sets the OBC phase to Failed only when the OBC is not being deleted
-// and the phase is empty (not overwriting provider-set phases like Bound or Pending).
-func (r *obcReconcile) setFailedPhaseIfNotDeleting() {
-	if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
-		r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
-	}
 }
