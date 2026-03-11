@@ -136,14 +136,6 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		return r.deletionPhase(ocsProviderClient, storageClient)
 	}
 
-	return r.createOrUpdatePhase(ocsProviderClient, storageClient)
-}
-
-// createOrUpdatePhase handles the create/update phase of the OBC reconciliation.
-func (r *obcReconcile) createOrUpdatePhase(
-	ocsProviderClient *providerClient.OCSProviderClient,
-	storageClient *v1alpha1.StorageClient,
-) (ctrl.Result, error) {
 	r.log.Info("OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 
 	shouldUpdateMetaData := false
