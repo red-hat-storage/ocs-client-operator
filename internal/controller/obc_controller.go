@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	ObcFinalizer                       = nbv1.ObjectBucketFinalizer
 	ObjectBucketClaimStatusPhaseFailed = "Failed"
 )
 
@@ -138,7 +137,7 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.log.Info("OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 
-	if controllerutil.AddFinalizer(&r.obc, ObcFinalizer) {
+	if controllerutil.AddFinalizer(&r.obc, nbv1.ObjectBucketFinalizer) {
 		r.log.Info("Finalizer not found for OBC. Adding finalizer", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 		if err := r.Update(r.ctx, &r.obc); err != nil {
 			r.log.Info("Failed to add finalizer to OBC", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
@@ -148,7 +147,7 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	if _, err := ocsProviderClient.NotifyObcCreated(r.ctx, storageClient.Status.ConsumerID, &r.obc); err != nil {
 		r.log.Error(err, "failed to notify provider of OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
-		if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
+		if r.obc.Status.Phase == "" {
 			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
 		}
 		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcCreated: %w", err)
@@ -176,7 +175,7 @@ func (r *obcReconcile) deletionPhase(
 		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcDeleted: %w", err)
 	}
 	r.log.Info("Notify of OBC deleted completed", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
-	if controllerutil.RemoveFinalizer(&r.obc, ObcFinalizer) {
+	if controllerutil.RemoveFinalizer(&r.obc, nbv1.ObjectBucketFinalizer) {
 		r.log.Info("removing finalizer from OBC", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
 		if err := r.Update(r.ctx, &r.obc); err != nil {
 			r.log.Info("Failed to remove finalizer from OBC", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
