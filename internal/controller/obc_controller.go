@@ -24,10 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const (
-	ObjectBucketClaimStatusPhaseFailed = "Failed"
-)
-
 // ObcReconciler reconciles a ObjectBucketClaim object
 type ObcReconciler struct {
 	client.Client
@@ -111,9 +107,6 @@ func (r *obcReconcile) reconcile(ctx context.Context, req ctrl.Request) (reconci
 func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 	storageClient, err := r.getStorageClientFromStorageClass(r.obc.Spec.StorageClassName)
 	if err != nil {
-		if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
-			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
-		}
 		r.log.Error(err, "failed to get StorageClient")
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %w", err)
 	}
@@ -123,9 +116,6 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		storageClient.Spec.StorageProviderEndpoint,
 	)
 	if err != nil {
-		if r.obc.GetDeletionTimestamp().IsZero() && r.obc.Status.Phase == "" {
-			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
-		}
 		r.log.Error(err, "failed to create provider client")
 		return reconcile.Result{}, err
 	}
@@ -147,17 +137,9 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	if _, err := ocsProviderClient.NotifyObcCreated(r.ctx, storageClient.Status.ConsumerID, &r.obc); err != nil {
 		r.log.Error(err, "failed to notify provider of OBC created/updated", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
-		if r.obc.Status.Phase == "" {
-			r.obc.Status.Phase = ObjectBucketClaimStatusPhaseFailed
-		}
 		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcCreated: %w", err)
 	}
 	r.log.Info("Notify of OBC created/updated completed", "namespaced/name", client.ObjectKeyFromObject(&r.obc))
-
-	// Clear Failed status when a retry succeeds
-	if r.obc.Status.Phase == ObjectBucketClaimStatusPhaseFailed {
-		r.obc.Status.Phase = ""
-	}
 
 	return reconcile.Result{}, nil
 }
