@@ -9,7 +9,6 @@ import (
 	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -124,17 +123,9 @@ func (r *MaintenanceModeReconciler) Reconcile(ctx context.Context, _ ctrl.Reques
 }
 
 func (r *MaintenanceModeReconciler) toggleMaintenanceModeForClient(storageClient *v1alpha1.StorageClient, enable bool) error {
-	providerClient, err := providerclient.NewProviderClient(
-		r.ctx,
-		storageClient.Spec.StorageProviderEndpoint,
-		utils.OcsClientTimeout,
-	)
+	providerClient, err := utils.NewProviderClientForStorageClient(r.ctx, storageClient.Spec.StorageProviderEndpoint)
 	if err != nil {
-		return fmt.Errorf(
-			"failed to create provider client with endpoint %v: %v",
-			storageClient.Spec.StorageProviderEndpoint,
-			err,
-		)
+		return err
 	}
 	// Close client-side connections.
 	defer providerClient.Close()
