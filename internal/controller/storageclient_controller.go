@@ -137,6 +137,9 @@ type storageClientReconcile struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	ctx := context.Background()
+	if err := addSubscriptionPackageIndexer(ctx, mgr); err != nil {
+		return err
+	}
 	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, pvClusterIDIndexName, func(o client.Object) []string {
 		pv := o.(*corev1.PersistentVolume)
 		if pv != nil &&
@@ -246,6 +249,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=config.openshift.io,resources=dnses,verbs=get;list;watch
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -624,6 +628,11 @@ func (r *storageClientReconcile) offboardConsumer(externalClusterClient *provide
 }
 
 func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersion string) (reconcile.Result, error) {
+	clientSubscription, err := getSubscriptionByPackageName(r.ctx, r.Client, r.OperatorNamespace, "ocs-client-operator")
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	cronJob := &batchv1.CronJob{}
 	// maximum characters allowed for cronjob name is 52 and below interpolation creates 47 characters
 	cronJob.Name = fmt.Sprintf("storageclient-%s-status-reporter", utils.GetMD5Hash(r.storageClient.Name)[:16])
@@ -634,7 +643,7 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 	var keepJobResourceSeconds int32 = 600
 	var reducedKeptSuccecsful int32 = 1
 
-	_, err := controllerutil.CreateOrUpdate(r.ctx, r.Client, cronJob, func() error {
+	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, cronJob, func() error {
 		if err := r.own(cronJob); err != nil {
 			return fmt.Errorf("failed to own cronjob: %v", err)
 		}
@@ -676,14 +685,17 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 							},
 							RestartPolicy:      corev1.RestartPolicyOnFailure,
 							ServiceAccountName: "ocs-client-operator-status-reporter",
-							Tolerations: []corev1.Toleration{
-								{
-									Effect:   corev1.TaintEffectNoSchedule,
-									Key:      "node.ocs.openshift.io/storage",
-									Operator: corev1.TolerationOpEqual,
-									Value:    "true",
+							Tolerations: append(
+								[]corev1.Toleration{
+									{
+										Effect:   corev1.TaintEffectNoSchedule,
+										Key:      "node.ocs.openshift.io/storage",
+										Operator: corev1.TolerationOpEqual,
+										Value:    "true",
+									},
 								},
-							},
+								clientSubscription.Spec.Config.Tolerations...,
+							),
 						},
 					},
 				},
