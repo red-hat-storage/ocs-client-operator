@@ -84,6 +84,9 @@ const (
 	enableCephFsDriverKey             = "enableCephFsDriver"
 	enableNfsDriverKey                = "enableNfsDriver"
 
+	// AlertPollIntervalKey is the ConfigMap key for the client alert polling interval.
+	AlertPollIntervalKey = "alertPollInterval"
+
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
 	csiImagesConfigMapLabel    = "ocs.openshift.io/csi-images-version"
