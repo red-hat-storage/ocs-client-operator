@@ -65,3 +65,5 @@ resources:
 - ../rbac
 - ../manager
 - ../crd
+- ../prometheus
+- metrics_service.yaml

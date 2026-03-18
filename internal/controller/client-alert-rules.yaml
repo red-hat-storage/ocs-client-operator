@@ -1,0 +1,31 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+  name: prometheus-client-alert-rules
+spec:
+  groups:
+  - name: client-provider-alert.rules
+    rules:
+    - alert: HighRBDCloneSnapshotCount
+      annotations:
+        description: Provider alert HighRBDCloneSnapshotCount is firing for storage client {{ $labels.storage_client }}.
+        message: RBD clones/snapshots count has exceeded the threshold limit on the storage provider for client {{ $labels.storage_client }}.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="HighRBDCloneSnapshotCount"} > 0
+      for: 5s
+      labels:
+        severity: warning
+    - alert: CephFSStaleSubvolume
+      annotations:
+        description: Provider alert CephFSStaleSubvolume is firing for storage client {{ $labels.storage_client }}.
+        message: There could be stale subvolumes that are not claimed or utilized on the storage provider for client {{ $labels.storage_client }}. Please investigate for possible stale or orphaned subvolumes.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephFSStaleSubvolume"} > 0
+      for: 5s
+      labels:
+        severity: warning

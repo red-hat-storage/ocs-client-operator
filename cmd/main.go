@@ -27,6 +27,7 @@ import (
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/internal/controller"
+	"github.com/red-hat-storage/ocs-client-operator/internal/controller/alert"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
@@ -65,6 +66,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -308,12 +310,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	alertRunnable := alert.NewRunnable(
+		mgr.GetClient(),
+		utils.GetOperatorNamespace(),
+		ctrl.Log.WithName("alert"),
+		alert.DefaultPollInterval,
+	)
+	if err := mgr.Add(alertRunnable); err != nil {
+		setupLog.Error(err, "unable to add alert runnable to manager")
+		os.Exit(1)
+	}
+
 	if err = (&controller.OperatorConfigMapReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		OperatorNamespace: utils.GetOperatorNamespace(),
-		ConsolePort:       int32(consolePort),
-		AvailableCrds:     availCrds,
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		OperatorNamespace:       utils.GetOperatorNamespace(),
+		ConsolePort:             int32(consolePort),
+		AvailableCrds:           availCrds,
+		UpdateAlertPollInterval: alertRunnable.SetPollInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
 		os.Exit(1)
@@ -338,6 +352,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
+	alertCollector := alert.NewCollector(alertRunnable)
+	resourceCollector := alert.NewResourceCollector(mgr.GetClient())
+	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

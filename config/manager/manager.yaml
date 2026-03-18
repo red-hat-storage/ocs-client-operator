@@ -33,6 +33,8 @@ spec:
       - command:
         - /entrypoint
         args:
+        - "--metrics-bind-address=:8080"
+        - "--metrics-secure=false"
         - "--console-port=9001"
         image: controller:latest
         name: manager
