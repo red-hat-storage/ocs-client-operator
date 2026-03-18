@@ -27,6 +27,7 @@ import (
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/internal/controller"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/clientalert"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
@@ -322,6 +323,16 @@ func main() {
 			setupLog.Error(err, "unable to create controller", "controller", "MaintenanceMode")
 			os.Exit(1)
 		}
+	}
+
+	clientAlertRunnable := clientalert.NewClientAlert(
+		mgr.GetClient(),
+		utils.GetOperatorNamespace(),
+		ctrl.Log.WithName("client-alert"),
+	)
+	if err := mgr.Add(clientAlertRunnable); err != nil {
+		setupLog.Error(err, "unable to add client alert runnable to manager")
+		os.Exit(1)
 	}
 
 	setupLog.Info("starting manager")
