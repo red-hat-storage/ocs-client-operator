@@ -23,6 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const obcControllerFinalizer = "ocs-client-operator.ocs.openshift.io/obccleanup"
+
 // ObcReconciler reconciles a ObjectBucketClaim object
 type ObcReconciler struct {
 	client.Client
@@ -113,7 +115,7 @@ func (r *obcReconcile) handleObcCreationOrUpdate(
 ) (ctrl.Result, error) {
 	r.log.Info("OBC created/updated")
 
-	if controllerutil.AddFinalizer(&r.obc, nbv1.ObjectBucketFinalizer) {
+	if controllerutil.AddFinalizer(&r.obc, obcControllerFinalizer) {
 		r.log.Info("Finalizer not found for OBC. Adding finalizer")
 		if err := r.Update(r.ctx, &r.obc); err != nil {
 			r.log.Info("Failed to add finalizer to OBC")
@@ -142,7 +144,7 @@ func (r *obcReconcile) handleObcDeletion(
 		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcDeleted: %w", err)
 	}
 	r.log.Info("Notify of OBC deleted completed")
-	if controllerutil.RemoveFinalizer(&r.obc, nbv1.ObjectBucketFinalizer) {
+	if controllerutil.RemoveFinalizer(&r.obc, obcControllerFinalizer) {
 		r.log.Info("removing finalizer from OBC")
 		if err := r.Update(r.ctx, &r.obc); err != nil {
 			r.log.Info("Failed to remove finalizer from OBC")
