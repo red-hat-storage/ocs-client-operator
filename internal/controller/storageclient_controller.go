@@ -785,8 +785,7 @@ func (r *storageClientReconcile) hasOdfVolumeGroupSnapshotContents(clientProfile
 func (r *storageClientReconcile) hasObjectbucketClaims() (bool, error) {
 	obcList := &nbv1.ObjectBucketClaimList{}
 	if err := r.list(obcList, client.MatchingLabels{storageClientNameLabel: r.storageClient.Name}, client.Limit(1)); err != nil {
-		// meta.IsNoMatchError added as currently the CRD installation is done manually
-		if meta.IsNoMatchError(err) || kerrors.IsNotFound(err) {
+		if kerrors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to list object bucket claim resources: %v", err)
