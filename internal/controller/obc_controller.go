@@ -115,11 +115,22 @@ func (r *obcReconcile) handleObcCreationOrUpdate(
 ) (ctrl.Result, error) {
 	r.log.Info("OBC created/updated")
 
+	shouldUpdateMetaData := false
 	if controllerutil.AddFinalizer(&r.obc, obcControllerFinalizer) {
 		r.log.Info("Finalizer not found for OBC. Adding finalizer")
+		shouldUpdateMetaData = true
+	}
+
+	// this label is used to identify the StorageClient that the OBC is associated with
+	if utils.AddLabel(&r.obc, storageClientNameLabel, storageClient.Name) {
+		r.log.Info("Label for StorageClient name not found for OBC. Adding label")
+		shouldUpdateMetaData = true
+	}
+
+	if shouldUpdateMetaData {
 		if err := r.Update(r.ctx, &r.obc); err != nil {
-			r.log.Info("Failed to add finalizer to OBC")
-			return reconcile.Result{}, fmt.Errorf("failed to add finalizer to OBC: %v", err)
+			r.log.Info("Failed to update OBC metadata ((with finalizer or label)")
+			return reconcile.Result{}, fmt.Errorf("failed to update OBC metadata (with finalizer or label): %v", err)
 		}
 	}
 
