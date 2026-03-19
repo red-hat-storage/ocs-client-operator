@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 
+	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
@@ -105,6 +106,7 @@ var (
 		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
 		&groupsnapapi.VolumeGroupSnapshotClass{},
 		&csiaddonsv1alpha1.NetworkFenceClass{},
+		&nbv1.ObjectBucketClaim{},
 	}
 )
 
