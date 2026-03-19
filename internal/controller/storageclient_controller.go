@@ -791,7 +791,6 @@ func (r *storageClientReconcile) hasObjectbucketClaims() (bool, error) {
 		return false, fmt.Errorf("failed to list object bucket claim resources: %v", err)
 	}
 	if len(obcList.Items) != 0 {
-		r.log.Info(fmt.Sprintf("ObjectBucketClaim created by storageclient %s exists", r.storageClient.Name))
 		return true, nil
 	}
 	return false, nil
