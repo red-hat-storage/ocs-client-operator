@@ -252,6 +252,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=noobaa.io,resources=noobaas,verbs=get;list;watch;update;delete
+//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
@@ -530,6 +531,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		return fmt.Errorf("unable to find the updated cluster version")
 	}
 
+	isTnfCluster, err := checkIfTNFCluster(c.ctx, c.Client)
+	if err != nil {
+		return err
+	}
+	c.log.Info("is cluster a tnf cluster?", "value", isTnfCluster)
+
 	cniNetworkAnnotationValue := ""
 	topologyDomainLablesSet := c.getTopologyLabels(storageClients)
 
@@ -558,6 +565,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		driverSpecDefaults := csiOperatorConfig.Spec.DriverSpecDefaults
+		if isTnfCluster {
+			driverSpecDefaults.ControllerPlugin.Resources = templates.CSIOperatorTNFResourceSpec.DriverSpecDefaults.ControllerPlugin.Resources
+			driverSpecDefaults.NodePlugin.Resources = templates.CSIOperatorTNFResourceSpec.DriverSpecDefaults.NodePlugin.Resources
+		}
 		driverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		driverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
 		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
@@ -1200,4 +1211,19 @@ func addSubscriptionPackageIndexer(ctx context.Context, mgr ctrl.Manager) error 
 
 	subPackageIndexerRegistered = true
 	return nil
+}
+
+func checkIfTNFCluster(ctx context.Context, kubeClient client.Client) (bool, error) {
+	infra := &configv1.Infrastructure{}
+	infra.Name = "cluster"
+	err := kubeClient.Get(ctx, client.ObjectKeyFromObject(infra), infra)
+	if err != nil {
+		return false, err
+	}
+
+	if infra.Status.ControlPlaneTopology == "" {
+		return false, fmt.Errorf("controlPlaneTopology is not set in infrastructure resource")
+	}
+
+	return infra.Status.ControlPlaneTopology == "DualReplica", nil
 }
