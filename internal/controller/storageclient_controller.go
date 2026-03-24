@@ -106,6 +106,9 @@ var (
 		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
 		&groupsnapapi.VolumeGroupSnapshotClass{},
 		&csiaddonsv1alpha1.NetworkFenceClass{},
+		&nbv1.ObjectBucketClaim{},
+		&nbv1.ObjectBucket{},
+		&corev1.ConfigMap{},
 	}
 )
 
