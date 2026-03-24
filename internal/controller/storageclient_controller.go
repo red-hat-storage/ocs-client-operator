@@ -39,6 +39,7 @@ import (
 	"github.com/go-logr/logr"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
@@ -251,6 +252,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=groupsnapshot.storage.openshift.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
 //+kubebuilder:rbac:groups=config.openshift.io,resources=dnses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list;watch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -559,6 +561,12 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		}
 	}
 
+	if exist, err := r.hasObjectbucketClaims(); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to verify objectbucketclaims created by storageclient %q: %v", r.storageClient.Name, err)
+	} else if exist {
+		return reconcile.Result{}, fmt.Errorf("one or more objectbucketclaims created by storageclient %s exist", r.storageClient.Name)
+	}
+
 	if err := r.offboardConsumer(externalClusterClient); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to offboard consumer for storageclient %v: %v", r.storageClient.Name, err)
 	}
@@ -772,6 +780,14 @@ func (r *storageClientReconcile) hasOdfVolumeGroupSnapshotContents(clientProfile
 	}
 
 	return false, nil
+}
+
+func (r *storageClientReconcile) hasObjectbucketClaims() (bool, error) {
+	obcList := &nbv1.ObjectBucketClaimList{}
+	if err := r.list(obcList, client.MatchingLabels{storageClientNameLabel: r.storageClient.Name}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list object bucket claim resources: %v", err)
+	}
+	return len(obcList.Items) != 0, nil
 }
 
 func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {

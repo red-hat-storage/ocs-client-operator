@@ -23,6 +23,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	obcControllerFinalizer = "ocs.openshift.io/obccleanup"
+)
+
 // ObcReconciler reconciles a ObjectBucketClaim object
 type ObcReconciler struct {
 	client.Client
@@ -42,7 +46,13 @@ func (r *ObcReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("ObjectBucketClaim").
 		For(
 			&nbv1.ObjectBucketClaim{},
-			builder.WithPredicates(predicate.GenerationChangedPredicate{}), // we filter out updates on status intentionally (it is updated from outside)
+			// we filter out updates on status intentionally (it is updated from outside)
+			builder.WithPredicates(
+				predicate.Or(
+					predicate.GenerationChangedPredicate{},
+					predicate.LabelChangedPredicate{},
+				),
+			),
 		).
 		Complete(r)
 }
@@ -113,11 +123,21 @@ func (r *obcReconcile) handleObcCreationOrUpdate(
 ) (ctrl.Result, error) {
 	r.log.Info("OBC created/updated")
 
-	if controllerutil.AddFinalizer(&r.obc, nbv1.ObjectBucketFinalizer) {
+	shouldUpdateMetaData := false
+	if controllerutil.AddFinalizer(&r.obc, obcControllerFinalizer) {
 		r.log.Info("Finalizer not found for OBC. Adding finalizer")
+		shouldUpdateMetaData = true
+	}
+
+	// this label is used to identify the StorageClient that the OBC is associated with
+	if utils.AddLabel(&r.obc, storageClientNameLabel, storageClient.Name) {
+		r.log.Info("Label for StorageClient name not found for OBC. Adding label")
+		shouldUpdateMetaData = true
+	}
+
+	if shouldUpdateMetaData {
 		if err := r.Update(r.ctx, &r.obc); err != nil {
-			r.log.Info("Failed to add finalizer to OBC")
-			return reconcile.Result{}, fmt.Errorf("failed to add finalizer to OBC: %v", err)
+			return reconcile.Result{}, fmt.Errorf("failed to update OBC metadata: %v", err)
 		}
 	}
 
@@ -142,7 +162,7 @@ func (r *obcReconcile) handleObcDeletion(
 		return reconcile.Result{}, fmt.Errorf("failed to call gRPC call Notify - NotifyObcDeleted: %w", err)
 	}
 	r.log.Info("Notify of OBC deleted completed")
-	if controllerutil.RemoveFinalizer(&r.obc, nbv1.ObjectBucketFinalizer) {
+	if controllerutil.RemoveFinalizer(&r.obc, obcControllerFinalizer) {
 		r.log.Info("removing finalizer from OBC")
 		if err := r.Update(r.ctx, &r.obc); err != nil {
 			r.log.Info("Failed to remove finalizer from OBC")
