@@ -64,6 +64,14 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - pods
+          verbs:
+          - delete
+          - list
+          - watch
+        - apiGroups:
+          - ""
+          resources:
           - secrets
           verbs:
           - create
@@ -599,10 +607,10 @@ spec:
                   protocol: TCP
                 resources:
                   limits:
-                    cpu: 100m
+                    cpu: 250m
                     memory: 512Mi
                   requests:
-                    cpu: 10m
+                    cpu: 50m
                     memory: 256Mi
                 securityContext:
                   allowPrivilegeEscalation: false
@@ -618,7 +626,14 @@ spec:
                   readOnly: true
                 - mountPath: /etc/nginx/nginx.conf
                   name: ocs-client-operator-console-nginx-conf
+                  readOnly: true
                   subPath: nginx.conf
+                - mountPath: /opt/app-root/etc/nginx.d
+                  name: ocs-client-operator-console-nginx-conf
+                  readOnly: true
+                - mountPath: /etc/ssl/certs/s3-endpoint-ca-certs
+                  name: ocs-client-operator-console-s3-endpoint-ca-certs
+                  readOnly: true
                 - mountPath: /var/log/nginx
                   name: ocs-client-operator-console-nginx-log
                 - mountPath: /var/lib/nginx/tmp
@@ -639,6 +654,10 @@ spec:
               - configMap:
                   name: ocs-client-operator-console-nginx-conf
                 name: ocs-client-operator-console-nginx-conf
+              - name: ocs-client-operator-console-s3-endpoint-ca-certs
+                secret:
+                  optional: true
+                  secretName: ocs-client-operator-console-s3-endpoint-ca-certs
               - emptyDir: {}
                 name: ocs-client-operator-console-nginx-log
               - emptyDir: {}
