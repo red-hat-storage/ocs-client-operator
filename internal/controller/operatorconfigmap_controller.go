@@ -17,10 +17,13 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"net/url"
 	"reflect"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -90,7 +93,27 @@ const (
 	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
 	noobaaCrdName              = "noobaas.noobaa.io"
 	noobaaCrName               = "noobaa-remote"
+
+	// disableS3EndpointProxyKey, if true, disables deploying the s3 endpoint reverse proxy for the local/internal client.
+	disableS3EndpointProxyKey    = "disableS3EndpointProxy"
+	s3EndpointsConfigMapLabelKey = "ocs.openshift.io/hub-s3-endpoints"
+
+	// nginx proxy config key pattern per client: proxy-<clientuid>.conf (all locations for this client in one key).
+	nginxProxyConfigKeyFmt = "proxy-%s.conf"
+
+	// default system CA bundle used by nginx for TLS verification.
+	defaultCertsPath = "/etc/pki/tls/certs/ca-bundle.crt"
+	// optional Secret for custom CA certs; keys are "<clientuid>-<exposeas>.crt".
+	s3EndpointCASecretName  = "ocs-client-operator-console-s3-endpoint-ca-certs"
+	s3EndpointCertKeySuffix = ".crt"
+	// mount path for custom CA secret in the console pod.
+	s3EndpointCertsMountPath = "/etc/ssl/certs/s3-endpoint-ca-certs"
 )
+
+// ConfigMapData value from the provider that contains the s3 endpoint info (key is the unique identifier, using which the endpoint is exposed).
+type s3EndpointConfig struct {
+	EndpointURL string `json:"endpointUrl"`
+}
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
 type OperatorConfigMapReconciler struct {
@@ -120,10 +143,17 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	configMapPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				namespace := client.GetNamespace()
-				name := client.GetName()
-				return ((namespace == c.OperatorNamespace) && (name == operatorConfigMapName))
+			func(obj client.Object) bool {
+				if obj.GetNamespace() != c.OperatorNamespace {
+					return false
+				}
+
+				if obj.GetName() == operatorConfigMapName {
+					return true
+				}
+
+				labels := obj.GetLabels()
+				return labels != nil && labels[s3EndpointsConfigMapLabelKey] == strconv.FormatBool(true)
 			},
 		),
 	)
@@ -164,6 +194,14 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	s3EndpointCASecretPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				return obj.GetNamespace() == c.OperatorNamespace && obj.GetName() == s3EndpointCASecretName
+			},
+		),
+	)
+
 	storageClientStatusPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			if e.ObjectOld == nil || e.ObjectNew == nil {
@@ -176,11 +214,36 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	generationChangePredicate := predicate.GenerationChangedPredicate{}
+
+	enqueueOwnerConfigMapRequest := handler.EnqueueRequestForOwner(
+		mgr.GetScheme(),
+		mgr.GetRESTMapper(),
+		&corev1.ConfigMap{},
+		handler.OnlyControllerOwner(),
+	)
+
 	bldr := ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.ConfigMap{}, configMapPredicates).
-		Owns(&corev1.Service{}, servicePredicate).
-		Owns(&csiopv1.OperatorConfig{}, builder.WithPredicates(generationChangePredicate)).
-		Owns(&csiopv1.Driver{}, builder.WithPredicates(generationChangePredicate)).
+		Named("OperatorConfigMapReconciler").
+		Watches(
+			&corev1.ConfigMap{},
+			enqueueConfigMapRequest,
+			configMapPredicates,
+		).
+		Watches(
+			&corev1.Service{},
+			enqueueOwnerConfigMapRequest,
+			servicePredicate,
+		).
+		Watches(
+			&csiopv1.OperatorConfig{},
+			enqueueOwnerConfigMapRequest,
+			builder.WithPredicates(generationChangePredicate),
+		).
+		Watches(
+			&csiopv1.Driver{},
+			enqueueOwnerConfigMapRequest,
+			builder.WithPredicates(generationChangePredicate),
+		).
 		Watches(&configv1.ClusterVersion{}, enqueueConfigMapRequest, clusterVersionPredicates).
 		Watches(
 			&extv1.CustomResourceDefinition{},
@@ -219,6 +282,11 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					storageClientStatusPredicate,
 				),
 			),
+		).
+		Watches(
+			&corev1.Secret{},
+			enqueueConfigMapRequest,
+			s3EndpointCASecretPredicates,
 		)
 
 	if c.AvailableCrds[noobaaCrdName] {
@@ -241,6 +309,8 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="apps",resources=deployments/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch;delete
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -704,12 +774,17 @@ func (c *OperatorConfigMapReconciler) deletionPhase() error {
 }
 
 func (c *OperatorConfigMapReconciler) createOrUpdate(obj client.Object, f controllerutil.MutateFn) error {
+	_, err := c.createOrUpdateWithResult(obj, f)
+	return err
+}
+
+func (c *OperatorConfigMapReconciler) createOrUpdateWithResult(obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 	result, err := controllerutil.CreateOrUpdate(c.ctx, c.Client, obj, f)
 	if err != nil {
-		return err
+		return result, err
 	}
 	c.log.Info("successfully created or updated", "operation", result, "name", obj.GetName())
-	return nil
+	return result, nil
 }
 
 func (c *OperatorConfigMapReconciler) own(obj client.Object) error {
@@ -750,26 +825,33 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		return err
 	}
 
-	nginxConf := console.GetNginxConf()
 	nginxConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      console.NginxConfigMapName,
 			Namespace: c.OperatorNamespace,
 		},
-		Data: map[string]string{
-			"nginx.conf": nginxConf,
-		},
 	}
-	err = c.createOrUpdate(nginxConfigMap, func() error {
-		if consoleConfigMapData := nginxConfigMap.Data["nginx.conf"]; consoleConfigMapData != nginxConf {
-			nginxConfigMap.Data["nginx.conf"] = nginxConf
+	nginxConfigMapResult, err := c.createOrUpdateWithResult(nginxConfigMap, func() error {
+		desiredData, buildErr := c.buildDesiredNginxDataWithProxies()
+		if buildErr != nil {
+			return buildErr
 		}
+		nginxConfigMap.Data = desiredData
 		return controllerutil.SetControllerReference(c.consoleDeployment, nginxConfigMap, c.Scheme)
 	})
-
 	if err != nil {
 		c.log.Error(err, "failed to create nginx config map")
 		return err
+	}
+
+	if nginxConfigMapResult == controllerutil.OperationResultCreated || nginxConfigMapResult == controllerutil.OperationResultUpdated {
+		c.log.Info("nginx ConfigMap data changed, restarting console pod to pick up new config")
+		// Console pod must restart (or nginx must reload) to pick up updated mounted config files.
+		// Restart failures are currently logged only. If restart fails once and config does not change again,
+		// subsequent reconciles will not retry because this block is gated by data-diff check.
+		// ToDo: If issue is prominent, explore reliable retry semantics, like restart based on marker/hash or graceful nginx reload.
+		// Note: checksum rollout via Deployment pod-template annotation is not reliable as Deployment is currently OLM/CSV-owned.
+		c.restartConsolePodsByLabel()
 	}
 
 	consoleService := console.GetService(c.ConsolePort, c.OperatorNamespace)
@@ -802,6 +884,160 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) restartConsolePodsByLabel() {
+	podList := &corev1.PodList{}
+	if err := c.list(
+		podList,
+		client.InNamespace(c.OperatorNamespace),
+		client.MatchingLabels{console.AppNameLabelKey: console.DeploymentName},
+	); err != nil {
+		c.log.Error(err, "failed to list console pods by label selector", "namespace", c.OperatorNamespace)
+		return
+	}
+	if len(podList.Items) == 0 {
+		c.log.Info("no console pods found for restart", "namespace", c.OperatorNamespace)
+		return
+	}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if err := c.delete(pod); err != nil {
+			c.log.Error(err, "failed to delete console pod", "pod", pod.Name, "namespace", c.OperatorNamespace)
+		}
+	}
+}
+
+func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[string]string, error) {
+	out := map[string]string{
+		// Root config is mandatory for nginx to start. Proxy configs (per client) are optional.
+		"nginx.conf": console.GetNginxRootConf(),
+	}
+
+	if c.operatorConfigMap.Data != nil {
+		if disableS3EndpointProxyValue, ok := c.operatorConfigMap.Data[disableS3EndpointProxyKey]; ok {
+			disableS3EndpointProxy, err := strconv.ParseBool(disableS3EndpointProxyValue)
+			if err != nil {
+				return nil, fmt.Errorf("unsupported value under disableS3EndpointProxy key: %w", err)
+			}
+			if disableS3EndpointProxy {
+				c.log.Info("s3 endpoint proxy disabled via operator ConfigMap", "key", disableS3EndpointProxyKey)
+				return out, nil
+			}
+		}
+	}
+
+	err := c.computeDesiredProxyConfigByKey(out)
+	return out, err
+}
+
+func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[string]string) error {
+	extList := &corev1.ConfigMapList{}
+	if err := c.list(extList,
+		client.InNamespace(c.OperatorNamespace),
+		client.MatchingLabels{s3EndpointsConfigMapLabelKey: strconv.FormatBool(true)},
+	); err != nil {
+		return fmt.Errorf("list s3 endpoints ConfigMaps: %w", err)
+	}
+
+	for i := range extList.Items {
+		cm := &extList.Items[i]
+		uniqueIdentifier := cm.Name
+		configKey := fmt.Sprintf(nginxProxyConfigKeyFmt, uniqueIdentifier)
+		endpoints, err := parseEndpointConfigs(cm.Data)
+		if err != nil {
+			return fmt.Errorf("parse endpoints ConfigMap %s: %w", client.ObjectKeyFromObject(cm), err)
+		}
+		content, err := c.buildS3EndpointProxyConfigForClient(uniqueIdentifier, endpoints)
+		if err != nil {
+			return err
+		}
+		if content != "" {
+			out[configKey] = content
+		}
+	}
+	return nil
+}
+
+func parseEndpointConfigs(data map[string]string) (map[string]s3EndpointConfig, error) {
+	out := make(map[string]s3EndpointConfig, len(data))
+	for exposeAs, rawCfg := range data {
+		trimmedExposeAs := strings.TrimSpace(exposeAs)
+		if trimmedExposeAs == "" || strings.TrimSpace(rawCfg) == "" {
+			continue
+		}
+
+		cfg := s3EndpointConfig{}
+		if err := json.Unmarshal([]byte(rawCfg), &cfg); err != nil {
+			return nil, fmt.Errorf("decode endpoint config for key %q: %w", trimmedExposeAs, err)
+		}
+		out[trimmedExposeAs] = cfg
+	}
+	return out, nil
+}
+
+func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(uniqueIdentifier string, endpoints map[string]s3EndpointConfig) (string, error) {
+	if len(endpoints) == 0 {
+		return "", nil
+	}
+
+	secret := &corev1.Secret{}
+	secret.Namespace = c.OperatorNamespace
+	secret.Name = s3EndpointCASecretName
+	if err := c.get(secret); client.IgnoreNotFound(err) != nil {
+		return "", fmt.Errorf("failed to get s3 endpoint CA secret %q: %w", s3EndpointCASecretName, err)
+	}
+	hasCustomCA := secret.UID != ""
+
+	var sb strings.Builder
+	exposeAsKeys := make([]string, 0, len(endpoints))
+	for exposeAs := range endpoints {
+		exposeAsKeys = append(exposeAsKeys, exposeAs)
+	}
+	// Processing endpoints in a fixed order so the generated nginx config "string" wouldn't change unless the actual endpoint data changed.
+	// This is to avoid unnecessary pod restarts, since restarts are triggered when changes are detected.
+	sort.Strings(exposeAsKeys)
+	for _, exposeAs := range exposeAsKeys {
+		cfg := endpoints[exposeAs]
+		endpointURL := strings.TrimSpace(cfg.EndpointURL)
+		if endpointURL == "" {
+			c.log.Info("skipping empty endpoint URL", "exposeAs", exposeAs)
+			continue
+		}
+
+		parsed, err := url.Parse(endpointURL)
+		if err != nil {
+			c.log.Error(err, "skipping invalid endpoint URL", "url", endpointURL, "exposeAs", exposeAs)
+			continue
+		}
+
+		if parsed.Scheme != "https" {
+			c.log.Info("skipping non-HTTPS endpoint", "url", endpointURL, "exposeAs", exposeAs)
+			continue
+		}
+
+		endpointHost := parsed.Host
+		certsPath := defaultCertsPath
+		certKey := uniqueIdentifier + "-" + exposeAs + s3EndpointCertKeySuffix
+		if hasCustomCA {
+			if _, ok := secret.Data[certKey]; ok {
+				certsPath = s3EndpointCertsMountPath + "/" + certKey
+			}
+		}
+
+		snippet, err := console.GetNginxProxyConf(
+			uniqueIdentifier,
+			exposeAs,
+			endpointURL,
+			endpointHost,
+			certsPath,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to build proxy config for %q: %w", exposeAs, err)
+		}
+		sb.WriteString(snippet)
+	}
+	return sb.String(), nil
 }
 
 func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {

@@ -1,0 +1,24 @@
+location /{{.UniqueIdentifier}}/{{.ExposeAs}}/ {
+    # Skip Origin/Referer checks (not guaranteed on all requests).
+
+    # Operation check (data operations are not allowed).
+    if ($is_op_allowed = 0) {
+        return 403 "Not allowed: only management operations are whitelisted";
+    }
+
+    # Rate/connection limits.
+    limit_req zone=proxy_req burst=50 nodelay;
+    limit_conn proxy_conn 200;
+    proxy_connect_timeout 60s;  # TLS handshake to backend
+    proxy_send_timeout 60s;     # Send request to backend
+    proxy_read_timeout 60s;     # Read response from backend
+
+    proxy_pass {{.EndpointURL}}/;
+    proxy_set_header Host {{.EndpointHost}};
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_ssl_name {{.EndpointHost}};
+    proxy_ssl_verify on;
+    proxy_ssl_server_name on;
+    proxy_ssl_trusted_certificate {{.CertsPath}};
+}

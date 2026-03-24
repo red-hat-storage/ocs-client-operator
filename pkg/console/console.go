@@ -1,7 +1,10 @@
 package console
 
 import (
+	_ "embed"
 	"fmt"
+	"strings"
+	"text/template"
 
 	consolev1 "github.com/openshift/api/console/v1"
 	apiv1 "k8s.io/api/core/v1"
@@ -20,8 +23,15 @@ var (
 
 	servicePortName         = "console-port"
 	serviceSecretAnnotation = "service.alpha.openshift.io/serving-cert-secret-name"
-	serviceLabelKey         = "app.kubernetes.io/name"
+
+	AppNameLabelKey = "app.kubernetes.io/name"
 )
+
+//go:embed nginx_proxy.tmpl
+var nginxProxyConf string
+
+//go:embed nginx_root.conf
+var nginxRootConf string
 
 func GetService(port int32, namespace string) *apiv1.Service {
 	return &apiv1.Service{
@@ -32,7 +42,7 @@ func GetService(port int32, namespace string) *apiv1.Service {
 				serviceSecretAnnotation: fmt.Sprintf("%s-serving-cert", DeploymentName),
 			},
 			Labels: map[string]string{
-				serviceLabelKey: DeploymentName,
+				AppNameLabelKey: DeploymentName,
 			},
 		},
 		Spec: apiv1.ServiceSpec{
@@ -45,7 +55,7 @@ func GetService(port int32, namespace string) *apiv1.Service {
 				},
 			},
 			Selector: map[string]string{
-				serviceLabelKey: DeploymentName,
+				AppNameLabelKey: DeploymentName,
 			},
 		},
 	}
@@ -66,17 +76,45 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 				Service: &consolev1.ConsolePluginService{
 					Name:      DeploymentName,
 					Namespace: serviceNamespace,
-					Port:      int32(consolePort),
+					Port:      consolePort,
 					BasePath:  pluginBasePath,
 				},
 			},
-			Proxy: getConsolePluginProxy(serviceNamespace),
+			Proxy: getConsolePluginProxy(consolePort, serviceNamespace),
 		},
 	}
 }
 
-func GetNginxConf() string {
-	return nginxConf
+func GetNginxRootConf() string {
+	return nginxRootConf
+}
+
+func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, certsPath string) (string, error) {
+	type nginxProxyConfData struct {
+		UniqueIdentifier string
+		ExposeAs         string
+		EndpointURL      string
+		EndpointHost     string
+		CertsPath        string
+	}
+
+	data := nginxProxyConfData{
+		UniqueIdentifier: uniqueIdentifier,
+		ExposeAs:         exposeAs,
+		EndpointURL:      endpointURL,
+		EndpointHost:     endpointHost,
+		CertsPath:        certsPath,
+	}
+
+	t, err := template.New("nginxProxyConf").Parse(nginxProxyConf)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	if err := t.Execute(&sb, data); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
 }
 
 func GetNginxConfConfigMap(namespace string) *apiv1.ConfigMap {
@@ -86,21 +124,21 @@ func GetNginxConfConfigMap(namespace string) *apiv1.ConfigMap {
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"nginx.conf": nginxConf,
+			"nginx.conf": nginxRootConf,
 		},
 	}
 }
 
-func getConsolePluginProxy(serviceNamespace string) []consolev1.ConsolePluginProxy {
+func getConsolePluginProxy(port int32, serviceNamespace string) []consolev1.ConsolePluginProxy {
 	return []consolev1.ConsolePluginProxy{
 		{
-			Alias: "s3",
+			Alias: "s3EndpointProxy",
 			Endpoint: consolev1.ConsolePluginProxyEndpoint{
 				Type: consolev1.ProxyTypeService,
 				Service: &consolev1.ConsolePluginProxyServiceConfig{
-					Name:      "s3-endpoint-proxy",
+					Name:      DeploymentName,
 					Namespace: serviceNamespace,
-					Port:      443,
+					Port:      port,
 				},
 			},
 			Authorization: consolev1.None,
