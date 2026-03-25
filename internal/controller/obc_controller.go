@@ -7,7 +7,7 @@ import (
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/new/client"
 
 	"github.com/go-logr/logr"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"

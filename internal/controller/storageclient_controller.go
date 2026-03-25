@@ -43,7 +43,7 @@ import (
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
-	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/new/client"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
