@@ -249,3 +249,88 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 		},
 	},
 }
+
+var CSIOperatorTNFResourceSpec = csiopv1.OperatorConfigSpec{
+	DriverSpecDefaults: &csiopv1.DriverSpec{
+		ControllerPlugin: &csiopv1.ControllerPluginSpec{
+			Resources: csiopv1.ControllerPluginResourcesSpec{
+				LogRotator: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+				Attacher: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("25m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				Snapshotter: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("25m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				Resizer: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("25m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				Provisioner: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("25m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				OMapGenerator: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("25m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				Addons: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("50m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				Plugin: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("100Mi"),
+					},
+				},
+			},
+		},
+		NodePlugin: &csiopv1.NodePluginSpec{
+			Resources: csiopv1.NodePluginResourcesSpec{
+				LogRotator: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+				Registrar: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("10Mi"),
+					},
+				},
+				Addons: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("50m"),
+						corev1.ResourceMemory: resource.MustParse("50Mi"),
+					},
+				},
+				Plugin: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("50m"),
+						corev1.ResourceMemory: resource.MustParse("100Mi"),
+					},
+				},
+			},
+		},
+	},
+}
