@@ -94,7 +94,8 @@ func (r *obcReconcile) reconcile(ctx context.Context, req ctrl.Request) (reconci
 
 // reconcilePhases handles the different phases of the OBC reconciliation.
 func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
-	storageClient, err := r.getStorageClientFromStorageClass(r.obc.Spec.StorageClassName)
+	storageClientName := r.obc.GetLabels()[storageClientNameLabel]
+	storageClient, err := r.getStorageClient(r.obc.Spec.StorageClassName, storageClientName)
 	if err != nil {
 		r.log.Error(err, "failed to get StorageClient")
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %w", err)
@@ -172,8 +173,16 @@ func (r *obcReconcile) handleObcDeletion(
 	return reconcile.Result{}, nil
 }
 
-// getStorageClientFromStorageClass returns the StorageClient that owns the given StorageClass (via ownerReference).
-func (r *obcReconcile) getStorageClientFromStorageClass(storageClassName string) (*v1alpha1.StorageClient, error) {
+// getStorageClient returns the StorageClient
+func (r *obcReconcile) getStorageClient(storageClassName string, storageClientName string) (*v1alpha1.StorageClient, error) {
+	if storageClientName != "" {
+		storageClient := &v1alpha1.StorageClient{}
+		storageClient.Name = storageClientName
+		if err := r.Get(r.ctx, client.ObjectKeyFromObject(storageClient), storageClient); err != nil {
+			return nil, fmt.Errorf("get StorageClient %q: %w", storageClientName, err)
+		}
+		return storageClient, nil
+	}
 	storageClass := &storagev1.StorageClass{}
 	storageClass.Name = storageClassName
 	if err := r.Get(r.ctx, client.ObjectKeyFromObject(storageClass), storageClass); err != nil {
