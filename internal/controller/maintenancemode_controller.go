@@ -9,7 +9,7 @@ import (
 	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/new/client"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"

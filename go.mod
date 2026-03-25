@@ -1,10 +1,13 @@
 module github.com/red-hat-storage/ocs-client-operator
 
-go 1.24.6
+go 1.25.7
 
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
 	github.com/red-hat-storage/ocs-client-operator/api => ./api
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4/new => github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260308064250-6b065e054446
+
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4/old => github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20251120141638-2e8caa0f969b
 	k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
 )
@@ -31,7 +34,8 @@ require (
 	github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
-	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260218112205-69b82919ef95
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4/new v0.0.0-00010101000000-000000000000
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4/old v0.0.0-00010101000000-000000000000
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.77.0
 	k8s.io/api v0.34.2
@@ -67,6 +71,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kube-object-storage/lib-bucket-provisioner v0.0.0-20221122204822-d1a8c34382f1 // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260325104243-25aa98fe22d2 // indirect
 	github.com/spf13/cobra v1.9.1 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
