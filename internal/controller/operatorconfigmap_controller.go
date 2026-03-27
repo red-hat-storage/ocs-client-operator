@@ -17,10 +17,13 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"net/url"
 	"reflect"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -55,6 +58,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -90,7 +94,29 @@ const (
 	cniNetworksAnnotationKey   = "k8s.v1.cni.cncf.io/networks"
 	noobaaCrdName              = "noobaas.noobaa.io"
 	noobaaCrName               = "noobaa-remote"
+
+	// disableExternalEndpointProxyKey, if true, disables deploying the external endpoint reverse proxy for the local/internal client
+	disableExternalEndpointProxyKey = "disableExternalEndpointProxy"
+	externalEndpointsLabelKey       = "ocs.openshift.io/external-endpoints"
+	externalEndpointsLabelValue     = "true"
+
+	// nginx proxy config key pattern per client: proxy-<clientuid>.conf (all locations for this client in one key).
+	nginxProxyConfigKeyPrefix = "proxy-"
+	nginxProxyConfigKeySuffix = ".conf"
+
+	// default system CA bundle used by nginx for TLS verification.
+	defaultCertsPath = "/etc/pki/tls/certs/ca-bundle.crt"
+	// optional Secret for custom CA certs; keys are "<clientuid>-<exposeas>.crt".
+	externalEndpointCASecretName  = "ocs-client-operator-console-external-endpoint-ca-certs"
+	externalEndpointCertKeySuffix = ".crt"
+	// the mount path for custom CA secret in the console pod.
+	externalEndpointCertsMountPath = "/etc/ssl/certs/external-endpoint-ca-certs"
 )
+
+// ConfigMapData value from the provider that contains the external endpoint info (key is the unique identifier, using which the endpoint is exposed).
+type endpointConfig struct {
+	EndpointURL string `json:"endpointUrl"`
+}
 
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
 type OperatorConfigMapReconciler struct {
@@ -164,6 +190,23 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	externalEndpointsConfigMapPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				return obj.GetNamespace() == c.OperatorNamespace &&
+					obj.GetLabels()[externalEndpointsLabelKey] == externalEndpointsLabelValue
+			},
+		),
+	)
+
+	externalEndpointCASecretPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				return obj.GetNamespace() == c.OperatorNamespace && obj.GetName() == externalEndpointCASecretName
+			},
+		),
+	)
+
 	storageClientStatusPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			if e.ObjectOld == nil || e.ObjectNew == nil {
@@ -219,6 +262,16 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					storageClientStatusPredicate,
 				),
 			),
+		).
+		Watches(
+			&corev1.ConfigMap{},
+			enqueueConfigMapRequest,
+			externalEndpointsConfigMapPredicates,
+		).
+		Watches(
+			&corev1.Secret{},
+			enqueueConfigMapRequest,
+			externalEndpointCASecretPredicates,
 		)
 
 	if c.AvailableCrds[noobaaCrdName] {
@@ -241,6 +294,8 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="apps",resources=deployments/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=pods,verbs=list;watch;delete
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -740,26 +795,35 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		return err
 	}
 
-	nginxConf := console.GetNginxConf()
 	nginxConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      console.NginxConfigMapName,
 			Namespace: c.OperatorNamespace,
 		},
-		Data: map[string]string{
-			"nginx.conf": nginxConf,
-		},
 	}
+	var priorNginxData map[string]string
 	err = c.createOrUpdate(nginxConfigMap, func() error {
-		if consoleConfigMapData := nginxConfigMap.Data["nginx.conf"]; consoleConfigMapData != nginxConf {
-			nginxConfigMap.Data["nginx.conf"] = nginxConf
+		priorNginxData = maps.Clone(nginxConfigMap.Data)
+		desiredData, buildErr := c.buildDesiredNginxDataWithProxies()
+		if buildErr != nil {
+			return buildErr
 		}
+		nginxConfigMap.Data = desiredData
 		return controllerutil.SetControllerReference(c.consoleDeployment, nginxConfigMap, c.Scheme)
 	})
-
 	if err != nil {
 		c.log.Error(err, "failed to create nginx config map")
 		return err
+	}
+
+	if !maps.Equal(priorNginxData, nginxConfigMap.Data) {
+		c.log.Info("nginx ConfigMap data changed, restarting console pod to pick up new config")
+		// Console pod must restart (or nginx must reload) to pick up updated mounted config files.
+		// Restart failures are currently logged only. If restart fails once and config does not change again,
+		// subsequent reconciles will not retry because this block is gated by data-diff check.
+		// ToDo: If issue is prominent, explore reliable retry semantics, like restart based on marker/hash or graceful nginx reload.
+		// Note: checksum rollout via Deployment pod-template annotation is not reliable as Deployment is currently OLM/CSV-owned.
+		c.restartConsolePodsByLabel()
 	}
 
 	consoleService := console.GetService(c.ConsolePort, c.OperatorNamespace)
@@ -792,6 +856,207 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) restartConsolePodsByLabel() {
+	podList := &corev1.PodList{}
+	if err := c.list(
+		podList,
+		client.InNamespace(c.OperatorNamespace),
+		client.MatchingLabels{console.AppNameLabelKey: console.DeploymentName},
+	); err != nil {
+		c.log.Error(err, "failed to list console pods by label selector", "namespace", c.OperatorNamespace)
+		return
+	}
+	if len(podList.Items) == 0 {
+		c.log.Info("no console pods found for restart", "namespace", c.OperatorNamespace)
+		return
+	}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if err := c.delete(pod); err != nil {
+			c.log.Error(err, "failed to delete console pod", "pod", pod.Name, "namespace", c.OperatorNamespace)
+		}
+	}
+}
+
+func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[string]string, error) {
+	out := map[string]string{
+		// Root config is mandatory for nginx to start. Proxy configs (per client) are optional.
+		"nginx.conf": console.GetNginxRootConf(),
+	}
+
+	if strings.ToLower(strings.TrimSpace(c.operatorConfigMap.Data[disableExternalEndpointProxyKey])) == "true" {
+		c.log.Info("external endpoint proxy disabled via operator ConfigMap", "key", disableExternalEndpointProxyKey)
+		return out, nil
+	}
+
+	desiredProxies, err := c.computeDesiredProxyConfigByKey()
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(out, desiredProxies)
+	return out, nil
+}
+
+func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey() (map[string]string, error) {
+	storageClientGVK, err := apiutil.GVKForObject(&v1alpha1.StorageClient{}, c.Scheme)
+	if err != nil {
+		return nil, fmt.Errorf("lookup StorageClient GVK: %w", err)
+	}
+
+	extList := &corev1.ConfigMapList{}
+	if err := c.list(extList,
+		client.InNamespace(c.OperatorNamespace),
+		client.MatchingLabels{externalEndpointsLabelKey: externalEndpointsLabelValue},
+	); err != nil {
+		return nil, fmt.Errorf("list external endpoints ConfigMaps: %w", err)
+	}
+
+	result := make(map[string]string)
+	for i := range extList.Items {
+		cm := &extList.Items[i]
+		ownerRef := metav1.GetControllerOf(cm)
+		if ownerRef == nil ||
+			ownerRef.Kind != storageClientGVK.Kind ||
+			ownerRef.APIVersion != storageClientGVK.GroupVersion().String() ||
+			ownerRef.UID == "" {
+			c.log.Info("skipping external endpoints ConfigMap without StorageClient controller ownerRef",
+				"configmap", client.ObjectKeyFromObject(cm).String())
+			continue
+		}
+
+		sc := &v1alpha1.StorageClient{}
+		sc.Name = ownerRef.Name
+		if err := c.get(sc); err != nil {
+			if kerrors.IsNotFound(err) {
+				c.log.Info("skipping external endpoints ConfigMap, owner StorageClient not found",
+					"configmap", client.ObjectKeyFromObject(cm).String())
+				continue
+			}
+			return nil, fmt.Errorf("get StorageClient %q: %w", ownerRef.Name, err)
+		}
+
+		if !sc.GetDeletionTimestamp().IsZero() {
+			c.log.Info("skipping external endpoints ConfigMap, owner StorageClient is being deleted",
+				"configmap", client.ObjectKeyFromObject(cm).String())
+			continue
+		}
+
+		if sc.UID != ownerRef.UID {
+			c.log.Info("skipping external endpoints ConfigMap with stale StorageClient ownerRef UID",
+				"configmap", client.ObjectKeyFromObject(cm).String(),
+				"ownerName", ownerRef.Name,
+				"ownerUID", ownerRef.UID,
+				"storageClientUID", sc.UID)
+			continue
+		}
+
+		clientUID := string(sc.UID)
+		configKey := nginxProxyConfigKeyPrefix + clientUID + nginxProxyConfigKeySuffix
+		endpoints, err := parseEndpointConfigs(cm.Data)
+		if err != nil {
+			return nil, fmt.Errorf("parse endpoints ConfigMap %s: %w", client.ObjectKeyFromObject(cm), err)
+		}
+		content, err := c.buildExternalEndpointProxyConfigForClient(clientUID, endpoints)
+		if err != nil {
+			return nil, err
+		}
+		if content != "" {
+			result[configKey] = content
+		}
+	}
+	return result, nil
+}
+
+func parseEndpointConfigs(data map[string]string) (map[string]endpointConfig, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]endpointConfig, len(data))
+	for exposeAs, rawCfg := range data {
+		exposeAs = strings.TrimSpace(exposeAs)
+		rawCfg = strings.TrimSpace(rawCfg)
+		if exposeAs == "" || rawCfg == "" {
+			continue
+		}
+
+		cfg := endpointConfig{}
+		if err := json.Unmarshal([]byte(rawCfg), &cfg); err != nil {
+			return nil, fmt.Errorf("decode endpoint config for key %q: %w", exposeAs, err)
+		}
+		out[exposeAs] = cfg
+	}
+	return out, nil
+}
+
+func (c *OperatorConfigMapReconciler) buildExternalEndpointProxyConfigForClient(clientUID string, endpoints map[string]endpointConfig) (string, error) {
+	if len(endpoints) == 0 {
+		return "", nil
+	}
+
+	secret := &corev1.Secret{}
+	secret.Namespace = c.OperatorNamespace
+	secret.Name = externalEndpointCASecretName
+	hasCustomCA := false
+	if err := c.get(secret); err != nil {
+		if !kerrors.IsNotFound(err) {
+			return "", fmt.Errorf("failed to get external endpoint CA secret %q: %w", externalEndpointCASecretName, err)
+		}
+	} else {
+		hasCustomCA = true
+	}
+
+	var sb strings.Builder
+	exposeAsKeys := make([]string, 0, len(endpoints))
+	for exposeAs := range endpoints {
+		exposeAsKeys = append(exposeAsKeys, exposeAs)
+	}
+	// Processing endpoints in a fixed order so the generated nginx config "string" wouldn't change unless the actual endpoint data changed.
+	// This is to avoid unnecessary pod restarts, since restarts are triggered when changes are detected.
+	sort.Strings(exposeAsKeys)
+	for _, exposeAs := range exposeAsKeys {
+		cfg := endpoints[exposeAs]
+		endpointURL := strings.TrimSpace(cfg.EndpointURL)
+		if endpointURL == "" {
+			c.log.Info("skipping empty endpoint URL", "exposeAs", exposeAs)
+			continue
+		}
+
+		parsed, err := url.Parse(endpointURL)
+		if err != nil {
+			c.log.Error(err, "skipping invalid endpoint URL", "url", endpointURL, "exposeAs", exposeAs)
+			continue
+		}
+
+		if parsed.Scheme != "https" {
+			c.log.Info("skipping non-HTTPS endpoint", "url", endpointURL, "exposeAs", exposeAs)
+			continue
+		}
+
+		endpointHost := parsed.Host
+		certsPath := defaultCertsPath
+		certKey := clientUID + "-" + exposeAs + externalEndpointCertKeySuffix
+		if hasCustomCA {
+			if _, ok := secret.Data[certKey]; ok {
+				certsPath = externalEndpointCertsMountPath + "/" + certKey
+			}
+		}
+
+		data := console.NginxProxyConfData{
+			ClientUID:    clientUID,
+			ExposeAs:     exposeAs,
+			EndpointURL:  endpointURL,
+			EndpointHost: endpointHost,
+			CertsPath:    certsPath,
+		}
+		snippet, err := console.GetNginxProxyConf(data)
+		if err != nil {
+			return "", fmt.Errorf("failed to build proxy config for %q: %w", exposeAs, err)
+		}
+		sb.WriteString(snippet)
+	}
+	return sb.String(), nil
 }
 
 func (c *OperatorConfigMapReconciler) getNoobaaSubManagementConfig() bool {

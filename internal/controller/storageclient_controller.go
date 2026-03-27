@@ -98,6 +98,7 @@ var (
 		&csiopv1.CephConnection{},
 		&csiopv1.ClientProfileMapping{},
 		&corev1.Secret{},
+		&corev1.ConfigMap{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
 		&replicationv1a1.VolumeReplicationClass{},
