@@ -18,6 +18,7 @@ package clientalert
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -62,6 +63,15 @@ func (ca *ClientAlert) GetLastAlerts(storageClientName string) []*pb.AlertInfo {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.lastAlerts[storageClientName]
+}
+
+// GetAllAlerts returns all currently cached alerts keyed by StorageClient name.
+func (ca *ClientAlert) GetAllAlerts() map[string][]*pb.AlertInfo {
+	ca.mu.RLock()
+	defer ca.mu.RUnlock()
+	copied := make(map[string][]*pb.AlertInfo, len(ca.lastAlerts))
+	maps.Copy(copied, ca.lastAlerts)
+	return copied
 }
 
 // Start implements manager.Runnable. It periodically polls for client alerts.
