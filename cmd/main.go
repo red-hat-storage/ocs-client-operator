@@ -27,6 +27,7 @@ import (
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/internal/controller"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/clientalert"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
@@ -65,6 +66,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -119,13 +121,13 @@ func main() {
 	var consolePort int
 	var webhookPort int
 	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+	flag.BoolVar(&secureMetrics, "metrics-secure", false,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
@@ -355,6 +357,20 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ObjectBucketClaim")
 		os.Exit(1)
 	}
+
+	clientAlertRunnable := clientalert.NewClientAlert(
+		mgr.GetClient(),
+		utils.GetOperatorNamespace(),
+		ctrl.Log.WithName("client-alert"),
+	)
+	if err := mgr.Add(clientAlertRunnable); err != nil {
+		setupLog.Error(err, "unable to add client alert runnable to manager")
+		os.Exit(1)
+	}
+
+	clientAlertCollector := clientalert.NewClientAlertCollector(clientAlertRunnable)
+	resourceCollector := clientalert.NewResourceCollector(mgr.GetClient())
+	metrics.Registry.MustRegister(clientAlertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

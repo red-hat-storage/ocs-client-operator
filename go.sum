@@ -368,8 +368,6 @@ github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3 h1:q4UjNvv3jzKOe
 github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3/go.mod h1:O7VpTy8MMrh31DF4fv+2SZBSouAr8NlzIY4KYx7K75U=
 github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745 h1:qAeLZeqhBoyv11kf3BwygCvEGPHpGgL9v4GhIw5e+fQ=
 github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745/go.mod h1:5cstVYzNXZ6Fo8TKv7XpnlxXfTre5PQhK6EkP5lr3tE=
-github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260218112205-69b82919ef95 h1:bLiejaepxV21Os+IZfaxglYIH7mxs/ne195cVhF6LA8=
-github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260218112205-69b82919ef95/go.mod h1:GGuhhUno7mv+FZpVYPAZL/ZO3Dc8eB0ngCWn/vloG3M=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=

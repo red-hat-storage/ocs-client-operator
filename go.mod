@@ -5,6 +5,7 @@ go 1.24.6
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
 	github.com/red-hat-storage/ocs-client-operator/api => ./api
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 => /Users/home/code/ocs-operator/services/provider/api
 	k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 	vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787
 )
@@ -115,7 +116,7 @@ require (
 	github.com/noobaa/noobaa-operator/v5 v5.15.4
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
+	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.3 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
