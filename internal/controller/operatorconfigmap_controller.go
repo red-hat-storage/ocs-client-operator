@@ -65,7 +65,9 @@ import (
 
 var (
 	//go:embed pvc-rules.yaml
-	pvcPrometheusRules          string
+	pvcPrometheusRules string
+	//go:embed client-alert-rules.yaml
+	clientAlertPrometheusRules  string
 	subPackageIndexerRegistered bool
 )
 
@@ -246,6 +248,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
@@ -413,6 +416,35 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 
 		c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+
+		clientAlertRule := &monitoringv1.PrometheusRule{}
+		if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(clientAlertPrometheusRules)), 1000).Decode(clientAlertRule); err != nil {
+			c.log.Error(err, "Unable to retrieve client alert prometheus rules.", "prometheusRule", klog.KRef(clientAlertRule.Namespace, clientAlertRule.Name))
+			return ctrl.Result{}, err
+		}
+
+		clientAlertRule.SetNamespace(c.OperatorNamespace)
+
+		err = c.createOrUpdate(clientAlertRule, func() error {
+			applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &clientAlertRule.ObjectMeta)
+			return c.own(clientAlertRule)
+		})
+		if err != nil {
+			c.log.Error(err, "failed to create/update client alert prometheus rules")
+			return ctrl.Result{}, err
+		}
+
+		c.log.Info("client alert prometheus rules deployed", "prometheusRule", klog.KRef(clientAlertRule.Namespace, clientAlertRule.Name))
+
+		if err := c.reconcileMetricsService(); err != nil {
+			c.log.Error(err, "unable to reconcile metrics service")
+			return ctrl.Result{}, err
+		}
+
+		if err := c.reconcileMetricsServiceMonitor(); err != nil {
+			c.log.Error(err, "unable to reconcile metrics service monitor")
+			return ctrl.Result{}, err
+		}
 	} else {
 		// deletion phase
 		if err := c.deletionPhase(); err != nil {
@@ -1185,6 +1217,62 @@ func (c *OperatorConfigMapReconciler) removeNoobaaOperator() error {
 	}
 
 	return nil
+}
+
+const (
+	metricsServiceName        = "ocs-client-operator-metrics"
+	metricsServiceMonitorName = "ocs-client-operator-metrics-monitor"
+	metricsPortName           = "metrics"
+	metricsPort               = 8080
+)
+
+func (c *OperatorConfigMapReconciler) reconcileMetricsService() error {
+	svc := &corev1.Service{}
+	svc.Name = metricsServiceName
+	svc.Namespace = c.OperatorNamespace
+	return c.createOrUpdate(svc, func() error {
+		if err := c.own(svc); err != nil {
+			return err
+		}
+		svc.Labels = map[string]string{
+			"app": "ocs-client-operator",
+		}
+		svc.Spec.Selector = map[string]string{
+			"app":           "ocs-client-operator",
+			"control-plane": "controller-manager",
+		}
+		svc.Spec.Ports = []corev1.ServicePort{
+			{
+				Name:     metricsPortName,
+				Port:     metricsPort,
+				Protocol: corev1.ProtocolTCP,
+			},
+		}
+		return nil
+	})
+}
+
+func (c *OperatorConfigMapReconciler) reconcileMetricsServiceMonitor() error {
+	sm := &monitoringv1.ServiceMonitor{}
+	sm.Name = metricsServiceMonitorName
+	sm.Namespace = c.OperatorNamespace
+	return c.createOrUpdate(sm, func() error {
+		if err := c.own(sm); err != nil {
+			return err
+		}
+		sm.Spec.Selector = metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"app": "ocs-client-operator",
+			},
+		}
+		sm.Spec.Endpoints = []monitoringv1.Endpoint{
+			{
+				Port: metricsPortName,
+				Path: "/metrics",
+			},
+		}
+		return nil
+	})
 }
 
 func addSubscriptionPackageIndexer(ctx context.Context, mgr ctrl.Manager) error {

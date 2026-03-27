@@ -273,6 +273,16 @@ spec:
           - update
           - watch
         - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - servicemonitors
+          verbs:
+          - create
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
           - noobaa.io
           resources:
           - noobaas
