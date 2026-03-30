@@ -256,6 +256,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=config.openshift.io,resources=dnses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list;watch
+//+kubebuilder:rbac:groups=objectbucket.io,resources=objectbuckets,verbs=get;list;watch;update;create;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
