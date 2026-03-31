@@ -86,6 +86,8 @@ const (
 
 	VolumeGroupSnapshotClassCrdName    = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
 	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
+	ObjectBucketClaimCrdName           = "objectbucketclaims.objectbucket.io"
+	ObjectBucketCrdName                = "objectbuckets.objectbucket.io"
 )
 
 var (
@@ -204,6 +206,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&corev1.Secret{}).
+		Owns(&corev1.ConfigMap{}).
 		Owns(&csiopv1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
@@ -228,6 +231,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.cache = mgr.GetCache()
 	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
 	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, false)
+	r.crdsBeingWatched.Store(ObjectBucketCrdName, false)
 
 	return err
 }
@@ -305,6 +309,11 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 	if err := r.reconcileOdfVolumeGroupSnapshot(); err != nil {
 		return err
 	}
+
+	if err := r.setupObjectBucketWatch(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -417,6 +426,46 @@ func (r *storageClientReconcile) reconcileOdfVolumeGroupSnapshot() error {
 		return fmt.Errorf("unable to set up FieldIndexer for VGSC csi driver name: %v", err)
 	}
 	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, true)
+	return nil
+}
+
+func (r *storageClientReconcile) setupObjectBucketWatch() error {
+	if watchExists, foundCrd := r.crdsBeingWatched.Load(ObjectBucketCrdName); !foundCrd || watchExists.(bool) {
+		return nil
+	}
+
+	crd := &extv1.CustomResourceDefinition{}
+	crd.Name = ObjectBucketCrdName
+	if err := r.get(crd); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	if crd.UID == "" {
+		return nil
+	}
+	if !crdEstablished(crd) {
+		return nil
+	}
+
+	// establish a watch
+	if err := r.controller.Watch(
+		source.Kind(
+			r.cache,
+			client.Object(&nbv1.ObjectBucket{}),
+			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []ctrl.Request {
+				owner := metav1.GetControllerOf(o)
+				if owner != nil &&
+					owner.Kind == "StorageClient" &&
+					owner.APIVersion == v1alpha1.GroupVersion.String() {
+					return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: owner.Name}}}
+				}
+				return nil
+			}),
+		),
+	); err != nil {
+		return fmt.Errorf("failed to setup dynamic watch on %s: %v", crd.Name, err)
+	}
+
+	r.crdsBeingWatched.Store(ObjectBucketCrdName, true)
 	return nil
 }
 
@@ -790,6 +839,10 @@ func (r *storageClientReconcile) hasOdfVolumeGroupSnapshotContents(clientProfile
 func (r *storageClientReconcile) hasObjectbucketClaims() (bool, error) {
 	obcList := &nbv1.ObjectBucketClaimList{}
 	if err := r.list(obcList, client.MatchingLabels{storageClientNameLabel: r.storageClient.Name}, client.Limit(1)); err != nil {
+		if meta.IsNoMatchError(err) {
+			r.log.Info("ObjectBucketClaim CRD is not installed, skipping object bucket claim check")
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to list object bucket claim resources: %v", err)
 	}
 	return len(obcList.Items) != 0, nil
@@ -965,4 +1018,16 @@ func (r *storageClientReconcile) getOperatorVersion() (string, error) {
 		return "", fmt.Errorf("failed to get csv: %v", err)
 	}
 	return csv.Spec.Version.String(), nil
+}
+
+// crdEstablished reports whether the CRD is served by the apiserver (status.conditions Established=True).
+// A CRD object can exist before the REST mapping for its resource is available.
+func crdEstablished(crd *extv1.CustomResourceDefinition) bool {
+	for i := range crd.Status.Conditions {
+		c := crd.Status.Conditions[i]
+		if c.Type == extv1.Established && c.Status == extv1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
