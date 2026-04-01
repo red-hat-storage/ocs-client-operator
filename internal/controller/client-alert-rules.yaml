@@ -29,3 +29,14 @@ spec:
       for: 5s
       labels:
         severity: warning
+    - alert: CephFSOrphanedSnapshot
+      annotations:
+        description: Provider alert CephFSOrphanedSnapshot is firing for storage client {{ $labels.storage_client }}.
+        message: There could be orphaned snapshots that are not claimed or utilized on the storage provider for client {{ $labels.storage_client }}. Please investigate for possible orphaned snapshots.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephFSOrphanedSnapshot"} > 0
+      for: 5s
+      labels:
+        severity: warning
