@@ -1,0 +1,98 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+  name: prometheus-client-alert-rules
+spec:
+  groups:
+  - name: client-provider-alert.rules
+    rules:
+    - alert: CephOSDNearFull
+      annotations:
+        description: Provider alert CephOSDNearFull is firing for storage client {{ $labels.storage_client }}.
+        message: Ceph OSD near full reported by storage provider for client {{ $labels.storage_client }}.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephOSDNearFull"} > 0
+        or
+        (ceph_osd_metadata * on (ceph_daemon, namespace, managedBy) group_right(device_class,hostname) (ceph_osd_stat_bytes_used / ceph_osd_stat_bytes)) >= 0.75
+      for: 5s
+      labels:
+        severity: warning
+    - alert: CephOSDCriticallyFull
+      annotations:
+        description: Provider alert CephOSDCriticallyFull is firing for storage client {{ $labels.storage_client }}.
+        message: Ceph OSD critically full reported by storage provider for client {{ $labels.storage_client }}.
+        severity_level: error
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephOSDCriticallyFull"} > 0
+        or
+        (ceph_osd_metadata * on (ceph_daemon, namespace, managedBy) group_right(device_class,hostname) (ceph_osd_stat_bytes_used / ceph_osd_stat_bytes)) >= 0.80
+      for: 5s
+      labels:
+        severity: critical
+    - alert: CephClusterWarningState
+      annotations:
+        description: Provider alert CephClusterWarningState is firing for storage client {{ $labels.storage_client }}.
+        message: Ceph cluster in warning state reported by storage provider for client {{ $labels.storage_client }}.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephClusterWarningState"} > 0
+        or
+        ceph_health_status{job="rook-ceph-mgr"} == 1
+      for: 5s
+      labels:
+        severity: warning
+    - alert: CephClusterErrorState
+      annotations:
+        description: Provider alert CephClusterErrorState is firing for storage client {{ $labels.storage_client }}.
+        message: Ceph cluster in error state reported by storage provider for client {{ $labels.storage_client }}.
+        severity_level: error
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephClusterErrorState"} > 0
+        or
+        ceph_health_status{job="rook-ceph-mgr"} > 1
+      for: 5s
+      labels:
+        severity: critical
+    - alert: HighRBDCloneSnapshotCount
+      annotations:
+        description: Provider alert HighRBDCloneSnapshotCount is firing for storage client {{ $labels.storage_client }}.
+        message: RBD clones/snapshots count has exceeded the threshold limit on the storage provider for client {{ $labels.storage_client }}.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="HighRBDCloneSnapshotCount"} > 0
+        or
+        ocs_rbd_children_count > 200
+      for: 5s
+      labels:
+        severity: warning
+    - alert: CephFSStaleSubvolume
+      annotations:
+        description: Provider alert CephFSStaleSubvolume is firing for storage client {{ $labels.storage_client }}.
+        message: There could be stale subvolumes that are not claimed or utilized on the storage provider for client {{ $labels.storage_client }}. Please investigate for possible stale or orphaned subvolumes.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephFSStaleSubvolume"} > 0
+        or
+        sum(ocs_cephfs_subvolume_count) > (count(kube_persistentvolume_info * on (storageclass) group_left() kube_storageclass_info{provisioner=~".*cephfs.csi.ceph.com"}) or vector(0))
+      for: 5s
+      labels:
+        severity: warning
+    - alert: CephFSOrphanedSnapshot
+      annotations:
+        description: Provider alert CephFSOrphanedSnapshot is firing for storage client {{ $labels.storage_client }}.
+        message: There could be orphaned snapshots that are not claimed or utilized on the storage provider for client {{ $labels.storage_client }}. Please investigate for possible orphaned snapshots.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_alert{alert_name="CephFSOrphanedSnapshot"} > 0
+        for: 5s
+      labels:
+        severity: warning
