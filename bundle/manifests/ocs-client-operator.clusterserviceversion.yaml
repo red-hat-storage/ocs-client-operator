@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2026-03-31T05:33:55Z"
+    createdAt: "2026-04-02T11:40:23Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -48,6 +48,7 @@ spec:
           - ""
           resources:
           - configmaps
+          - secrets
           verbs:
           - create
           - delete
@@ -64,13 +65,10 @@ spec:
         - apiGroups:
           - ""
           resources:
-          - secrets
+          - persistentvolumes
           verbs:
-          - create
-          - delete
           - get
           - list
-          - update
           - watch
         - apiGroups:
           - ""
@@ -132,21 +130,7 @@ spec:
           - config.openshift.io
           resources:
           - clusterversions
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - config.openshift.io
-          resources:
           - dnses
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - config.openshift.io
-          resources:
           - infrastructures
           verbs:
           - get
@@ -159,60 +143,12 @@ spec:
           verbs:
           - '*'
         - apiGroups:
-          - ""
-          resources:
-          - persistentvolumes
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
           - csi.ceph.io
           resources:
           - cephconnections
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - update
-          - watch
-        - apiGroups:
-          - csi.ceph.io
-          resources:
           - clientprofilemappings
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - update
-          - watch
-        - apiGroups:
-          - csi.ceph.io
-          resources:
           - clientprofiles
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - update
-          - watch
-        - apiGroups:
-          - csi.ceph.io
-          resources:
           - drivers
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - update
-          - watch
-        - apiGroups:
-          - csi.ceph.io
-          resources:
           - operatorconfigs
           verbs:
           - create
@@ -234,24 +170,6 @@ spec:
           - watch
         - apiGroups:
           - groupsnapshot.storage.k8s.io
-          resources:
-          - volumegroupsnapshotclasses
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - update
-          - watch
-        - apiGroups:
-          - groupsnapshot.storage.k8s.io
-          resources:
-          - volumegroupsnapshotcontents
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
           - groupsnapshot.storage.openshift.io
           resources:
           - volumegroupsnapshotclasses
@@ -263,6 +181,7 @@ spec:
           - update
           - watch
         - apiGroups:
+          - groupsnapshot.storage.k8s.io
           - groupsnapshot.storage.openshift.io
           resources:
           - volumegroupsnapshotcontents
@@ -397,16 +316,6 @@ spec:
           - replication.storage.openshift.io
           resources:
           - volumegroupreplicationclasses
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - update
-          - watch
-        - apiGroups:
-          - replication.storage.openshift.io
-          resources:
           - volumereplicationclasses
           verbs:
           - create

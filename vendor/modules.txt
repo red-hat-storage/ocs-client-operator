@@ -274,7 +274,7 @@ github.com/ramendr/ramen/api/v1alpha1
 ## explicit; go 1.22.0
 github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1
 # github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000 => ./api
-## explicit; go 1.24.6
+## explicit; go 1.25.7
 github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
 # github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260218112205-69b82919ef95
 ## explicit; go 1.24.6
@@ -386,6 +386,8 @@ go.yaml.in/yaml/v3
 ## explicit; go 1.20
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
+# golang.org/x/mod v0.30.0
+## explicit; go 1.24.0
 # golang.org/x/net v0.47.0
 ## explicit; go 1.24.0
 golang.org/x/net/html

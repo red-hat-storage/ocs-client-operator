@@ -10,6 +10,8 @@ GOBIN ?= $(BIN_DIR)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
+GOTOOLCHAIN ?= go1.25.0+auto
+
 GO_LINT_IMG_LOCATION ?= golangci/golangci-lint
 GO_LINT_IMG ?= $(GO_LINT_IMG_LOCATION):$(GO_LINT_IMG_TAG)
 
