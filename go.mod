@@ -1,6 +1,6 @@
 module github.com/red-hat-storage/ocs-client-operator
 
-go 1.24.6
+go 1.25.7
 
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
@@ -31,7 +31,7 @@ require (
 	github.com/ramendr/ramen/api v0.0.0-20241105140706-d8587766acb3
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
-	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260218112205-69b82919ef95
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260331105223-62d56534e987
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.77.0
 	k8s.io/api v0.34.2
