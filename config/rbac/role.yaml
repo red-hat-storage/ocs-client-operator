@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - secrets
   verbs:
   - create
   - delete
@@ -24,13 +25,10 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - secrets
+  - persistentvolumes
   verbs:
-  - create
-  - delete
   - get
   - list
-  - update
   - watch
 - apiGroups:
   - ""
@@ -92,21 +90,7 @@ rules:
   - config.openshift.io
   resources:
   - clusterversions
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
   - dnses
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
   - infrastructures
   verbs:
   - get
@@ -119,60 +103,12 @@ rules:
   verbs:
   - '*'
 - apiGroups:
-  - ""
-  resources:
-  - persistentvolumes
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - csi.ceph.io
   resources:
   - cephconnections
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - csi.ceph.io
-  resources:
   - clientprofilemappings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - csi.ceph.io
-  resources:
   - clientprofiles
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - csi.ceph.io
-  resources:
   - drivers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - csi.ceph.io
-  resources:
   - operatorconfigs
   verbs:
   - create
@@ -194,24 +130,6 @@ rules:
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
-  resources:
-  - volumegroupsnapshotclasses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - groupsnapshot.storage.k8s.io
-  resources:
-  - volumegroupsnapshotcontents
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - groupsnapshot.storage.openshift.io
   resources:
   - volumegroupsnapshotclasses
@@ -223,6 +141,7 @@ rules:
   - update
   - watch
 - apiGroups:
+  - groupsnapshot.storage.k8s.io
   - groupsnapshot.storage.openshift.io
   resources:
   - volumegroupsnapshotcontents
@@ -357,16 +276,6 @@ rules:
   - replication.storage.openshift.io
   resources:
   - volumegroupreplicationclasses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - replication.storage.openshift.io
-  resources:
   - volumereplicationclasses
   verbs:
   - create
