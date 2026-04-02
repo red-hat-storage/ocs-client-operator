@@ -264,7 +264,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	crd := &metav1.PartialObjectMetadata{}
 	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
 	crd.Name = MaintenanceModeCRDName
-	if err := c.Client.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
 		c.log.Error(err, "Failed to get CRD", "CRD", crd.Name)
 		return reconcile.Result{}, err
 	}
@@ -303,7 +303,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		//ensure finalizer
 		if controllerutil.AddFinalizer(c.operatorConfigMap, operatorConfigMapFinalizer) {
 			c.log.Info("finalizer missing on the operatorConfigMap resource, adding...")
-			if err := c.Client.Update(c.ctx, c.operatorConfigMap); err != nil {
+			if err := c.Update(c.ctx, c.operatorConfigMap); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -419,7 +419,7 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 		//remove finalizer
 		if controllerutil.RemoveFinalizer(c.operatorConfigMap, operatorConfigMapFinalizer) {
-			if err := c.Client.Update(c.ctx, c.operatorConfigMap); err != nil {
+			if err := c.Update(c.ctx, c.operatorConfigMap); err != nil {
 				return ctrl.Result{}, err
 			}
 			c.log.Info("finallizer removed successfully")
@@ -850,7 +850,7 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 		}
 
 		// webhook desired state
-		var wh *admrv1.ValidatingWebhook = &whConfig.Webhooks[0]
+		wh := &whConfig.Webhooks[0]
 		templates.SubscriptionValidatingWebhook.DeepCopyInto(wh)
 
 		wh.Name = whConfig.Name
@@ -1215,7 +1215,7 @@ func addSubscriptionPackageIndexer(ctx context.Context, mgr ctrl.Manager) error 
 func (c *OperatorConfigMapReconciler) checkIfTNFCluster() (bool, error) {
 	infra := &configv1.Infrastructure{}
 	infra.Name = "cluster"
-	err := c.Client.Get(c.ctx, client.ObjectKeyFromObject(infra), infra)
+	err := c.Get(c.ctx, client.ObjectKeyFromObject(infra), infra)
 	if err != nil {
 		return false, err
 	}
