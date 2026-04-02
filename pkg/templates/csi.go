@@ -53,6 +53,7 @@ var securityContextConstraints = secv1.SecurityContextConstraints{
 		secv1.FSTypeConfigMap,
 		secv1.FSTypeEmptyDir,
 		secv1.FSProjected,
+		secv1.FSTypeSecret,
 	},
 }
 
