@@ -106,7 +106,8 @@ var (
 		&replicationv1a1.VolumeGroupReplicationClass{},
 		&csiopv1.ClientProfile{},
 		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
-		&groupsnapapi.VolumeGroupSnapshotClass{},
+		// TODO: enable vgsc after GA of API
+		// &groupsnapapi.VolumeGroupSnapshotClass{},
 		&csiaddonsv1alpha1.NetworkFenceClass{},
 		&nbv1.ObjectBucketClaim{},
 		&nbv1.ObjectBucket{},
@@ -302,9 +303,10 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *storageClientReconcile) reconcileDynamicWatches() error {
-	if err := r.reconcileVolumeGroupSnapshot(); err != nil {
-		return err
-	}
+	// TODO: enable vgsc after GA of API
+	// if err := r.reconcileVolumeGroupSnapshot(); err != nil {
+	// 	return err
+	// }
 
 	if err := r.reconcileOdfVolumeGroupSnapshot(); err != nil {
 		return err
@@ -317,6 +319,7 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 	return nil
 }
 
+//nolint:unused
 func (r *storageClientReconcile) reconcileVolumeGroupSnapshot() error {
 	if watchExists, foundCrd := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
 		return nil
@@ -603,11 +606,12 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
-		if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
-		} else if exist {
-			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
-		}
+		// TODO: enable vgsc after GA of API
+		// if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
+		// 	return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		// } else if exist {
+		// 	return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		// }
 		if exist, err := r.hasOdfVolumeGroupSnapshotContents(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify odf-volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
@@ -800,6 +804,7 @@ func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []
 	return false, nil
 }
 
+//nolint:unused
 func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNames []string) (bool, error) {
 	if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 		return false, nil
