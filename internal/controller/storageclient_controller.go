@@ -189,7 +189,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	enqueueStorageClients := handler.EnqueueRequestsFromMapFunc(
 		func(ctx context.Context, _ client.Object) []ctrl.Request {
 			storageClients := &v1alpha1.StorageClientList{}
-			if err := r.Client.List(ctx, storageClients); err != nil {
+			if err := r.List(ctx, storageClients); err != nil {
 				return []ctrl.Request{}
 			}
 			requests := make([]ctrl.Request, len(storageClients.Items))
@@ -478,7 +478,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	if controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
 		r.log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
 		if err := r.update(&r.storageClient); err != nil {
-			return reconcile.Result{}, fmt.Errorf("Failed adding a finalizer to StorageClient: %v", err)
+			return reconcile.Result{}, fmt.Errorf("failed adding a finalizer to StorageClient: %v", err)
 		}
 		return reconcile.Result{Requeue: true}, nil
 	}
@@ -767,7 +767,7 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 		return nil
 	})
 	if err != nil {
-		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
+		return reconcile.Result{Requeue: true}, fmt.Errorf("failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
 }
@@ -861,7 +861,7 @@ func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {
 }
 
 func (r *storageClientReconcile) list(obj client.ObjectList, listOptions ...client.ListOption) error {
-	return r.Client.List(r.ctx, obj, listOptions...)
+	return r.List(r.ctx, obj, listOptions...)
 }
 
 func (r *storageClientReconcile) get(obj client.Object, opts ...client.GetOption) error {
@@ -946,7 +946,7 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 	obj.SetNamespace(desiredState.Namespace)
 	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
 	if utils.IsForbiddenError(err) {
-		if err := r.Client.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
+		if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf(
 				"failed to replace %v %v/%v: %v",
 				obj.GetObjectKind().GroupVersionKind(),
@@ -959,7 +959,7 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 		// k8s doesn't allow us to create objects when resourceVersion is set, as we are DeepCopying the
 		// object, the resource version also gets copied, hence we need to set it to empty before creating it
 		obj.SetResourceVersion("")
-		if err := r.Client.Create(r.ctx, obj); err != nil {
+		if err := r.Create(r.ctx, obj); err != nil {
 			return fmt.Errorf(
 				"failed to replace %v %v/%v: %v",
 				obj.GetObjectKind().GroupVersionKind(),

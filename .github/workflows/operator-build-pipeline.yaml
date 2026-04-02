@@ -19,7 +19,7 @@ jobs:
       - name: Source build env variables
         run: |
           grep -v '^#' hack/build.env >> $GITHUB_ENV
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v8
         with:
           version: ${{ env.GO_LINT_IMG_TAG }}
           args: --config=.golangci.yaml -v
