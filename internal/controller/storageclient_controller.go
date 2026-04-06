@@ -43,12 +43,14 @@ import (
 	quotav1 "github.com/openshift/api/quota/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	provider "github.com/red-hat-storage/ocs-operator/services/provider/api/v4"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,12 +117,14 @@ var (
 	}
 )
 
-type desiredKubeObject struct {
+type kubeObjectWithOpRecord struct {
 	types.NamespacedName
-	bytes []byte
+	bytes       []byte
+	operation   provider.KubeClientOp
+	subResource *provider.SubResource
 }
 
-type desiredKubeObjects []desiredKubeObject
+type kubeObjectWithOpRecords []kubeObjectWithOpRecord
 
 // StorageClientReconciler reconciles a StorageClient object
 type StorageClientReconciler struct {
@@ -263,6 +267,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list;watch
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbuckets,verbs=get;list;watch;update;create;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
+//+kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims/status,verbs=update;patch
+//+kubebuilder:rbac:groups=objectbucket.io,resources=objectbuckets/status,verbs=update;patch
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -524,7 +530,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
-	kubeObjectsByGk := map[string]desiredKubeObjects{}
+	kubeObjectsByGk := map[string]kubeObjectWithOpRecords{}
 	for _, kubeObj := range storageClientResponse.KubeObjects {
 		if kubeObj == nil {
 			continue
@@ -534,12 +540,17 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 			return reconcile.Result{}, fmt.Errorf("failed to unmarshal metadata for the Object: %w", err)
 		}
 		gk := objectMeta.GroupVersionKind().GroupKind().String()
+
+		record := kubeObjectWithOpRecord{
+			NamespacedName: client.ObjectKeyFromObject(objectMeta),
+			bytes:          kubeObj.Bytes,
+			operation:      kubeObj.Op,
+			subResource:    kubeObj.SubResource,
+		}
+
 		kubeObjectsByGk[gk] = append(
 			kubeObjectsByGk[gk],
-			desiredKubeObject{
-				NamespacedName: client.ObjectKeyFromObject(objectMeta),
-				bytes:          kubeObj.Bytes,
-			},
+			record,
 		)
 	}
 	var combinedErr error
@@ -884,7 +895,7 @@ func (r *storageClientReconcile) own(dependent metav1.Object) error {
 
 func (r *storageClientReconcile) reconcileResourcesByGK(
 	kind client.Object,
-	desiredObjects map[string]desiredKubeObjects,
+	desiredObjects map[string]kubeObjectWithOpRecords,
 	combinedErr *error,
 ) {
 	gvk, err := apiutil.GVKForObject(kind, r.Scheme)
@@ -905,10 +916,18 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 		kubeObject := untypedInstance.(client.Object)
 
 		desiredState := objectsToReconcile[idx]
-		if err := r.reconcileResource(kubeObject, desiredState); err != nil {
-			multierr.AppendInto(combinedErr, err)
+		if desiredState.operation == provider.KubeClientOp_UPDATE_SUB_RESOURCE {
+			if err := r.reconcileSubResource(desiredState, kind); err != nil {
+				multierr.AppendInto(combinedErr, err)
+			} else {
+				reconciledObjects[desiredState.NamespacedName] = true
+			}
 		} else {
-			reconciledObjects[desiredState.NamespacedName] = true
+			if err := r.reconcileResource(kubeObject, desiredState); err != nil {
+				multierr.AppendInto(combinedErr, err)
+			} else {
+				reconciledObjects[desiredState.NamespacedName] = true
+			}
 		}
 	}
 
@@ -929,7 +948,7 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 	}
 }
 
-func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredState desiredKubeObject) error {
+func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredState kubeObjectWithOpRecord) error {
 
 	mutateFunc := func() error {
 		// Unmarshal follows merge semantics, that means that we don't need to worry about overriding the status,
@@ -992,6 +1011,55 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 	return nil
 }
 
+// reconcileSubResource performs an update of the sub-resource specified in desiredState
+func (r *storageClientReconcile) reconcileSubResource(desiredState kubeObjectWithOpRecord, kind client.Object) error {
+	if desiredState.subResource == nil || *desiredState.subResource == provider.SubResource_SUB_RESOURCE_UNSPECIFIED {
+		return fmt.Errorf("sub-resource cannot be empty for object %s on namespace %s during reconcile", desiredState.Name, desiredState.Namespace)
+	}
+
+	subResource := getSubResourceString(*desiredState.subResource)
+
+	if subResource == "" {
+		return fmt.Errorf("unknown value for sub-resource enum %v received for resource %s on namespace %s",
+			*desiredState.subResource, desiredState.Name, desiredState.Namespace)
+	}
+
+	desiredObject := getKubeObject(kind)
+	if err := json.Unmarshal(desiredState.bytes, desiredObject); err != nil {
+		return fmt.Errorf("failed to unmarshal into object: %w", err)
+	}
+
+	subRes, err := extractSubResource(desiredObject, subResource)
+	if err != nil {
+		return fmt.Errorf("failed to extract sub-resource from the desiredState object, error: %w", err)
+	}
+
+	kubeObject := getKubeObject(kind)
+	subResBytes, err := json.Marshal(subRes)
+	if err != nil {
+		return fmt.Errorf("error while marshaling sub-resource, error: %w", err)
+	}
+
+	if err := json.Unmarshal(subResBytes, kubeObject); err != nil {
+		return fmt.Errorf("failed to unmarshal sub-resource into object, error:  %w", err)
+	}
+
+	gvk, err := apiutil.GVKForObject(kind, r.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to get gvk, error: %w", err)
+	}
+
+	kubeObject.SetName(desiredState.Name)
+	kubeObject.SetNamespace(desiredState.Namespace)
+	kubeObject.GetObjectKind().SetGroupVersionKind(gvk)
+
+	if err = r.updateSubResource(kind, kubeObject, subRes, subResource); err != nil {
+		return fmt.Errorf("error updating sub-resource for %s in namespace %s: %w", kubeObject.GetName(), kubeObject.GetNamespace(), err)
+	}
+
+	return nil
+}
+
 func (r *storageClientReconcile) getOperatorVersion() (string, error) {
 	deploymentName := r.OperatorPodName
 	for range 2 {
@@ -1035,4 +1103,85 @@ func crdEstablished(crd *extv1.CustomResourceDefinition) bool {
 		}
 	}
 	return false
+}
+
+// extractSubResource extracts the specified sub-resource from the passed kubeObject
+func extractSubResource(kubeObject client.Object, subResourceName string) (map[string]any, error) {
+	val := reflect.Indirect(reflect.ValueOf(kubeObject))
+
+	// Return if not struct to avoid panic
+	if val.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("invalid type for the kind %v. expected a struct", val)
+	}
+
+	// get the field by name (e.g., "Status")
+	field := val.FieldByName(subResourceName)
+
+	if !field.IsValid() {
+		return nil, fmt.Errorf("invalid value for the kind %v", val)
+	}
+
+	subResource := map[string]any{
+		strings.ToLower(subResourceName): field.Interface(),
+	}
+	return subResource, nil
+}
+
+// getSubResourceString returns the name for the passed sub resource enum
+func getSubResourceString(subResourceEnum provider.SubResource) (subResource string) {
+	switch subResourceEnum {
+	case provider.SubResource_SUB_RESOURCE_STATUS:
+		subResource = "Status"
+	}
+	return
+}
+
+// updateSubResource takes the kubeObejct which has the sub-resource value and performs an update for the specified sub-resource name
+func (r *storageClientReconcile) updateSubResource(kind client.Object, toUpdate client.Object, subResource map[string]any, subResourceName string) error {
+	obj := getKubeObject(kind)
+	if err := r.Get(
+		r.ctx,
+		client.ObjectKeyFromObject(toUpdate),
+		obj,
+	); err != nil {
+		return fmt.Errorf("error getting object: %v. error is %w", client.ObjectKeyFromObject(obj), err)
+	}
+
+	existingSubResource, err := extractSubResource(obj, subResourceName)
+	if err != nil {
+		return fmt.Errorf("failed to extract sub-resource from existing object, error: %w", err)
+	}
+
+	if equality.Semantic.DeepEqual(existingSubResource, subResource) {
+		r.log.Info(
+			"Skipping as no change to sub resource",
+			"name",
+			client.ObjectKeyFromObject(obj),
+		)
+		return nil
+	}
+
+	toUpdate.SetResourceVersion(obj.GetResourceVersion())
+
+	err = r.Client.SubResource(strings.ToLower(subResourceName)).Update(r.ctx, toUpdate)
+	if utils.IsForbiddenError(err) {
+		return fmt.Errorf("update denied: insufficient permissions for subresource: %w", err)
+	} else if meta.IsNoMatchError(err) {
+		r.log.Info(
+			"Skipping as resource or kind not found",
+			"name",
+			client.ObjectKeyFromObject(obj),
+		)
+	} else if err != nil {
+		return fmt.Errorf(
+			"failed to update subresource %v %v/%v: %w", subResource, obj.GetNamespace(), obj.GetName(), err)
+	}
+	return nil
+}
+
+// getKubeObject returns a new instance of the same Kubernetes object type as the provided kind
+func getKubeObject(kind client.Object) client.Object {
+	goType := reflect.TypeOf(kind).Elem()
+	untypedInstance := reflect.New(goType).Interface()
+	return untypedInstance.(client.Object)
 }
