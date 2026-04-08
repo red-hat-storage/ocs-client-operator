@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2026-04-02T11:16:49Z"
+    createdAt: "2026-04-06T06:05:51Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -68,6 +68,14 @@ spec:
           - persistentvolumes
           verbs:
           - get
+          - list
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - delete
           - list
           - watch
         - apiGroups:
@@ -508,10 +516,10 @@ spec:
                   protocol: TCP
                 resources:
                   limits:
-                    cpu: 100m
+                    cpu: 250m
                     memory: 512Mi
                   requests:
-                    cpu: 10m
+                    cpu: 50m
                     memory: 256Mi
                 securityContext:
                   allowPrivilegeEscalation: false
@@ -527,7 +535,14 @@ spec:
                   readOnly: true
                 - mountPath: /etc/nginx/nginx.conf
                   name: ocs-client-operator-console-nginx-conf
+                  readOnly: true
                   subPath: nginx.conf
+                - mountPath: /opt/app-root/etc/nginx.d
+                  name: ocs-client-operator-console-nginx-conf
+                  readOnly: true
+                - mountPath: /etc/ssl/certs/s3-endpoint-ca-certs
+                  name: ocs-client-operator-console-s3-endpoint-ca-certs
+                  readOnly: true
                 - mountPath: /var/log/nginx
                   name: ocs-client-operator-console-nginx-log
                 - mountPath: /var/lib/nginx/tmp
@@ -548,6 +563,10 @@ spec:
               - configMap:
                   name: ocs-client-operator-console-nginx-conf
                 name: ocs-client-operator-console-nginx-conf
+              - name: ocs-client-operator-console-s3-endpoint-ca-certs
+                secret:
+                  optional: true
+                  secretName: ocs-client-operator-console-s3-endpoint-ca-certs
               - emptyDir: {}
                 name: ocs-client-operator-console-nginx-log
               - emptyDir: {}
