@@ -23,6 +23,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -89,6 +90,25 @@ const (
 	ObjectBucketClaimCrdName           = "objectbucketclaims.objectbucket.io"
 	ObjectBucketCrdName                = "objectbuckets.objectbucket.io"
 )
+
+// extractClusterID parses the clusterID from a CSI volume/snapshot handle.
+// Handle format: <version>-<clusterIDLenHex>-<clusterID>-<remainingFields...>
+// The second field is the hex-encoded length of the clusterID, which may contain hyphens.
+func extractClusterID(handle string) string {
+	parts := strings.SplitN(handle, "-", 3)
+	if len(parts) < 3 {
+		return ""
+	}
+	clusterIDLen, err := strconv.ParseInt(parts[1], 16, 64)
+	if err != nil || clusterIDLen <= 0 {
+		return ""
+	}
+	remaining := parts[2]
+	if int64(len(remaining)) < clusterIDLen {
+		return ""
+	}
+	return remaining[:clusterIDLen]
+}
 
 var (
 	csiDrivers = []string{
@@ -166,10 +186,8 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			slices.Contains(csiDrivers, vsc.Spec.Driver) &&
 			vsc.Status != nil &&
 			vsc.Status.SnapshotHandle != nil {
-			parts := strings.Split(*vsc.Status.SnapshotHandle, "-")
-			if len(parts) == 9 {
-				// second entry in the volumeID is clusterID which is unique across the cluster
-				return []string{parts[2]}
+			if clusterID := extractClusterID(*vsc.Status.SnapshotHandle); clusterID != "" {
+				return []string{clusterID}
 			}
 		}
 		return nil
