@@ -765,6 +765,14 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 											Name:  utils.OperatorVersionEnvVar,
 											Value: operatorVersion,
 										},
+										{
+											Name:  utils.MetricsServiceNameEnvVar,
+											Value: templates.MetricsServiceName,
+										},
+										{
+											Name:  utils.MetricsPortEnvVar,
+											Value: strconv.Itoa(int(templates.MetricsServicePort)),
+										},
 									},
 								},
 							},

@@ -5,6 +5,7 @@ metadata:
     app: ocs-client-operator
   name: metrics
   namespace: system
+# should be in sync with pkg/templates/metricsservice.go
 spec:
   ports:
   - name: metrics
