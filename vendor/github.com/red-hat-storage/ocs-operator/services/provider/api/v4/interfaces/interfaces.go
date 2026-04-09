@@ -24,8 +24,13 @@ type StorageClientStatus interface {
 	StorageClientInfo
 
 	GetStorageQuotaUtilizationRatio() float64
-
 	SetStorageQuotaUtilizationRatio(float64) StorageClientStatus
+
+	GetCephFsPVCount() uint32
+	SetCephFsPVCount(uint32) StorageClientStatus
+
+	GetCephFsVolumeSnapshotContentCount() uint32
+	SetCephFsVolumeSnapshotContentCount(uint32) StorageClientStatus
 }
 
 type StorageClientOnboarding interface {

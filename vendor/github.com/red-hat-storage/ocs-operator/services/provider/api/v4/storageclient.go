@@ -62,6 +62,16 @@ func (r *ReportStatusRequest) SetClientID(clientID string) ifaces.StorageClientI
 	return r
 }
 
+func (r *ReportStatusRequest) SetCephFsPVCount(count uint32) ifaces.StorageClientStatus {
+	r.CephFsPVCount = count
+	return r
+}
+
+func (r *ReportStatusRequest) SetCephFsVolumeSnapshotContentCount(count uint32) ifaces.StorageClientStatus {
+	r.CephFsVolumeSnapshotContentCount = count
+	return r
+}
+
 // ensure OnboardConsumerRequest satisfies StorageClientOnboarding interface
 var _ ifaces.StorageClientOnboarding = &OnboardConsumerRequest{}
 
