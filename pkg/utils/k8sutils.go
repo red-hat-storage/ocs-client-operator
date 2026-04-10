@@ -67,6 +67,9 @@ const (
 	OcsClientTimeout = 10 * time.Second
 
 	OperatorVersionEnvVar = "OPERATOR_VERSION"
+
+	MetricsServiceNameEnvVar = "METRICS_SERVICE_NAME"
+	MetricsPortEnvVar        = "METRICS_PORT"
 )
 
 // GetOperatorNamespace returns the namespace where the operator is deployed.
