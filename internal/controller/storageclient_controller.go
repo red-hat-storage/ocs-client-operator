@@ -86,6 +86,8 @@ const (
 
 	VolumeGroupSnapshotClassCrdName    = "volumegroupsnapshotclasses.groupsnapshot.storage.k8s.io"
 	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
+	ObjectBucketClaimCrdName           = "objectbucketclaims.objectbucket.io"
+	ObjectBucketCrdName                = "objectbuckets.objectbucket.io"
 )
 
 var (
@@ -104,7 +106,8 @@ var (
 		&replicationv1a1.VolumeGroupReplicationClass{},
 		&csiopv1.ClientProfile{},
 		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
-		&groupsnapapi.VolumeGroupSnapshotClass{},
+		// TODO: enable vgsc after GA of API
+		// &groupsnapapi.VolumeGroupSnapshotClass{},
 		&csiaddonsv1alpha1.NetworkFenceClass{},
 		&nbv1.ObjectBucketClaim{},
 		&nbv1.ObjectBucket{},
@@ -187,7 +190,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	enqueueStorageClients := handler.EnqueueRequestsFromMapFunc(
 		func(ctx context.Context, _ client.Object) []ctrl.Request {
 			storageClients := &v1alpha1.StorageClientList{}
-			if err := r.Client.List(ctx, storageClients); err != nil {
+			if err := r.List(ctx, storageClients); err != nil {
 				return []ctrl.Request{}
 			}
 			requests := make([]ctrl.Request, len(storageClients.Items))
@@ -204,6 +207,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&corev1.Secret{}).
+		Owns(&corev1.ConfigMap{}).
 		Owns(&csiopv1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
@@ -228,6 +232,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.cache = mgr.GetCache()
 	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
 	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, false)
+	r.crdsBeingWatched.Store(ObjectBucketCrdName, false)
 
 	return err
 }
@@ -298,16 +303,23 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *storageClientReconcile) reconcileDynamicWatches() error {
-	if err := r.reconcileVolumeGroupSnapshot(); err != nil {
-		return err
-	}
+	// TODO: enable vgsc after GA of API
+	// if err := r.reconcileVolumeGroupSnapshot(); err != nil {
+	// 	return err
+	// }
 
 	if err := r.reconcileOdfVolumeGroupSnapshot(); err != nil {
 		return err
 	}
+
+	if err := r.setupObjectBucketWatch(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
+//nolint:unused
 func (r *storageClientReconcile) reconcileVolumeGroupSnapshot() error {
 	if watchExists, foundCrd := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
 		return nil
@@ -420,6 +432,46 @@ func (r *storageClientReconcile) reconcileOdfVolumeGroupSnapshot() error {
 	return nil
 }
 
+func (r *storageClientReconcile) setupObjectBucketWatch() error {
+	if watchExists, foundCrd := r.crdsBeingWatched.Load(ObjectBucketCrdName); !foundCrd || watchExists.(bool) {
+		return nil
+	}
+
+	crd := &extv1.CustomResourceDefinition{}
+	crd.Name = ObjectBucketCrdName
+	if err := r.get(crd); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	if crd.UID == "" {
+		return nil
+	}
+	if !crdEstablished(crd) {
+		return nil
+	}
+
+	// establish a watch
+	if err := r.controller.Watch(
+		source.Kind(
+			r.cache,
+			client.Object(&nbv1.ObjectBucket{}),
+			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []ctrl.Request {
+				owner := metav1.GetControllerOf(o)
+				if owner != nil &&
+					owner.Kind == "StorageClient" &&
+					owner.APIVersion == v1alpha1.GroupVersion.String() {
+					return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: owner.Name}}}
+				}
+				return nil
+			}),
+		),
+	); err != nil {
+		return fmt.Errorf("failed to setup dynamic watch on %s: %v", crd.Name, err)
+	}
+
+	r.crdsBeingWatched.Store(ObjectBucketCrdName, true)
+	return nil
+}
+
 func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	if err := r.reconcileDynamicWatches(); err != nil {
 		return reconcile.Result{}, err
@@ -429,7 +481,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	if controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
 		r.log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
 		if err := r.update(&r.storageClient); err != nil {
-			return reconcile.Result{}, fmt.Errorf("Failed adding a finalizer to StorageClient: %v", err)
+			return reconcile.Result{}, fmt.Errorf("failed adding a finalizer to StorageClient: %v", err)
 		}
 		return reconcile.Result{Requeue: true}, nil
 	}
@@ -554,11 +606,12 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
-		if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
-		} else if exist {
-			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
-		}
+		// TODO: enable vgsc after GA of API
+		// if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
+		// 	return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		// } else if exist {
+		// 	return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		// }
 		if exist, err := r.hasOdfVolumeGroupSnapshotContents(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify odf-volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
@@ -718,7 +771,7 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 		return nil
 	})
 	if err != nil {
-		return reconcile.Result{Requeue: true}, fmt.Errorf("Failed to update cronJob: %v", err)
+		return reconcile.Result{Requeue: true}, fmt.Errorf("failed to update cronJob: %v", err)
 	}
 	return reconcile.Result{}, nil
 }
@@ -751,6 +804,7 @@ func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []
 	return false, nil
 }
 
+//nolint:unused
 func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNames []string) (bool, error) {
 	if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 		return false, nil
@@ -790,6 +844,10 @@ func (r *storageClientReconcile) hasOdfVolumeGroupSnapshotContents(clientProfile
 func (r *storageClientReconcile) hasObjectbucketClaims() (bool, error) {
 	obcList := &nbv1.ObjectBucketClaimList{}
 	if err := r.list(obcList, client.MatchingLabels{storageClientNameLabel: r.storageClient.Name}, client.Limit(1)); err != nil {
+		if meta.IsNoMatchError(err) {
+			r.log.Info("ObjectBucketClaim CRD is not installed, skipping object bucket claim check")
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to list object bucket claim resources: %v", err)
 	}
 	return len(obcList.Items) != 0, nil
@@ -808,7 +866,7 @@ func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {
 }
 
 func (r *storageClientReconcile) list(obj client.ObjectList, listOptions ...client.ListOption) error {
-	return r.Client.List(r.ctx, obj, listOptions...)
+	return r.List(r.ctx, obj, listOptions...)
 }
 
 func (r *storageClientReconcile) get(obj client.Object, opts ...client.GetOption) error {
@@ -893,7 +951,7 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 	obj.SetNamespace(desiredState.Namespace)
 	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
 	if utils.IsForbiddenError(err) {
-		if err := r.Client.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
+		if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf(
 				"failed to replace %v %v/%v: %v",
 				obj.GetObjectKind().GroupVersionKind(),
@@ -906,7 +964,7 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 		// k8s doesn't allow us to create objects when resourceVersion is set, as we are DeepCopying the
 		// object, the resource version also gets copied, hence we need to set it to empty before creating it
 		obj.SetResourceVersion("")
-		if err := r.Client.Create(r.ctx, obj); err != nil {
+		if err := r.Create(r.ctx, obj); err != nil {
 			return fmt.Errorf(
 				"failed to replace %v %v/%v: %v",
 				obj.GetObjectKind().GroupVersionKind(),
@@ -965,4 +1023,16 @@ func (r *storageClientReconcile) getOperatorVersion() (string, error) {
 		return "", fmt.Errorf("failed to get csv: %v", err)
 	}
 	return csv.Spec.Version.String(), nil
+}
+
+// crdEstablished reports whether the CRD is served by the apiserver (status.conditions Established=True).
+// A CRD object can exist before the REST mapping for its resource is available.
+func crdEstablished(crd *extv1.CustomResourceDefinition) bool {
+	for i := range crd.Status.Conditions {
+		c := crd.Status.Conditions[i]
+		if c.Type == extv1.Established && c.Status == extv1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }

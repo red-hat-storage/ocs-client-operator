@@ -1,17 +1,24 @@
 # This file contains all available configuration options
 # with their default values.
 # options for analysis running
+version: "2"
 run:
   # timeout for analysis, e.g. 30s, 5m, default is 1m
   timeout: 5m
   modules-download-mode: vendor
   allow-parallel-runners: true
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
     - ineffassign
     - staticcheck
     - unused
     - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true

@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -239,6 +242,193 @@ func TestTopologyLabelsFromConfigMap(t *testing.T) {
 			for _, label := range tt.expectedLabels {
 				_, exists := result[label]
 				assert.True(t, exists, "expected label "+label)
+			}
+		})
+	}
+}
+
+func TestParseEndpointConfigs(t *testing.T) {
+	validCfg := s3EndpointConfig{EndpointURL: "https://noobaa-s3.example.com"}
+	validCfgBytes, err := json.Marshal(validCfg)
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name      string
+		input     map[string]string
+		expectErr bool
+		expectLen int
+	}{
+		{
+			name: "valid input skips empty values",
+			input: map[string]string{
+				"noobaaS3": string(validCfgBytes),
+				"":         string(validCfgBytes),
+				"   ":      string(validCfgBytes),
+				"rgwS3":    "   ",
+			},
+			expectErr: false,
+			expectLen: 1,
+		},
+		{
+			name: "invalid json payload",
+			input: map[string]string{
+				"noobaa": "{invalid-json}",
+			},
+			expectErr: true,
+			expectLen: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, parseErr := parseEndpointConfigs(tt.input)
+			if tt.expectErr {
+				assert.Error(t, parseErr)
+				assert.Contains(t, parseErr.Error(), "decode endpoint config for key")
+				assert.Len(t, out, tt.expectLen)
+			} else {
+				assert.NoError(t, parseErr)
+				assert.Len(t, out, tt.expectLen)
+				assert.Equal(t, validCfg.EndpointURL, out["noobaaS3"].EndpointURL)
+			}
+		})
+	}
+}
+
+func TestBuildS3EndpointProxyConfigForClient(t *testing.T) {
+	tests := []struct {
+		name                  string
+		secretData            map[string][]byte
+		endpoints             map[string]s3EndpointConfig
+		expectedIncludes      []string
+		expectedExcludes      []string
+		expectErr             bool
+	}{
+		{
+			name: "builds config for valid https endpoints only",
+			secretData: map[string][]byte{
+				"client-1-noobaaS3.crt": []byte("dummy-data"),
+			},
+			endpoints: map[string]s3EndpointConfig{
+				"noobaaS3": {
+					EndpointURL: "https://noobaa-s3.example.com",
+				},
+				"noobaaS3Vectors": {
+					EndpointURL: "https://noobaa-s3-vectors.example.com",
+				},
+				"rgwS3": {
+					EndpointURL: "://invalid",
+				},
+			},
+			expectedIncludes: []string{
+				"location /client-1/noobaaS3/",
+				"location /client-1/noobaaS3Vectors/",
+			},
+			expectedExcludes: []string{
+				"://invalid",
+				"location /client-1/rgwS3/",
+			},
+			expectErr: false,
+		},
+		{
+			name:       "returns empty config when no valid endpoint",
+			secretData: map[string][]byte{},
+			endpoints: map[string]s3EndpointConfig{
+				"rgwS3": {
+					EndpointURL: "://invalid",
+				},
+			},
+			expectedIncludes: []string{},
+			expectedExcludes: []string{"location /client-1/rgwS3/", "://invalid"},
+			expectErr:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newFakeConfigMapReconciler(t)
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      s3EndpointCASecretName,
+					Namespace: testNamespace,
+					UID:       "secret-uid",
+				},
+				Data: tt.secretData,
+			}
+			r.Client = newFakeClientBuilder(r.Scheme).
+				WithRuntimeObjects(secret).
+				Build()
+
+			content, buildErr := r.buildS3EndpointProxyConfigForClient("client-1", tt.endpoints)
+			if tt.expectErr {
+				assert.Error(t, buildErr)
+			} else {
+				assert.NoError(t, buildErr)
+				for _, expected := range tt.expectedIncludes {
+					assert.Contains(t, content, expected)
+				}
+				for _, excluded := range tt.expectedExcludes {
+					assert.NotContains(t, content, excluded)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildDesiredNginxDataWithProxies(t *testing.T) {
+	tests := []struct {
+		name              string
+		operatorConfigMap map[string]string
+		endpointConfig    map[string]string
+		expectErr         bool
+	}{
+		{
+			name: "proxy disabled via operator configmap",
+			operatorConfigMap: map[string]string{
+				disableS3EndpointProxyKey: "true",
+			},
+			endpointConfig: map[string]string{
+				"noobaaS3": `{"endpointUrl":"https://noobaa-s3.example.com"}`,
+			},
+			expectErr: false,
+		},
+		{
+			name:              "invalid endpoint json",
+			operatorConfigMap: map[string]string{},
+			endpointConfig: map[string]string{
+				"noobaaS3": "{invalid-json}",
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newFakeConfigMapReconciler(t)
+			r.operatorConfigMap = &corev1.ConfigMap{Data: tt.operatorConfigMap}
+
+			labeledCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "client-1",
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						s3EndpointsConfigMapLabelKey: strconv.FormatBool(true),
+					},
+				},
+				Data: tt.endpointConfig,
+			}
+			r.Client = newFakeClientBuilder(r.Scheme).
+				WithRuntimeObjects(labeledCM).
+				Build()
+
+			out, err := r.buildDesiredNginxDataWithProxies()
+			if tt.expectErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "parse endpoints ConfigMap")
+				assert.Equal(t, console.GetNginxRootConf(), out["nginx.conf"])
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, map[string]string{"nginx.conf": console.GetNginxRootConf()}, out)
 			}
 		})
 	}
