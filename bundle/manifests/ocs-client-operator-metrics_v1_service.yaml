@@ -1,16 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
+  creationTimestamp: null
   labels:
     app: ocs-client-operator
-  name: metrics
-  namespace: system
-# should be in sync with pkg/templates/metricsservice.go
+  name: ocs-client-operator-metrics
 spec:
   ports:
   - name: metrics
     port: 8080
     protocol: TCP
+    targetPort: 0
   selector:
     app: ocs-client-operator
     control-plane: controller-manager
+status:
+  loadBalancer: {}

@@ -26,11 +26,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	// The embed package is required for the prometheus rule files
 	_ "embed"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-client-operator/internal/controller/alert"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
@@ -68,7 +70,9 @@ import (
 
 var (
 	//go:embed pvc-rules.yaml
-	pvcPrometheusRules          string
+	pvcPrometheusRules string
+	//go:embed client-alert-rules.yaml
+	clientAlertPrometheusRules  string
 	subPackageIndexerRegistered bool
 )
 
@@ -86,6 +90,9 @@ const (
 	enableRbdDriverKey                = "enableRbdDriver"
 	enableCephFsDriverKey             = "enableCephFsDriver"
 	enableNfsDriverKey                = "enableNfsDriver"
+
+	// AlertPollIntervalKey is the ConfigMap key for the client alert polling interval.
+	AlertPollIntervalKey = "alertPollInterval"
 
 	operatorConfigMapFinalizer = "ocs-client-operator.ocs.openshift.io/storageused"
 	subPackageIndexName        = "index:subscriptionPackage"
@@ -118,10 +125,11 @@ type s3EndpointConfig struct {
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
 type OperatorConfigMapReconciler struct {
 	client.Client
-	OperatorNamespace string
-	ConsolePort       int32
-	Scheme            *runtime.Scheme
-	AvailableCrds     map[string]bool
+	OperatorNamespace        string
+	ConsolePort              int32
+	Scheme                   *runtime.Scheme
+	AvailableCrds            map[string]bool
+	UpdateAlertPollInterval  func(time.Duration)
 
 	log                 logr.Logger
 	ctx                 context.Context
@@ -352,6 +360,16 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return reconcile.Result{}, err
 	}
 
+	alertPollInterval := alert.DefaultPollInterval
+	if val := c.operatorConfigMap.Data[AlertPollIntervalKey]; val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			alertPollInterval = d
+		} else {
+			c.log.Error(err, "failed to parse alertPollInterval, using default", "value", alertPollInterval)
+		}
+	}
+	c.UpdateAlertPollInterval(alertPollInterval)
+
 	storageClients := &v1alpha1.StorageClientList{}
 	if err := c.list(storageClients); err != nil {
 		c.log.Error(err, "failed to list StorageClients")
@@ -481,6 +499,26 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 
 		c.log.Info("prometheus rules deployed", "prometheusRule", klog.KRef(prometheusRule.Namespace, prometheusRule.Name))
+
+		clientAlertRule := &monitoringv1.PrometheusRule{}
+		if err := k8sYAML.NewYAMLOrJSONDecoder(bytes.NewBufferString(string(clientAlertPrometheusRules)), 1000).Decode(clientAlertRule); err != nil {
+			c.log.Error(err, "Unable to retrieve client alert prometheus rules.", "prometheusRule", klog.KRef(clientAlertRule.Namespace, clientAlertRule.Name))
+			return ctrl.Result{}, err
+		}
+
+		clientAlertRule.SetNamespace(c.OperatorNamespace)
+
+		err = c.createOrUpdate(clientAlertRule, func() error {
+			applyLabels(c.operatorConfigMap.Data["OCS_METRICS_LABELS"], &clientAlertRule.ObjectMeta)
+			return c.own(clientAlertRule)
+		})
+		if err != nil {
+			c.log.Error(err, "failed to create/update client alert prometheus rules")
+			return ctrl.Result{}, err
+		}
+
+		c.log.Info("client alert prometheus rules deployed", "prometheusRule", klog.KRef(clientAlertRule.Namespace, clientAlertRule.Name))
+
 	} else {
 		// deletion phase
 		if err := c.deletionPhase(); err != nil {

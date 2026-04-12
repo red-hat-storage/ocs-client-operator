@@ -1,8 +1,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: metrics-monitor
-  namespace: system
+  name: ocs-client-operator-metrics-monitor
 spec:
   endpoints:
   - path: /metrics
