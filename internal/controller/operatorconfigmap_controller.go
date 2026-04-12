@@ -339,15 +339,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	c.log = log.FromContext(ctx, "OperatorConfigMap", req)
 	c.log.Info("Reconciling OperatorConfigMap")
 
-	crd := &metav1.PartialObjectMetadata{}
-	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
-	crd.Name = MaintenanceModeCRDName
-	if err := c.Get(ctx, client.ObjectKeyFromObject(crd), crd); client.IgnoreNotFound(err) != nil {
-		c.log.Error(err, "Failed to get CRD", "CRD", crd.Name)
-		return reconcile.Result{}, err
-	}
-	utils.AssertEqual(c.AvailableCrds[crd.Name], crd.UID != "", utils.ExitCodeThatShouldRestartTheProcess)
-
 	c.operatorConfigMap = &corev1.ConfigMap{}
 	c.operatorConfigMap.Name = req.Name
 	c.operatorConfigMap.Namespace = req.Namespace
