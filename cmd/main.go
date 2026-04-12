@@ -220,8 +220,6 @@ func main() {
 		}
 	}
 
-	subscriptionwebhookSelector := fields.SelectorFromSet(fields.Set{"metadata.name": templates.SubscriptionWebhookName})
-
 	// apiclient.New() returns a client without cache. cache is not initialized before mgr.Start()
 	// we need this because we need to watch for CRDs the operator is dependent on
 	apiClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{
@@ -243,7 +241,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "7cb6f2e5.ocs.openshift.io",
-		Cache:                  buildCacheAvailableCRDs(availCrds, subscriptionwebhookSelector, defaultNamespaces, operatorNamespace),
+		Cache:                  buildCacheAvailableCRDs(availCrds, defaultNamespaces, operatorNamespace),
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    webhookPort,
 			CertDir: "/etc/tls/private",
@@ -381,10 +379,10 @@ func getAvailableCRDNames(ctx context.Context, cl client.Client) (map[string]boo
 
 func buildCacheAvailableCRDs(
 	availCrds map[string]bool,
-	subscriptionwebhookSelector fields.Selector,
 	defaultNamespaces map[string]cache.Config,
 	operatorNamespace string,
 ) cache.Options {
+	subscriptionwebhookSelector := fields.SelectorFromSet(fields.Set{"metadata.name": templates.SubscriptionWebhookName})
 	noobaaLabelSelector := labels.SelectorFromSet(labels.Set{"app": "noobaa"})
 	configMapAndSecretCacheByNamespace := map[string]cache.Config{
 		operatorNamespace: {
