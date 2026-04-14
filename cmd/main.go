@@ -39,7 +39,6 @@ import (
 	replicationv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	nbapis "github.com/noobaa/noobaa-operator/v5/pkg/apis"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
 	consolev1 "github.com/openshift/api/console/v1"
@@ -93,7 +92,6 @@ func init() {
 	utilruntime.Must(extv1.AddToScheme(scheme))
 	utilruntime.Must(quotav1.AddToScheme(scheme))
 	utilruntime.Must(csiopv1.AddToScheme(scheme))
-	utilruntime.Must(nbapis.AddToScheme(scheme))
 	utilruntime.Must(ramenv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(replicationv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(groupsnapapi.AddToScheme(scheme))
