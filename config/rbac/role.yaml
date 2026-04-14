@@ -168,16 +168,6 @@ rules:
   - update
   - watch
 - apiGroups:
-  - noobaa.io
-  resources:
-  - noobaas
-  verbs:
-  - delete
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
   - objectbucket.io
   resources:
   - objectbucketclaims
