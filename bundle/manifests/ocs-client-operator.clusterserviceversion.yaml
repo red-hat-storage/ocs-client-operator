@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2026-04-13T16:10:57Z"
+    createdAt: "2026-04-14T12:04:21Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -512,7 +512,22 @@ spec:
                 app.kubernetes.io/name: ocs-client-operator-console
             spec:
               containers:
-              - image: quay.io/ocs-dev/ocs-client-console:latest
+              - command:
+                - /bin/sh
+                - -c
+                - |
+                  LAST_HASH=""
+                  while true; do
+                    CURRENT_HASH=$(md5sum /opt/app-root/etc/nginx.d/*.conf 2>/dev/null | sort | md5sum)
+                    if [ "$CURRENT_HASH" != "$LAST_HASH" ]; then
+                      if nginx -t && nginx -s reload; then
+                        LAST_HASH="$CURRENT_HASH"
+                      fi
+                    fi
+                    sleep 60
+                  done &
+                  exec /usr/libexec/s2i/run
+                image: quay.io/ocs-dev/ocs-client-console:latest
                 livenessProbe:
                   httpGet:
                     path: /plugin-manifest.json
@@ -543,10 +558,6 @@ spec:
                 - mountPath: /var/serving-cert
                   name: ocs-client-operator-console-serving-cert
                   readOnly: true
-                - mountPath: /etc/nginx/nginx.conf
-                  name: ocs-client-operator-console-nginx-conf
-                  readOnly: true
-                  subPath: nginx.conf
                 - mountPath: /opt/app-root/etc/nginx.d
                   name: ocs-client-operator-console-nginx-conf
                   readOnly: true
