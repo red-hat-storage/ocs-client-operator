@@ -342,6 +342,14 @@ func main() {
 		}
 	}
 
+	if err = (&controller.ObcCrdReconciler{
+		Client:               mgr.GetClient(),
+		ObcCrdPresentAtStart: availCrds[controller.ObjectBucketClaimCrdName],
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ObjectBucketClaimCrd")
+		os.Exit(1)
+	}
+
 	if availCrds[controller.ObjectBucketClaimCrdName] {
 		if err = (&controller.ObcReconciler{
 			Client: mgr.GetClient(),
