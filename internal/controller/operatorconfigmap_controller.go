@@ -125,11 +125,11 @@ type s3EndpointConfig struct {
 // OperatorConfigMapReconciler reconciles a ClusterVersion object
 type OperatorConfigMapReconciler struct {
 	client.Client
-	OperatorNamespace        string
-	ConsolePort              int32
-	Scheme                   *runtime.Scheme
-	AvailableCrds            map[string]bool
-	UpdateAlertPollInterval  func(time.Duration)
+	OperatorNamespace       string
+	ConsolePort             int32
+	Scheme                  *runtime.Scheme
+	AvailableCrds           map[string]bool
+	UpdateAlertPollInterval func(time.Duration)
 
 	log                 logr.Logger
 	ctx                 context.Context
@@ -559,8 +559,10 @@ func (c *OperatorConfigMapReconciler) reconcileInstallPlans() error {
 	}
 	for idx := range installPlans.Items {
 		installPlan := &installPlans.Items[idx]
-		if !installPlan.Spec.Approved {
-			if err := c.Patch(c.ctx, installPlan, approvePatch); err != nil {
+		if installPlan.Spec.Approval == opv1a1.ApprovalManual && !installPlan.Spec.Approved {
+			if installPlan.Status.Phase != opv1a1.InstallPlanPhaseRequiresApproval {
+				return fmt.Errorf("installplan %s is not ready to be approved", installPlan.Name)
+			} else if err := c.Patch(c.ctx, installPlan, approvePatch); err != nil {
 				return err
 			}
 		}
