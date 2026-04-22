@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -91,26 +93,9 @@ const (
 	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
 	ObjectBucketClaimCrdName           = "objectbucketclaims.objectbucket.io"
 	ObjectBucketCrdName                = "objectbuckets.objectbucket.io"
-)
 
-// extractClusterID parses the clusterID from a CSI volume/snapshot handle.
-// Handle format: <version>-<clusterIDLenHex>-<clusterID>-<remainingFields...>
-// The second field is the hex-encoded length of the clusterID, which may contain hyphens.
-func extractClusterID(handle string) string {
-	parts := strings.SplitN(handle, "-", 3)
-	if len(parts) < 3 {
-		return ""
-	}
-	clusterIDLen, err := strconv.ParseInt(parts[1], 16, 64)
-	if err != nil || clusterIDLen <= 0 {
-		return ""
-	}
-	remaining := parts[2]
-	if int64(len(remaining)) < clusterIDLen {
-		return ""
-	}
-	return remaining[:clusterIDLen]
-}
+	knownFieldSize = 64
+)
 
 var (
 	csiDrivers = []string{
@@ -190,9 +175,12 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			slices.Contains(csiDrivers, vsc.Spec.Driver) &&
 			vsc.Status != nil &&
 			vsc.Status.SnapshotHandle != nil {
-			if clusterID := extractClusterID(*vsc.Status.SnapshotHandle); clusterID != "" {
-				return []string{clusterID}
+			clusterID, err := extractClusterID(*vsc.Status.SnapshotHandle)
+			if err != nil {
+				ctrl.Log.Error(err, "failed to extract clusterID from snapshot handle", "handle", *vsc.Status.SnapshotHandle)
+				return nil
 			}
+			return []string{clusterID}
 		}
 		return nil
 	}); err != nil {
@@ -386,11 +374,12 @@ func (r *storageClientReconcile) reconcileVolumeGroupSnapshot() error {
 			slices.Contains(csiDrivers, vgsc.Spec.Driver) &&
 			vgsc.Status != nil &&
 			vgsc.Status.VolumeGroupSnapshotHandle != nil {
-			parts := strings.Split(*vgsc.Status.VolumeGroupSnapshotHandle, "-")
-			if len(parts) == 9 {
-				// second entry in the volumeID is clusterID which is unique across the cluster
-				return []string{parts[2]}
+			clusterID, err := extractClusterID(*vgsc.Status.VolumeGroupSnapshotHandle)
+			if err != nil {
+				ctrl.Log.Error(err, "failed to extract clusterID from volume group snapshot handle", "handle", *vgsc.Status.VolumeGroupSnapshotHandle)
+				return nil
 			}
+			return []string{clusterID}
 		}
 		return nil
 	}); err != nil {
@@ -454,6 +443,31 @@ func (r *storageClientReconcile) reconcileOdfVolumeGroupSnapshot() error {
 	}
 	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, true)
 	return nil
+}
+
+// extractClusterID parses the clusterID from a CSI volume/snapshot handle.
+// Handle format: <4-hex-version>-<4-hex-length>-<clusterID>-<remainingFields...>
+func extractClusterID(handle string) (string, error) {
+
+	// if length is less that expected constant elements, then bail out
+	bytesToProcess := uint16(len(handle))
+	if bytesToProcess < knownFieldSize {
+		return "", fmt.Errorf("failed to decode CSI identifier, string underflow")
+	}
+
+	buf16, err := hex.DecodeString(handle[5:9])
+	if err != nil {
+		return "", fmt.Errorf("failed to decode CSI identifier length field: %w", err)
+	}
+
+	clusterIDLength := binary.BigEndian.Uint16(buf16)
+	// 4 for version encoding, 1 for '-' separator, 4 for length encoding, 1 for '-' separator
+	bytesToProcess -= 10
+	if bytesToProcess < (clusterIDLength + 1) {
+		return "", fmt.Errorf("failed to decode CSI identifier, string underflow")
+	}
+
+	return handle[10 : 10+clusterIDLength], nil
 }
 
 func (r *storageClientReconcile) setupObjectBucketWatch() error {
