@@ -68,6 +68,8 @@ func SetSecurityContextConstraintsDesiredState(scc *secv1.SecurityContextConstra
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-cephfs-nodeplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-nfs-ctrlplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-nfs-nodeplugin-sa", ns),
+		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-nvmeof-ctrlplugin-sa", ns),
+		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-nvmeof-nodeplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-rbd-ctrlplugin-sa", ns),
 		fmt.Sprintf("system:serviceaccount:%s:ceph-csi-rbd-nodeplugin-sa", ns),
 	}
