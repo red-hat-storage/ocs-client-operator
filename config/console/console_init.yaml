@@ -15,6 +15,21 @@ spec:
       containers:
         - name: ocs-client-operator-console
           image: ocs-client-operator-console:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              LAST_HASH=""
+              while true; do
+                CURRENT_HASH=$(md5sum /opt/app-root/etc/nginx.d/*.conf 2>/dev/null | sort | md5sum)
+                if [ "$CURRENT_HASH" != "$LAST_HASH" ]; then
+                  if nginx -t && nginx -s reload; then
+                    LAST_HASH="$CURRENT_HASH"
+                  fi
+                fi
+                sleep 60
+              done &
+              exec /usr/libexec/s2i/run
           resources:
             limits:
               cpu: "250m"
@@ -43,10 +58,6 @@ spec:
           volumeMounts:
             - name: ocs-client-operator-console-serving-cert
               mountPath: /var/serving-cert
-              readOnly: true
-            - name: ocs-client-operator-console-nginx-conf
-              mountPath: /etc/nginx/nginx.conf
-              subPath: nginx.conf
               readOnly: true
             - name: ocs-client-operator-console-nginx-conf
               mountPath: /opt/app-root/etc/nginx.d
