@@ -956,18 +956,15 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 		kubeObject := untypedInstance.(client.Object)
 
 		desiredState := objectsToReconcile[idx]
+		reconciledObjects[desiredState.NamespacedName] = true
 		switch desiredState.operation {
 		case provider.KubeClientOp_CREATE_OR_UPDATE:
 			if err := r.reconcileResource(kubeObject, desiredState.bytes, desiredState.NamespacedName); err != nil {
 				multierr.AppendInto(combinedErr, err)
-			} else {
-				reconciledObjects[desiredState.NamespacedName] = true
 			}
 		case provider.KubeClientOp_UPDATE_SUB_RESOURCE:
 			if err := r.reconcileSubResource(kubeObject, desiredState.bytes, desiredState.NamespacedName, desiredState.subResource); err != nil {
 				multierr.AppendInto(combinedErr, err)
-			} else {
-				reconciledObjects[desiredState.NamespacedName] = true
 			}
 		default:
 			r.log.Info(
