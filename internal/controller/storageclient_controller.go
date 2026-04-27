@@ -559,7 +559,9 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
 	}
-
+	if storageClientResponse.LastKnownClientOperatorVersion != operatorVersion {
+		return reconcile.Result{}, fmt.Errorf("received client state for incorrect operator version")
+	}
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
 	kubeObjectsByGk := map[string]kubeObjectWithOpRecords{}
