@@ -34,3 +34,14 @@ func EventTypePredicate(create, update, del, generic bool) predicate.Predicate {
 		},
 	}
 }
+
+// LabelExistsPredicate return a predicate the filter events based on the existence of a label
+func LabelExistsPredicate(labelKey string) predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		if obj == nil || obj.GetLabels() == nil {
+			return false
+		}
+		_, found := obj.GetLabels()[labelKey]
+		return found
+	})
+}
