@@ -957,7 +957,9 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 
 		desiredState := objectsToReconcile[idx]
 		switch desiredState.operation {
-		case provider.KubeClientOp_CREATE_OR_UPDATE:
+		// TODO (leelavg): using unspecified is temporary to unblock upgrades and when the
+		// actual fix is delivered the testing should be without the unspecified op.
+		case provider.KubeClientOp_CREATE_OR_UPDATE, provider.KubeClientOp_OPERATION_UNSPECIFIED:
 			if err := r.reconcileResource(kubeObject, desiredState.bytes, desiredState.NamespacedName); err != nil {
 				multierr.AppendInto(combinedErr, err)
 			} else {
