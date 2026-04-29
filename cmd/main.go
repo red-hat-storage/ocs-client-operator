@@ -320,6 +320,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+	shutdownContainer := func() {
+		cancel()
+	}
+
 	if err = (&controller.OperatorConfigMapReconciler{
 		Client:                  mgr.GetClient(),
 		Scheme:                  mgr.GetScheme(),
@@ -342,6 +348,15 @@ func main() {
 		}
 	}
 
+	if err = (&controller.CrdsPresenceReconciler{
+		Client:            mgr.GetClient(),
+		AvailableCrds:     availCrds,
+		ShutdownContainer: shutdownContainer,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "CrdsPresence")
+		os.Exit(1)
+	}
+
 	if availCrds[controller.ObjectBucketClaimCrdName] {
 		if err = (&controller.ObcReconciler{
 			Client: mgr.GetClient(),
@@ -357,7 +372,7 @@ func main() {
 	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
