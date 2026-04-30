@@ -194,7 +194,7 @@ func (cc *OCSProviderClient) GetBlockPoolsInfo(ctx context.Context, storageClust
 }
 
 // notifyWithReason RPC call for Notify API request
-func (cc *OCSProviderClient) notifyWithReason(ctx context.Context, consumerUUID string, reason pb.NotifyReason, payload any) (*pb.NotifyResponse, error) {
+func (cc *OCSProviderClient) notifyWithReason(ctx context.Context, consumerUUID string, reason ifaces.NotifyReason, payload any) (*pb.NotifyResponse, error) {
 	if cc.Client == nil || cc.clientConn == nil {
 		return nil, fmt.Errorf("provider client is closed")
 	}
@@ -206,7 +206,7 @@ func (cc *OCSProviderClient) notifyWithReason(ctx context.Context, consumerUUID 
 
 	req := &pb.NotifyRequest{
 		StorageConsumerUUID: consumerUUID,
-		Reason:              reason,
+		Reason:              uint32(reason),
 		Payload:             payloadBytes,
 	}
 
@@ -218,12 +218,12 @@ func (cc *OCSProviderClient) notifyWithReason(ctx context.Context, consumerUUID 
 
 // NotifyObcCreated RPC call for Notify API request with OBC_CREATED reason
 func (cc *OCSProviderClient) NotifyObcCreated(ctx context.Context, consumerUUID string, obc *nbv1.ObjectBucketClaim) (*pb.NotifyResponse, error) {
-	return cc.notifyWithReason(ctx, consumerUUID, pb.NotifyReason_OBC_CREATED, obc)
+	return cc.notifyWithReason(ctx, consumerUUID, ifaces.NotifyReasonObcCreated, obc)
 }
 
 // NotifyObcDeleted RPC call for Notify API request with OBC_DELETED reason
 func (cc *OCSProviderClient) NotifyObcDeleted(ctx context.Context, consumerUUID string, obcNamespacedName types.NamespacedName) (*pb.NotifyResponse, error) {
-	return cc.notifyWithReason(ctx, consumerUUID, pb.NotifyReason_OBC_DELETED, obcNamespacedName)
+	return cc.notifyWithReason(ctx, consumerUUID, ifaces.NotifyReasonObcDeleted, obcNamespacedName)
 }
 
 // GetClientAlerts RPC call to get firing alerts relevant to a specific storage consumer
