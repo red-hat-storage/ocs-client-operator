@@ -31,7 +31,7 @@ spec:
         runAsNonRoot: true
       containers:
       - command:
-        - /entrypoint
+        - /ocs-client-operator
         args:
         - "--metrics-bind-address=:8080"
         - "--metrics-secure=false"
