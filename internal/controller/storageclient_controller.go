@@ -67,6 +67,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -137,6 +138,7 @@ type StorageClientReconciler struct {
 	Scheme            *runtime.Scheme
 	OperatorNamespace string
 	OperatorPodName   string
+	AvailableCrds     map[string]bool
 
 	cache            cache.Cache
 	controller       controller.Controller
@@ -212,7 +214,33 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return requests
 		},
 	)
-	controller, err := ctrl.NewControllerManagedBy(mgr).
+	obcStatusChangedPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldOBC, oldOk := e.ObjectOld.(*nbv1.ObjectBucketClaim)
+			newOBC, newOk := e.ObjectNew.(*nbv1.ObjectBucketClaim)
+			if !oldOk || !newOk || oldOBC == nil || newOBC == nil {
+				return false
+			}
+			return !reflect.DeepEqual(oldOBC.Status, newOBC.Status)
+		},
+	}
+	enqueueStorageClientRequestFromOBC := handler.EnqueueRequestsFromMapFunc(
+		func(_ context.Context, obj client.Object) []ctrl.Request {
+			if obj == nil {
+				return nil
+			}
+			labels := obj.GetLabels()
+			if labels == nil {
+				return nil
+			}
+			storageClientName := labels[storageClientNameLabel]
+			if storageClientName == "" {
+				return nil
+			}
+			return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: storageClientName}}}
+		},
+	)
+	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.StorageClient{}).
 		Owns(&batchv1.CronJob{}).
 		Owns(&quotav1.ClusterResourceQuota{}, builder.WithPredicates(generationChangePredicate)).
@@ -235,8 +263,21 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				utils.EventTypePredicate(true, false, false, false),
 			),
 			builder.OnlyMetadata,
-		).
-		Build(r)
+		)
+	if r.AvailableCrds[ObjectBucketClaimCrdName] {
+		bldr = bldr.Watches(
+			&nbv1.ObjectBucketClaim{},
+			enqueueStorageClientRequestFromOBC,
+			builder.WithPredicates(
+				predicate.And(
+					utils.EventTypePredicate(false, true, false, false),
+					utils.LabelExistsPredicate(storageClientNameLabel),
+					obcStatusChangedPredicate,
+				),
+			),
+		)
+	}
+	controller, err := bldr.Build(r)
 
 	r.controller = controller
 	r.cache = mgr.GetCache()
