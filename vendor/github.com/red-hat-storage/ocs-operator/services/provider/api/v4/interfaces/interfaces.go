@@ -42,3 +42,11 @@ type StorageClientOnboarding interface {
 	SetOnboardingTicket(string) StorageClientOnboarding
 	SetConsumerName(string) StorageClientOnboarding
 }
+
+type NotifyReason uint
+
+const (
+	NotifyReasonUnknown NotifyReason = iota
+	NotifyReasonObcCreated
+	NotifyReasonObcDeleted
+)
