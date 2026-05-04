@@ -62,8 +62,6 @@ const (
 
 	CronScheduleWeekly = "@weekly"
 
-	ExitCodeThatShouldRestartTheProcess = 42
-
 	OcsClientTimeout = 10 * time.Second
 
 	OperatorVersionEnvVar = "OPERATOR_VERSION"
