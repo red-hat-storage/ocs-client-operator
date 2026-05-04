@@ -117,18 +117,6 @@ func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, ce
 	return sb.String(), nil
 }
 
-func GetNginxConfConfigMap(namespace string) *apiv1.ConfigMap {
-	return &apiv1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-nginx-conf", DeploymentName),
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"nginx.conf": nginxRootConf,
-		},
-	}
-}
-
 func getConsolePluginProxy(port int32, serviceNamespace string) []consolev1.ConsolePluginProxy {
 	return []consolev1.ConsolePluginProxy{
 		{

@@ -880,13 +880,7 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	}
 
 	if nginxConfigMapResult == controllerutil.OperationResultCreated || nginxConfigMapResult == controllerutil.OperationResultUpdated {
-		c.log.Info("nginx ConfigMap data changed, restarting console pod to pick up new config")
-		// Console pod must restart (or nginx must reload) to pick up updated mounted config files.
-		// Restart failures are currently logged only. If restart fails once and config does not change again,
-		// subsequent reconciles will not retry because this block is gated by data-diff check.
-		// ToDo: If issue is prominent, explore reliable retry semantics, like restart based on marker/hash or graceful nginx reload.
-		// Note: checksum rollout via Deployment pod-template annotation is not reliable as Deployment is currently OLM/CSV-owned.
-		c.restartConsolePodsByLabel()
+		c.log.Info("nginx ConfigMap updated with new config, console pod will reload nginx automatically")
 	}
 
 	consoleService := console.GetService(c.ConsolePort, c.OperatorNamespace)
@@ -919,28 +913,6 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	}
 
 	return nil
-}
-
-func (c *OperatorConfigMapReconciler) restartConsolePodsByLabel() {
-	podList := &corev1.PodList{}
-	if err := c.list(
-		podList,
-		client.InNamespace(c.OperatorNamespace),
-		client.MatchingLabels{console.AppNameLabelKey: console.DeploymentName},
-	); err != nil {
-		c.log.Error(err, "failed to list console pods by label selector", "namespace", c.OperatorNamespace)
-		return
-	}
-	if len(podList.Items) == 0 {
-		c.log.Info("no console pods found for restart", "namespace", c.OperatorNamespace)
-		return
-	}
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-		if err := c.delete(pod); err != nil {
-			c.log.Error(err, "failed to delete console pod", "pod", pod.Name, "namespace", c.OperatorNamespace)
-		}
-	}
 }
 
 func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[string]string, error) {
@@ -1030,7 +1002,7 @@ func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(unique
 		exposeAsKeys = append(exposeAsKeys, exposeAs)
 	}
 	// Processing endpoints in a fixed order so the generated nginx config "string" wouldn't change unless the actual endpoint data changed.
-	// This is to avoid unnecessary pod restarts, since restarts are triggered when changes are detected.
+	// This avoids unnecessary ConfigMap updates and nginx reloads.
 	sort.Strings(exposeAsKeys)
 	for _, exposeAs := range exposeAsKeys {
 		cfg := endpoints[exposeAs]
