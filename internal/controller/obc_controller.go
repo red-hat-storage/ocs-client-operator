@@ -100,6 +100,12 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageClient: %w", err)
 	}
 
+	if storageClient == nil {
+		r.log.Info("StorageClass is not owned by a StorageClient; skipping OBC reconciliation",
+			"storageClassName", r.obc.Spec.StorageClassName)
+		return reconcile.Result{}, nil
+	}
+
 	ocsProviderClient, err := providerClient.NewProviderClient(r.ctx, storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
 	if err != nil {
 		r.log.Error(err, "failed to create provider client")
@@ -173,6 +179,8 @@ func (r *obcReconcile) handleObcDeletion(
 }
 
 // getStorageClientFromStorageClass returns the StorageClient that owns the given StorageClass (via ownerReference).
+// If the StorageClass exists but has no StorageClient owner reference, it returns (nil, nil) so callers can skip
+// reconcile without treating it as an error.
 func (r *obcReconcile) getStorageClientFromStorageClass(storageClassName string) (*v1alpha1.StorageClient, error) {
 	storageClass := &storagev1.StorageClass{}
 	storageClass.Name = storageClassName
@@ -186,7 +194,7 @@ func (r *obcReconcile) getStorageClientFromStorageClass(storageClassName string)
 		},
 	)
 	if ownerStorageClientIndex == -1 {
-		return nil, fmt.Errorf("StorageClass %q has no StorageClient ownerReference", storageClassName)
+		return nil, nil
 	}
 	storageClient := &v1alpha1.StorageClient{}
 	storageClient.Name = storageClass.OwnerReferences[ownerStorageClientIndex].Name
