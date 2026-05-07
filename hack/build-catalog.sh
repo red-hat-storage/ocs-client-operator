@@ -9,7 +9,6 @@ ${OPM} render --output=yaml ${BUNDLE_IMG} > catalog/ocs-client-bundle.yaml
 ${OPM} render --output=yaml ${CSI_ADDONS_BUNDLE_IMG} > catalog/csi-adddons-bundle.yaml
 ${OPM} render --output=yaml ${CEPH_CSI_BUNDLE_IMG} > catalog/cephcsi-operator-bundle.yaml
 ${OPM} render --output=yaml ${RECIPE_BUNDLE_IMG} > catalog/recipe.yaml
-${OPM} render --output=yaml ${NOOBAA_BUNDLE_IMG} > catalog/noobaa-operator-bundle.yaml
 ${OPM} render --output=yaml ${SNAPSHOT_CONTROLLER_BUNDLE_IMG} > catalog/odf-external-snapshotter-operator-bundle.yaml
 
 cat << EOF >> catalog/index.yaml
@@ -33,16 +32,6 @@ package: csi-addons
 name: alpha
 entries:
   - name: $CSI_ADDONS_PACKAGE_NAME.v$CSI_ADDONS_PACKAGE_VERSION
----
-defaultChannel: alpha
-name: $NOOBAA_BUNDLE_NAME
-schema: olm.package
----
-schema: olm.channel
-package: noobaa-operator
-name: alpha
-entries:
-  - name: $NOOBAA_BUNDLE_NAME.$NOOBAA_BUNDLE_VERSION
 ---
 defaultChannel: alpha
 name: $CEPH_CSI_BUNDLE_NAME

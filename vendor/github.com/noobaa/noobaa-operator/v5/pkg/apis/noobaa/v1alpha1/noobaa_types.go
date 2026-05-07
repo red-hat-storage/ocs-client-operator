@@ -33,6 +33,8 @@ type AnnotationsSpec map[string]Annotations
 // +kubebuilder:resource:shortName=nb
 // +kubebuilder:printcolumn:name="S3-Endpoints",type="string",JSONPath=".status.services.serviceS3.nodePorts",description="S3 Endpoints"
 // +kubebuilder:printcolumn:name="Sts-Endpoints",type="string",JSONPath=".status.services.serviceSts.nodePorts",description="STS Endpoints"
+// +kubebuilder:printcolumn:name="Iam-Endpoints",type="string",JSONPath=".status.services.serviceIam.nodePorts",description="IAM Endpoints"
+// +kubebuilder:printcolumn:name="Syslog-Endpoints",type="string",JSONPath=".status.services.serviceSyslog.nodePorts",description="Syslog Endpoints"
 // +kubebuilder:printcolumn:name="Image",type="string",JSONPath=".status.actualImage",description="Actual Image"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="Phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
@@ -76,6 +78,10 @@ type NooBaaSpec struct {
 	// +optional
 	Image *string `json:"image,omitempty"`
 
+	// DBSpec (optional) DB spec for a managed postgres cluster
+	// +optional
+	DBSpec *NooBaaDBSpec `json:"dbSpec,omitempty"`
+
 	// DBImage (optional) overrides the default image for the db container
 	// +optional
 	DBImage *string `json:"dbImage,omitempty"`
@@ -84,14 +90,19 @@ type NooBaaSpec struct {
 	// +optional
 	DBConf *string `json:"dbConf,omitempty"`
 
-	// DBType (optional) overrides the default type image for the db container
+	// DBType (optional) overrides the default type image for the db container.
+	// The only possible value is postgres
 	// +optional
-	// +kubebuilder:validation:Enum=mongodb;postgres
+	// +kubebuilder:validation:Enum=postgres
 	DBType DBTypes `json:"dbType,omitempty"`
 
 	// CoreResources (optional) overrides the default resource requirements for the server container
 	// +optional
 	CoreResources *corev1.ResourceRequirements `json:"coreResources,omitempty"`
+
+	// LogResources (optional) overrides the default resource requirements for the noobaa-log-processor container
+	// +optional
+	LogResources *corev1.ResourceRequirements `json:"logResources,omitempty"`
 
 	// DBResources (optional) overrides the default resource requirements for the db container
 	// +optional
@@ -103,7 +114,7 @@ type NooBaaSpec struct {
 	// and only if the storage class specifies `allowVolumeExpansion: true`,
 	// +immutable
 	// +optional
-	DBVolumeResources *corev1.ResourceRequirements `json:"dbVolumeResources,omitempty"`
+	DBVolumeResources *corev1.VolumeResourceRequirements `json:"dbVolumeResources,omitempty"`
 
 	// DBStorageClass (optional) overrides the default cluster StorageClass for the database volume.
 	// For the time being this field is immutable and can only be set on system creation.
@@ -112,10 +123,6 @@ type NooBaaSpec struct {
 	// +immutable
 	// +optional
 	DBStorageClass *string `json:"dbStorageClass,omitempty"`
-
-	// MongoDbURL (optional) overrides the default mongo db remote url
-	// +optional
-	MongoDbURL string `json:"mongoDbURL,omitempty"`
 
 	// ExternalPgSecret (optional) holds an optional secret with a url to an extrenal Postgres DB to be used
 	// +optional
@@ -151,7 +158,7 @@ type NooBaaSpec struct {
 
 	// Affinity (optional) passed through to noobaa's pods
 	// +optional
-	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	Affinity *AffinitySpec `json:"affinity,omitempty"`
 
 	// ImagePullSecret (optional) sets a pull secret for the system image
 	// +optional
@@ -196,14 +203,19 @@ type NooBaaSpec struct {
 	// +optional
 	DisableLoadBalancerService bool `json:"disableLoadBalancerService,omitempty"`
 
+	// DisableRoutes (optional) disables the reconciliation of openshift route resources in the cluster
+	// +nullable
+	// +optional
+	DisableRoutes bool `json:"disableRoutes,omitempty"`
+
 	// Deprecated: DefaultBackingStoreSpec is not supported anymore, use ManualDefaultBackingStore instead.
 	// +optional
 	DefaultBackingStoreSpec *BackingStoreSpec `json:"defaultBackingStoreSpec,omitempty"`
 
-	// ManualDefaultBackingStore (optional - default value is false) if true the default backingstore will
-	// not be reconciled by the operator and it should be manually handled by the user. It will allow the
-	// user to  delete DefaultBackingStore, user needs to delete associated buckets and update the admin
-	// account with new BackingStore in order to delete the DefaultBackingStore
+	// ManualDefaultBackingStore (optional - default value is false) if true the default backingstore/namespacestore
+	// will not be reconciled by the operator and it should be manually handled by the user. It will allow the
+	// user to  delete DefaultBackingStore/DefaultNamespaceStore, user needs to delete associated buckets and
+	// update the admin account with new BackingStore/NamespaceStore in order to delete the DefaultBackingStore/DefaultNamespaceStore
 	// +nullable
 	// +optional
 	ManualDefaultBackingStore bool `json:"manualDefaultBackingStore,omitempty"`
@@ -217,6 +229,36 @@ type NooBaaSpec struct {
 	// Configuration related to autoscaling
 	// +optional
 	Autoscaler AutoscalerSpec `json:"autoscaler,omitempty"`
+
+	// DenyHTTP (optional) if given will deny access to the NooBaa S3 service using HTTP (only HTTPS)
+	// +optional
+	DenyHTTP bool `json:"denyHTTP,omitempty"`
+
+	// BucketLogging sets the configuration for bucket logging
+	// +optional
+	BucketLogging BucketLoggingSpec `json:"bucketLogging,omitempty"`
+
+	// BucketNotifications (optional) controls bucket notification options
+	// +optional
+	BucketNotifications BucketNotificationsSpec `json:"bucketNotifications,omitempty"`
+}
+
+// Affinity is a group of affinity scheduling rules.
+type AffinitySpec struct {
+	// Describes node affinity scheduling rules for the pod.
+	// +optional
+	NodeAffinity *corev1.NodeAffinity `json:"nodeAffinity,omitempty" protobuf:"bytes,1,opt,name=nodeAffinity"`
+	// Describes pod affinity scheduling rules (e.g. co-locate this pod in the same node, zone, etc. as some other pod(s)).
+	// +optional
+	PodAffinity *corev1.PodAffinity `json:"podAffinity,omitempty" protobuf:"bytes,2,opt,name=podAffinity"`
+	// Describes pod anti-affinity scheduling rules (e.g. avoid putting this pod in the same node, zone, etc. as some other pod(s)).
+	// +optional
+	PodAntiAffinity *corev1.PodAntiAffinity `json:"podAntiAffinity,omitempty" protobuf:"bytes,3,opt,name=podAntiAffinity"`
+
+	// TopologyKey (optional) the TopologyKey to pass as the domain for TopologySpreadConstraint and Affinity of noobaa components
+	// It is used by the endpoints and the DB pods to control pods distribution between topology domains (host/zone)
+	// +optional
+	TopologyKey string `json:"topologyKey,omitempty"`
 }
 
 // AutoscalerSpec defines different actoscaling spec such as autoscaler type and prometheus namespace
@@ -231,6 +273,39 @@ type AutoscalerSpec struct {
 	PrometheusNamespace string `json:"prometheusNamespace,omitempty"`
 }
 
+// BucketLoggingSpec defines the bucket logging configuration
+type BucketLoggingSpec struct {
+	// LoggingType specifies the type of logging for the bucket
+	// There are two types available: best-effort and guaranteed logging
+	// - best-effort(default) - less immune to failures but with better performance
+	// - guaranteed - much more reliable but need to provide a storage class that supports RWX PVs
+	// +optional
+	LoggingType BucketLoggingTypes `json:"loggingType,omitempty"`
+
+	// BucketLoggingPVC (optional) specifies the name of the Persistent Volume Claim (PVC) to be used
+	// for guaranteed logging when the logging type is set to 'guaranteed'. The PVC must support
+	// ReadWriteMany (RWX) access mode to ensure reliable logging.
+	// For ODF: If not provided, the default CephFS storage class will be used to create the PVC.
+	// +optional
+	BucketLoggingPVC *string `json:"bucketLoggingPVC,omitempty"`
+}
+
+// BucketNotificationsSpec controls bucket notification configuration
+type BucketNotificationsSpec struct {
+	// Enabled - whether bucket notifications is enabled
+	Enabled bool `json:"enabled"`
+
+	//PVC (optional) specifies the name of the Persistent Volume Claim (PVC) to be used
+	//for holding pending notifications files.
+	//For ODF - If not provided, the default CepthFS storage class will be used to create the PVC.
+	// +optional
+	PVC *string `json:"pvc,omitempty"`
+
+	//Connections - A list of secrets' names that are used by the notifications configrations
+	//(in the TopicArn field).
+	Connections []corev1.SecretReference `json:"connections,omitempty"`
+}
+
 // LoadBalancerSourceSubnetSpec defines the subnets that will be allowed to access the NooBaa services
 type LoadBalancerSourceSubnetSpec struct {
 	// S3 is a list of subnets that will be allowed to access the Noobaa S3 service
@@ -240,6 +315,10 @@ type LoadBalancerSourceSubnetSpec struct {
 	// STS is a list of subnets that will be allowed to access the Noobaa STS service
 	// +optional
 	STS []string `json:"sts,omitempty"`
+
+	// IAM is a list of subnets that will be allowed to access the Noobaa IAM service
+	// +optional
+	IAM []string `json:"iam,omitempty"`
 }
 
 // SecuritySpec is security spec to include various security items such as kms
@@ -255,6 +334,82 @@ type KeyManagementServiceSpec struct {
 	Schedule          string            `json:"schedule,omitempty"`
 	ConnectionDetails map[string]string `json:"connectionDetails,omitempty"`
 	TokenSecretName   string            `json:"tokenSecretName,omitempty"`
+}
+
+// NooBaaDBSpec defines the desired state of a managed postgres cluster
+// +k8s:openapi-gen=true
+type NooBaaDBSpec struct {
+	// DBImage (optional) overrides the default image for the db instances
+	// +optional
+	DBImage *string `json:"image,omitempty"`
+
+	// PostgresMajorVersion (optional) overrides the default postgres major version
+	// It is the user's responsibility to ensure that the postgres image matches the major version.
+	PostgresMajorVersion *int `json:"postgresMajorVersion,omitempty"`
+
+	// Instances (optional) overrides the default number of db instances
+	// +optional
+	Instances *int `json:"instances,omitempty"`
+
+	// DBResources (optional) overrides the default resource requirements for the db container
+	// +optional
+	DBResources *corev1.ResourceRequirements `json:"dbResources,omitempty"`
+
+	// DBMinVolumeSize (optional) The initial size of the database volume.The actual size might be larger.
+	// Increasing the size of the volume is supported if the underlying storage class supports volume expansion.
+	// The new size should be larger than actualVolumeSize in dbStatus for the volume to be resized.
+	// +optional
+	DBMinVolumeSize string `json:"dbMinVolumeSize,omitempty"`
+
+	// DBStorageClass (optional) overrides the default cluster StorageClass for the database volume.
+	// +optional
+	DBStorageClass *string `json:"dbStorageClass,omitempty"`
+
+	// DBConf (optional) overrides the default postgresql db config
+	// +optional
+	DBConf map[string]string `json:"dbConf,omitempty"`
+
+	// DBBackup (optional) configure automatic scheduled backups of the database volume.
+	// Currently, only volume snapshots are supported.
+	// +optional
+	DBBackup *DBBackupSpec `json:"dbBackup,omitempty"`
+
+	// DBRecovery (optional) configure database recovery from snapshot
+	// +optional
+	DBRecovery *DBRecoverySpec `json:"dbRecovery,omitempty"`
+}
+
+// DBBackupSpec defines the desired parameters for the database automatic backup
+type DBBackupSpec struct {
+	// Schedule the schedule for the database backup in cron format.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^((((\d+,)+\d+|(\d+(\/|-|#)\d+)|\d+L?|\*(\/\d+)?|L(-\d+)?|\?|[A-Z]{3}(-[A-Z]{3})?) ?){5,7})|(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every (\d+(ns|us|µs|ms|s|m|h))+)$`
+	Schedule string `json:"schedule"`
+
+	// VolumeSnapshot the volume snapshot backup configuration.
+	// Currently this is the only supported backup method and hence it is required.
+	// +kubebuilder:validation:Required
+	VolumeSnapshot *VolumeSnapshotBackupSpec `json:"volumeSnapshot,omitempty"`
+}
+
+type VolumeSnapshotBackupSpec struct {
+	// VolumeSnapshotClass the volume snapshot class for the database volume.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	VolumeSnapshotClass string `json:"volumeSnapshotClass"`
+
+	// MaxSnapshots the maximum number of snapshots to keep.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	MaxSnapshots int `json:"maxSnapshots"`
+}
+
+// DBRecoverySpec defines the desired parameters for database recovery from snapshot
+type DBRecoverySpec struct {
+	// VolumeSnapshotName specifies the name of the volume snapshot to recover from
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	VolumeSnapshotName string `json:"volumeSnapshotName"`
 }
 
 // EndpointsSpec defines the desired state of noobaa endpoint deployment
@@ -338,6 +493,10 @@ type NooBaaStatus struct {
 	// BeforeUpgradeDbImage is the db image used before last db upgrade
 	// +optional
 	BeforeUpgradeDbImage *string `json:"beforeUpgradeDbImage,omitempty"`
+
+	// DBStatus is the status of the postgres cluster
+	// +optional
+	DBStatus *NooBaaDBStatus `json:"dbStatus,omitempty"`
 }
 
 // SystemPhase is a string enum type for system phases
@@ -365,6 +524,100 @@ const (
 
 	// SystemPhaseReady means the noobaa system has been created and ready to serve.
 	SystemPhaseReady SystemPhase = "Ready"
+)
+
+type NooBaaDBStatus struct {
+	// DBClusterStatus is the status of the postgres cluster
+	DBClusterStatus DBClusterStatus `json:"dbClusterStatus,omitempty"`
+
+	// DBCurrentImage is the image of the postgres cluster
+	DBCurrentImage string `json:"dbCurrentImage,omitempty"`
+
+	// CurrentPgMajorVersion is the major version of the postgres cluster
+	CurrentPgMajorVersion int `json:"currentPgMajorVersion,omitempty"`
+
+	// ActualVolumeSize is the actual size of the postgres cluster volume. This can be different than the requested size
+	ActualVolumeSize string `json:"actualVolumeSize,omitempty"`
+
+	// BackupStatus reports the status of database backups
+	// +optional
+	BackupStatus *DBBackupStatus `json:"backupStatus,omitempty"`
+
+	// RecoveryStatus reports the status of database recovery
+	// +optional
+	RecoveryStatus *DBRecoveryStatus `json:"recoveryStatus,omitempty"`
+}
+
+type DBClusterStatus string
+
+const (
+	// DBClusterStatusNone means there is no DB cluster configured
+	DBClusterStatusNone DBClusterStatus = "None"
+
+	// DBClusterStatusCreating means a new DB cluster is being created
+	DBClusterStatusCreating DBClusterStatus = "Creating"
+
+	// DBClusterStatusUpdating means the DB cluster is being updated
+	DBClusterStatusUpdating DBClusterStatus = "Updating"
+
+	// DBClusterStatusImporting means a new DB cluster is being created and data is being imported from the previous DB
+	DBClusterStatusImporting DBClusterStatus = "Importing"
+
+	// DBClusterStatusRecovering means a new DB cluster is being created and data is being recovered from a volume snapshot
+	DBClusterStatusRecovering DBClusterStatus = "Recovering"
+
+	// DBClusterStatusReady means the DB cluster is ready
+	DBClusterStatusReady DBClusterStatus = "Ready"
+
+	// DBClusterStatusFailed means the DB cluster reconciliation encountered an error
+	DBClusterStatusFailed DBClusterStatus = "Failed"
+)
+
+// DBBackupStatus reports the status of database backups
+type DBBackupStatus struct {
+	// LastBackupTime timestamp of the last successful backup
+	LastBackupTime *metav1.Time `json:"lastBackupTime,omitempty"`
+
+	// NextBackupTime timestamp of the next scheduled backup
+	NextBackupTime *metav1.Time `json:"nextBackupTime,omitempty"`
+
+	// TotalSnapshots current number of snapshots
+	TotalSnapshots int `json:"totalSnapshots,omitempty"`
+
+	// AvailableSnapshots list of available snapshot names
+	AvailableSnapshots []string `json:"availableSnapshots,omitempty"`
+}
+
+// DBRecoveryStatus reports the status of database recovery
+type DBRecoveryStatus struct {
+	// Status current recovery status
+	Status DBRecoveryStatusType `json:"status,omitempty"`
+
+	// SnapshotName name of the snapshot being recovered from
+	SnapshotName string `json:"snapshotName,omitempty"`
+
+	// RecoveryTime timestamp when recovery was initiated
+	RecoveryTime *metav1.Time `json:"recoveryTime,omitempty"`
+}
+
+// DBRecoveryStatusType represents the status of database recovery
+type DBRecoveryStatusType string
+
+const (
+	// DBRecoveryStatusNone means no recovery is configured or in progress
+	DBRecoveryStatusNone DBRecoveryStatusType = "None"
+
+	// DBRecoveryStatusPending means recovery is pending cluster deletion
+	DBRecoveryStatusPending DBRecoveryStatusType = "Pending"
+
+	// DBRecoveryStatusRunning means recovery is currently in progress
+	DBRecoveryStatusRunning DBRecoveryStatusType = "Running"
+
+	// DBRecoveryStatusCompleted means recovery has completed successfully
+	DBRecoveryStatusCompleted DBRecoveryStatusType = "Completed"
+
+	// DBRecoveryStatusFailed means recovery has failed
+	DBRecoveryStatusFailed DBRecoveryStatusType = "Failed"
 )
 
 // These are the valid conditions types and statuses:
@@ -410,7 +663,9 @@ type ServicesStatus struct {
 	ServiceMgmt ServiceStatus `json:"serviceMgmt"`
 	ServiceS3   ServiceStatus `json:"serviceS3"`
 	// +optional
-	ServiceSts ServiceStatus `json:"serviceSts,omitempty"`
+	ServiceSts    ServiceStatus `json:"serviceSts,omitempty"`
+	ServiceIam    ServiceStatus `json:"serviceIam,omitempty"`
+	ServiceSyslog ServiceStatus `json:"serviceSyslog,omitempty"`
 }
 
 // UserStatus is the status info of a user secret
@@ -509,8 +764,11 @@ const (
 	// DeleteOBCConfirmation represents the validation to destry obc
 	DeleteOBCConfirmation CleanupConfirmationProperty = "yes-really-destroy-obc"
 
-	// SkipTopologyConstraints is Annotation name for disabling default topology Constraints
+	// SkipTopologyConstraints is Annotation name for skipping the reconciliation of the default topology Constraints
 	SkipTopologyConstraints = "noobaa.io/skip_topology_spread_constraints"
+
+	// DisableDBDefaultMonitoring is Annotation name for disabling default db monitoring
+	DisableDBDefaultMonitoring = "noobaa.io/disable_db_default_monitoring"
 )
 
 // DBTypes is a string enum type for specify the types of DB that are supported.
@@ -518,8 +776,6 @@ type DBTypes string
 
 // These are the valid DB types:
 const (
-	// DBTypeMongo is mongodb
-	DBTypeMongo DBTypes = "mongodb"
 	// DBTypePostgres is postgres
 	DBTypePostgres DBTypes = "postgres"
 )
@@ -533,4 +789,16 @@ const (
 	AutoscalerTypeKeda AutoscalerTypes = "keda"
 	// AutoscalerTypeHPAV2 is hpav2
 	AutoscalerTypeHPAV2 AutoscalerTypes = "hpav2"
+)
+
+// BucketLoggingTypes is a string enum type for specifying the types of bucketlogging supported.
+type BucketLoggingTypes string
+
+// These are the valid BucketLoggingTypes types:
+const (
+	// BucketLoggingTypeBestEffort is best-effort
+	BucketLoggingTypeBestEffort BucketLoggingTypes = "best-effort"
+
+	// BucketLoggingTypeGuaranteed is guaranteed
+	BucketLoggingTypeGuaranteed BucketLoggingTypes = "guaranteed"
 )
