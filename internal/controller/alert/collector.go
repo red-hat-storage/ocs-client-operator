@@ -61,12 +61,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 				labelNames, nil,
 			)
 
-			value := alert.Value
-			if value == 0 {
-				value = 1
-			}
-
-			m, err := prometheus.NewConstMetric(desc, prometheus.GaugeValue, value, labelValues...)
+			m, err := prometheus.NewConstMetric(desc, prometheus.GaugeValue, alert.Value, labelValues...)
 			if err != nil {
 				continue
 			}
