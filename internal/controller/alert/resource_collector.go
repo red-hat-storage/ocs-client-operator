@@ -25,16 +25,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-// These must match the index names registered in
-// internal/controller/storageclient_controller.go SetupWithManager.
-const (
-	ownerUIDIndexName     = "index:ownerUID"
-	pvClusterIDIndexName  = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
 )
 
 var _ prometheus.Collector = &ResourceCollector{}
@@ -71,7 +64,7 @@ func (c *ResourceCollector) Collect(ch chan<- prometheus.Metric) {
 
 func (c *ResourceCollector) clientProfileName(ctx context.Context, sc *v1alpha1.StorageClient) (string, error) {
 	profileList := &csiopv1.ClientProfileList{}
-	if err := c.client.List(ctx, profileList, client.MatchingFields{ownerUIDIndexName: string(sc.UID)}); err != nil {
+	if err := c.client.List(ctx, profileList, client.MatchingFields{utils.OwnerUIDIndexName: string(sc.UID)}); err != nil {
 		return "", err
 	}
 	if len(profileList.Items) == 0 {
@@ -99,7 +92,7 @@ func (c *ResourceCollector) collectPVCount(ctx context.Context, ch chan<- promet
 		}
 
 		pvList := &corev1.PersistentVolumeList{}
-		if err := c.client.List(ctx, pvList, client.MatchingFields{pvClusterIDIndexName: profileName}); err != nil {
+		if err := c.client.List(ctx, pvList, client.MatchingFields{utils.PVClusterIDIndexName: profileName}); err != nil {
 			continue
 		}
 
@@ -133,7 +126,7 @@ func (c *ResourceCollector) collectVSCCount(ctx context.Context, ch chan<- prome
 		}
 
 		vscList := &snapapi.VolumeSnapshotContentList{}
-		if err := c.client.List(ctx, vscList, client.MatchingFields{vscClusterIDIndexName: profileName}); err != nil {
+		if err := c.client.List(ctx, vscList, client.MatchingFields{utils.VSCClusterIDIndexName: profileName}); err != nil {
 			continue
 		}
 

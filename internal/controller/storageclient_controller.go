@@ -83,10 +83,6 @@ const (
 	storageClientNameLabel = "ocs.openshift.io/storageclient.name"
 	storageClientFinalizer = "storageclient.ocs.openshift.io"
 
-	// indexes for caching
-	ownerUIDIndexName         = "index:ownerUID"
-	pvClusterIDIndexName      = "index:persistentVolumeClusterID"
-	vscClusterIDIndexName     = "index:volumeSnapshotContentCSIDriver"
 	vgscClusterIDIndexName    = "index:volumeGroupSnapshotContentCSIDriver"
 	odfvgscClusterIDIndexName = "index:odfVolumeGroupSnapshotContentCSIDriver"
 
@@ -159,7 +155,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := addSubscriptionPackageIndexer(ctx, mgr); err != nil {
 		return err
 	}
-	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, pvClusterIDIndexName, func(o client.Object) []string {
+	if err := mgr.GetCache().IndexField(ctx, &corev1.PersistentVolume{}, utils.PVClusterIDIndexName, func(o client.Object) []string {
 		pv := o.(*corev1.PersistentVolume)
 		if pv != nil &&
 			pv.Spec.CSI != nil &&
@@ -171,7 +167,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for PV cluster id: %v", err)
 	}
-	if err := mgr.GetCache().IndexField(ctx, &snapapi.VolumeSnapshotContent{}, vscClusterIDIndexName, func(o client.Object) []string {
+	if err := mgr.GetCache().IndexField(ctx, &snapapi.VolumeSnapshotContent{}, utils.VSCClusterIDIndexName, func(o client.Object) []string {
 		vsc := o.(*snapapi.VolumeSnapshotContent)
 		if vsc != nil &&
 			slices.Contains(csiDrivers, vsc.Spec.Driver) &&
@@ -188,7 +184,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return fmt.Errorf("unable to set up FieldIndexer for VSC csi driver name: %v", err)
 	}
-	if err := mgr.GetCache().IndexField(ctx, &csiopv1.ClientProfile{}, ownerUIDIndexName, func(obj client.Object) []string {
+	if err := mgr.GetCache().IndexField(ctx, &csiopv1.ClientProfile{}, utils.OwnerUIDIndexName, func(obj client.Object) []string {
 		refs := obj.GetOwnerReferences()
 		owners := []string{}
 		for i := range refs {
@@ -871,7 +867,7 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 func (r *storageClientReconcile) hasPersistentVolumes(clientProfileNames []string) (bool, error) {
 	for _, name := range clientProfileNames {
 		pvList := &corev1.PersistentVolumeList{}
-		if err := r.list(pvList, client.MatchingFields{pvClusterIDIndexName: name}, client.Limit(1)); err != nil {
+		if err := r.list(pvList, client.MatchingFields{utils.PVClusterIDIndexName: name}, client.Limit(1)); err != nil {
 			return false, fmt.Errorf("failed to list persistent volumes: %v", err)
 		}
 		if len(pvList.Items) != 0 {
@@ -885,7 +881,7 @@ func (r *storageClientReconcile) hasPersistentVolumes(clientProfileNames []strin
 func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []string) (bool, error) {
 	for _, name := range clientProfileNames {
 		vscList := &snapapi.VolumeSnapshotContentList{}
-		if err := r.list(vscList, client.MatchingFields{vscClusterIDIndexName: name}, client.Limit(1)); err != nil {
+		if err := r.list(vscList, client.MatchingFields{utils.VSCClusterIDIndexName: name}, client.Limit(1)); err != nil {
 			return false, fmt.Errorf("failed to list volume snapshot content resources: %v", err)
 		}
 		if len(vscList.Items) != 0 {
@@ -947,7 +943,7 @@ func (r *storageClientReconcile) hasObjectbucketClaims() (bool, error) {
 
 func (r *storageClientReconcile) getClientProfileNames() ([]string, error) {
 	clientProfileList := &csiopv1.ClientProfileList{}
-	if err := r.list(clientProfileList, client.MatchingFields{ownerUIDIndexName: string(r.storageClient.UID)}); err != nil {
+	if err := r.list(clientProfileList, client.MatchingFields{utils.OwnerUIDIndexName: string(r.storageClient.UID)}); err != nil {
 		return nil, fmt.Errorf("failed to list clientprofiles owned by storageclient %s: %v", r.storageClient.Name, err)
 	}
 	clientProfileNames := make([]string, 0, len(clientProfileList.Items))
