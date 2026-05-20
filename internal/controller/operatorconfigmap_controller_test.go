@@ -297,12 +297,12 @@ func TestParseEndpointConfigs(t *testing.T) {
 
 func TestBuildS3EndpointProxyConfigForClient(t *testing.T) {
 	tests := []struct {
-		name                  string
-		secretData            map[string][]byte
-		endpoints             map[string]s3EndpointConfig
-		expectedIncludes      []string
-		expectedExcludes      []string
-		expectErr             bool
+		name             string
+		secretData       map[string][]byte
+		endpoints        map[string]s3EndpointConfig
+		expectedIncludes []string
+		expectedExcludes []string
+		expectErr        bool
 	}{
 		{
 			name: "builds config for valid https endpoints only",
