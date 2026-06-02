@@ -214,14 +214,6 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
-	servicePredicate := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(obj client.Object) bool {
-				return obj.GetNamespace() == c.OperatorNamespace && obj.GetName() == templates.WebhookServiceName
-			},
-		),
-	)
-
 	s3EndpointCASecretPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(obj client.Object) bool {
@@ -256,11 +248,6 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.ConfigMap{},
 			enqueueConfigMapRequest,
 			configMapPredicates,
-		).
-		Watches(
-			&corev1.Service{},
-			enqueueOwnerConfigMapRequest,
-			servicePredicate,
 		).
 		Watches(
 			&csiopv1.OperatorConfig{},
@@ -392,11 +379,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				}
 			}
 		} else {
-			if err := c.reconcileWebhookService(); err != nil {
-				c.log.Error(err, "unable to reconcile webhook service")
-				return ctrl.Result{}, err
-			}
-
 			if err := c.reconcileSubscriptionValidatingWebhook(); err != nil {
 				c.log.Error(err, "unable to register subscription validating webhook")
 				return ctrl.Result{}, err
@@ -1176,25 +1158,6 @@ func (c *OperatorConfigMapReconciler) reconcileODFSnapshotterSubscription() erro
 			return fmt.Errorf("failed to update subscription channel of 'odf-external-snapshotter-operator' to %v: %v", c.subscriptionChannel, err)
 		}
 	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileWebhookService() error {
-	svc := &corev1.Service{}
-	svc.Name = templates.WebhookServiceName
-	svc.Namespace = c.OperatorNamespace
-	err := c.createOrUpdate(svc, func() error {
-		if err := c.own(svc); err != nil {
-			return err
-		}
-		utils.AddAnnotation(svc, "service.beta.openshift.io/serving-cert-secret-name", "webhook-cert-secret")
-		templates.WebhookService.Spec.DeepCopyInto(&svc.Spec)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	c.log.Info("successfully reconcile webhook service")
 	return nil
 }
 
