@@ -385,38 +385,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-		if err := c.reconcileClientOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile client operator subscription")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile CSI Addons subscription")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.reconcileCephCSIOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile Ceph CSI Operator subscription")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.reconcileRecipeOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile Recipe Operator subscription")
-			return ctrl.Result{}, err
-		}
-
-		if err := c.reconcileODFSnapshotterSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile ODF External Snapshotter Operator subscription")
-			return ctrl.Result{}, err
-		}
-
-		if c.shouldAutoApproveInstallPlans() {
-			if err := c.reconcileInstallPlans(); err != nil {
-				c.log.Error(err, "unable to reconcile InstallPlans")
-				return ctrl.Result{}, err
-			}
-		}
-
 		if err := c.ensureConsolePlugin(); err != nil {
 			c.log.Error(err, "unable to deploy client console")
 			return ctrl.Result{}, err
@@ -479,40 +447,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 	return ctrl.Result{}, nil
-}
-
-func (c *OperatorConfigMapReconciler) shouldAutoApproveInstallPlans() bool {
-	valueAsString, exist := c.operatorConfigMap.Data[disableInstallPlanAutoApprovalKey]
-	if !exist {
-		return true
-	}
-
-	disableInstallPlanAutoApproval, err := strconv.ParseBool(valueAsString)
-	if err != nil {
-		c.log.Error(err, "failed to parse configmap key data", "key", disableInstallPlanAutoApprovalKey)
-		return true
-	}
-
-	return !disableInstallPlanAutoApproval
-}
-
-func (c *OperatorConfigMapReconciler) reconcileInstallPlans() error {
-	approvePatch := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"approved":true}}`))
-	installPlans := &opv1a1.InstallPlanList{}
-	if err := c.list(installPlans, client.InNamespace(c.OperatorNamespace)); err != nil {
-		return err
-	}
-	for idx := range installPlans.Items {
-		installPlan := &installPlans.Items[idx]
-		if installPlan.Spec.Approval == opv1a1.ApprovalManual && !installPlan.Spec.Approved {
-			if installPlan.Status.Phase != opv1a1.InstallPlanPhaseRequiresApproval {
-				return fmt.Errorf("installplan %s is not ready to be approved", installPlan.Name)
-			} else if err := c.Patch(c.ctx, installPlan, approvePatch); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func (c *OperatorConfigMapReconciler) shouldEnableDriver(driverKey string) bool {
@@ -1075,98 +1009,8 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() error {
-
-	clientSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ocs-client-operator")
-	if err != nil {
-		return err
-	}
-
-	updateRequired := utils.AddLabel(clientSubscription, subscriptionLabelKey, subscriptionLabelValue)
-	if c.subscriptionChannel != "" && c.subscriptionChannel != clientSubscription.Spec.Channel {
-		clientSubscription.Spec.Channel = c.subscriptionChannel
-		// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
-		// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
-		// without any side effects for already running workloads. However, this will be a silent failure and need to be fixed via above TODO issue.
-		updateRequired = true
-	}
-
-	if updateRequired {
-		if err := c.update(clientSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() error {
-	addonsSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "odf-csi-addons-operator")
-	if kerrors.IsNotFound(err) {
-		addonsSubscription, err = getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "csi-addons")
-	}
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != addonsSubscription.Spec.Channel {
-		addonsSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(addonsSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'odf-csi-addons-operator' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileCephCSIOperatorSubscription() error {
-	cephCsiOperatorSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "cephcsi-operator")
-	if kerrors.IsNotFound(err) {
-		cephCsiOperatorSubscription, err = getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ceph-csi-operator")
-	}
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != cephCsiOperatorSubscription.Spec.Channel {
-		cephCsiOperatorSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(cephCsiOperatorSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'cephcsi-operator' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileRecipeOperatorSubscription() error {
-	recipeOperatorSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "recipe")
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != recipeOperatorSubscription.Spec.Channel {
-		recipeOperatorSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(recipeOperatorSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'recipe' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
-func (c *OperatorConfigMapReconciler) reconcileODFSnapshotterSubscription() error {
-	odfSnapshotterSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "odf-external-snapshotter-operator")
-	if err != nil {
-		return err
-	}
-	if c.subscriptionChannel != "" && c.subscriptionChannel != odfSnapshotterSubscription.Spec.Channel {
-		odfSnapshotterSubscription.Spec.Channel = c.subscriptionChannel
-		if err := c.update(odfSnapshotterSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel of 'odf-external-snapshotter-operator' to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
 func (c *OperatorConfigMapReconciler) list(obj client.ObjectList, opts ...client.ListOption) error {
 	return c.List(c.ctx, obj, opts...)
-}
-
-func (c *OperatorConfigMapReconciler) update(obj client.Object, opts ...client.UpdateOption) error {
-	return c.Update(c.ctx, obj, opts...)
 }
 
 func (c *OperatorConfigMapReconciler) delete(obj client.Object, opts ...client.DeleteOption) error {
