@@ -393,6 +393,8 @@ github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.2025061108501
 github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745/go.mod h1:5cstVYzNXZ6Fo8TKv7XpnlxXfTre5PQhK6EkP5lr3tE=
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260429150604-e17cd01ca408 h1:VXDyveZEv1YgfL0dO8HDgKx16x1z7O1VySrF32mKz6Y=
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260429150604-e17cd01ca408/go.mod h1:TlUSTp9c3kj98LkoaE3j5BX/mGYAxF72luzRaus2Q9s=
+github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260427105901-0c5f6d8fcd65 h1:Ie0cAiC3lrzy6S5vZ7tKCs3SjAAIs3wFbNJkGrx6tXg=
+github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260427105901-0c5f6d8fcd65/go.mod h1:jBStZ67yVkhiTlaIB/cqm7DI0BvVp6ynTFUs7BzlAVc=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
