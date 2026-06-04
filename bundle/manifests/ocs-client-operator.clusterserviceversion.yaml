@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2026-06-03T07:58:08Z"
+    createdAt: "2026-06-08T05:02:08Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -430,11 +430,7 @@ spec:
                 control-plane: controller-manager
             spec:
               containers:
-              - args:
-                - --metrics-bind-address=:8080
-                - --metrics-secure=false
-                - --console-port=9001
-                command:
+              - command:
                 - /ocs-client-operator
                 env:
                 - name: OPERATOR_NAMESPACE
@@ -471,8 +467,10 @@ spec:
                 securityContext:
                   allowPrivilegeEscalation: false
                 volumeMounts:
-                - mountPath: /etc/tls/private
+                - mountPath: /tmp/webhook/tls/private
                   name: webhook-cert-secret
+                - mountPath: /tmp/metrics/tls/private
+                  name: metrics-cert-secret
               priorityClassName: openshift-user-critical
               securityContext:
                 runAsNonRoot: true
@@ -486,7 +484,10 @@ spec:
               volumes:
               - name: webhook-cert-secret
                 secret:
-                  secretName: webhook-cert-secret
+                  secretName: ocs-client-webhook-cert-secret
+              - name: metrics-cert-secret
+                secret:
+                  secretName: ocs-client-metrics-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
         name: ocs-client-operator-console
@@ -632,20 +633,12 @@ spec:
         serviceAccountName: ocs-client-operator-controller-manager
       - rules:
         - apiGroups:
-          - operators.coreos.com
+          - ""
           resources:
-          - clusterserviceversions
+          - configmaps
           verbs:
           - get
           - list
-          - watch
-        - apiGroups:
-          - csi.ceph.io
-          resources:
-          - cephconnections
-          verbs:
-          - get
-          - patch
         serviceAccountName: ocs-client-operator-status-reporter
     strategy: deployment
   installModes:

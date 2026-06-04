@@ -6,7 +6,13 @@ metadata:
 spec:
   endpoints:
   - path: /metrics
-    port: metrics
+    port: https
+    tlsConfig:
+      # the alternate is to supply configmap but also the serverName
+      # since the serverName contains namespace it can't be deployed via bundle
+      # this'll eventually moved into code
+      insecureSkipVerify: true
   selector:
     matchLabels:
       app: ocs-client-operator
+      server: metrics

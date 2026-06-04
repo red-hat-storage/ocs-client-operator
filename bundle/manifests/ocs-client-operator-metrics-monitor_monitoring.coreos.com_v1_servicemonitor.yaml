@@ -5,7 +5,10 @@ metadata:
 spec:
   endpoints:
   - path: /metrics
-    port: metrics
+    port: https
+    tlsConfig:
+      insecureSkipVerify: true
   selector:
     matchLabels:
       app: ocs-client-operator
+      server: metrics

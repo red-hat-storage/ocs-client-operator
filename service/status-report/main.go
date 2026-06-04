@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"math"
@@ -36,6 +38,7 @@ import (
 	"github.com/prometheus/common/model"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
 	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
@@ -76,29 +79,29 @@ func main() {
 
 	ctx := context.Background()
 
-	storageClientName, isSet := os.LookupEnv(utils.StorageClientNameEnvVar)
-	if !isSet {
-		klog.Exitf("%s env var not set", utils.StorageClientNameEnvVar)
+	storageClientName := os.Getenv(utils.StorageClientNameEnvVar)
+	if storageClientName == "" {
+		klog.Exitf("%s env var is empty", utils.StorageClientNameEnvVar)
 	}
 
-	operatorNamespace, isSet := os.LookupEnv(utils.OperatorNamespaceEnvVar)
-	if !isSet {
-		klog.Exitf("%s env var not set", utils.OperatorNamespaceEnvVar)
+	operatorNamespace := os.Getenv(utils.OperatorNamespaceEnvVar)
+	if operatorNamespace == "" {
+		klog.Exitf("%s env var is empty", utils.OperatorNamespaceEnvVar)
 	}
 
-	operatorVersion, isSet := os.LookupEnv(utils.OperatorVersionEnvVar)
-	if !isSet {
-		klog.Exitf("%s env var not set", utils.OperatorVersionEnvVar)
+	operatorVersion := os.Getenv(utils.OperatorVersionEnvVar)
+	if operatorVersion == "" {
+		klog.Exitf("%s env var is empty", utils.OperatorVersionEnvVar)
 	}
 
-	metricsServiceName, isSet := os.LookupEnv(utils.MetricsServiceNameEnvVar)
-	if !isSet {
-		klog.Exitf("%s env var not set", utils.MetricsServiceNameEnvVar)
+	metricsServiceName := os.Getenv(utils.MetricsServiceNameEnvVar)
+	if metricsServiceName == "" {
+		klog.Exitf("%s env var is empty", utils.MetricsServiceNameEnvVar)
 	}
 
-	metricsPortStr, isSet := os.LookupEnv(utils.MetricsPortEnvVar)
-	if !isSet || metricsPortStr == "" {
-		klog.Exitf("%s env var not set", utils.MetricsPortEnvVar)
+	metricsPortStr := os.Getenv(utils.MetricsPortEnvVar)
+	if metricsPortStr == "" {
+		klog.Exitf("%s env var is empty", utils.MetricsPortEnvVar)
 	}
 	metricsPort, err := strconv.Atoi(metricsPortStr)
 	if err != nil {
@@ -133,8 +136,8 @@ func main() {
 	status.SetClientName(storageClientName)
 	status.SetClientID(string(storageClient.UID))
 	setStorageQuotaUtilizationRatio(ctx, cl, status)
-	metricsEndpoint := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/metrics", metricsServiceName, operatorNamespace, metricsPort)
-	setCephFsMetrics(status, metricsEndpoint, storageClientName)
+	metricsEndpoint := fmt.Sprintf("https://%s.%s.svc.cluster.local:%d/metrics", metricsServiceName, operatorNamespace, metricsPort)
+	setCephFsMetrics(ctx, cl, status, metricsEndpoint, storageClientName, operatorNamespace)
 
 	if err := utils.SetClusterInformation(ctx, cl, status); err != nil {
 		klog.Warningf("Failed to set cluster information: %v", err)
@@ -172,12 +175,35 @@ func setStorageQuotaUtilizationRatio(ctx context.Context, cl client.Client, stat
 }
 
 const (
-	cephFsPVCountMetric   = "ocs_client_operator_cephfs_pv_count"
+	cephFsPVCountMetric  = "ocs_client_operator_cephfs_pv_count"
 	cephFsVSCCountMetric = "ocs_client_operator_cephfs_volume_snapshot_content_count"
 )
 
-func setCephFsMetrics(status interfaces.StorageClientStatus, metricsEndpoint, storageClientName string) {
-	metricFamilies, err := fetchMetrics(metricsEndpoint)
+func getCABundle(ctx context.Context, cl client.Client, namespace string) ([]byte, error) {
+	configMap := &corev1.ConfigMap{}
+	configMap.Name = "openshift-service-ca.crt"
+	configMap.Namespace = namespace
+
+	if err := cl.Get(ctx, client.ObjectKeyFromObject(configMap), configMap); err != nil {
+		return nil, fmt.Errorf("failed to get CA bundle ConfigMap: %v", err)
+	}
+
+	caBundle, ok := configMap.Data["service-ca.crt"]
+	if !ok {
+		return nil, fmt.Errorf("service-ca.crt key not found in ConfigMap")
+	}
+
+	return []byte(caBundle), nil
+}
+
+func setCephFsMetrics(ctx context.Context, cl client.Client, status interfaces.StorageClientStatus, metricsEndpoint, storageClientName, operatorNamespace string) {
+	caBundle, err := getCABundle(ctx, cl, operatorNamespace)
+	if err != nil {
+		klog.Warningf("Failed to get CA bundle: %v", err)
+		return
+	}
+
+	metricFamilies, err := fetchMetrics(metricsEndpoint, caBundle)
 	if err != nil {
 		klog.Warningf("Failed to fetch metrics: %v", err)
 		return
@@ -196,8 +222,21 @@ func setCephFsMetrics(status interfaces.StorageClientStatus, metricsEndpoint, st
 	}
 }
 
-func fetchMetrics(endpoint string) (map[string]*dto.MetricFamily, error) {
-	resp, err := http.Get(endpoint)
+func fetchMetrics(endpoint string, caBundle []byte) (map[string]*dto.MetricFamily, error) {
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caBundle) {
+		return nil, fmt.Errorf("failed to append CA certificate to pool")
+	}
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caCertPool,
+			},
+		},
+	}
+
+	resp, err := httpClient.Get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metrics from %s: %v", endpoint, err)
 	}
