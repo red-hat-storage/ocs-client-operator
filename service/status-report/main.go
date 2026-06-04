@@ -46,6 +46,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
+const serviceAccountTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
 func main() {
 	scheme := runtime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
@@ -203,7 +205,13 @@ func setCephFsMetrics(ctx context.Context, cl client.Client, status interfaces.S
 		return
 	}
 
-	metricFamilies, err := fetchMetrics(metricsEndpoint, caBundle)
+	tokenBytes, err := os.ReadFile(serviceAccountTokenFile)
+	if err != nil {
+		klog.Warningf("Failed to read service account token: %v", err)
+		return
+	}
+
+	metricFamilies, err := fetchMetrics(metricsEndpoint, caBundle, string(tokenBytes))
 	if err != nil {
 		klog.Warningf("Failed to fetch metrics: %v", err)
 		return
@@ -222,7 +230,7 @@ func setCephFsMetrics(ctx context.Context, cl client.Client, status interfaces.S
 	}
 }
 
-func fetchMetrics(endpoint string, caBundle []byte) (map[string]*dto.MetricFamily, error) {
+func fetchMetrics(endpoint string, caBundle []byte, bearerToken string) (map[string]*dto.MetricFamily, error) {
 	caCertPool := x509.NewCertPool()
 	if !caCertPool.AppendCertsFromPEM(caBundle) {
 		return nil, fmt.Errorf("failed to append CA certificate to pool")
@@ -236,7 +244,13 @@ func fetchMetrics(endpoint string, caBundle []byte) (map[string]*dto.MetricFamil
 		},
 	}
 
-	resp, err := httpClient.Get(endpoint)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metrics from %s: %v", endpoint, err)
 	}

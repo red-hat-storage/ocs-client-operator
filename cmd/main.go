@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"os"
@@ -51,6 +52,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -137,6 +139,7 @@ func main() {
 		}
 	}
 
+	apiCtx := context.Background()
 	// apiclient.New() returns a client without cache. cache is not initialized before mgr.Start()
 	// we need this because we need to watch for CRDs the operator is dependent on
 	apiClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{
@@ -146,35 +149,12 @@ func main() {
 		setupLog.Error(err, "Unable to get API client")
 		os.Exit(1)
 	}
-	availCrds, err := getAvailableCRDNames(context.Background(), apiClient)
+	availCrds, err := getAvailableCRDNames(apiCtx, apiClient)
 	if err != nil {
 		setupLog.Error(err, "Unable get a list of available CRD names")
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Cache:  buildCacheAvailableCRDs(availCrds, defaultNamespaces, operatorNamespace),
-
-		// servers
-		HealthProbeBindAddress: healthProbeAddr,
-		Metrics: metricsserver.Options{
-			BindAddress:    metricsAddr,
-			SecureServing:  true,
-			CertDir:        "/tmp/metrics/tls/private",
-			FilterProvider: filters.WithAuthenticationAndAuthorization,
-		},
-		WebhookServer: webhook.NewServer(webhook.Options{
-			Port:    webhookPort,
-			CertDir: "/tmp/webhook/tls/private",
-		}),
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to create manager")
-		os.Exit(1)
-	}
-
-	// set namespace
 	err = utils.ValidateOperatorNamespace()
 	if err != nil {
 		setupLog.Error(err, "unable to validate operator namespace")
@@ -190,6 +170,55 @@ func main() {
 	podName, err := utils.GetOperatorPodName()
 	if err != nil {
 		setupLog.Error(err, "Failed to get operator pod name")
+	}
+
+	var initialTLSGeneration int64
+	startupProfile := &ocstlsv1.TLSProfile{}
+	startupProfile.Name = controller.TLSProfileName
+	startupProfile.Namespace = utils.GetOperatorNamespace()
+	if err := apiClient.Get(apiCtx, client.ObjectKeyFromObject(startupProfile), startupProfile); err != nil {
+		if !kerrors.IsNotFound(err) {
+			setupLog.Error(err, "failed to get TLSProfile at startup")
+			os.Exit(1)
+		}
+		startupProfile = nil
+	} else {
+		initialTLSGeneration = startupProfile.Generation
+	}
+
+	webhookTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "webhook")
+	if err != nil {
+		setupLog.Error(err, "invalid TLSProfile config for webhook server")
+		os.Exit(1)
+	}
+	metricsTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "metrics")
+	if err != nil {
+		setupLog.Error(err, "invalid TLSProfile config for metrics server")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Cache:  buildCacheAvailableCRDs(availCrds, defaultNamespaces, operatorNamespace),
+
+		// servers
+		HealthProbeBindAddress: healthProbeAddr,
+		Metrics: metricsserver.Options{
+			BindAddress:    metricsAddr,
+			SecureServing:  true,
+			CertDir:        "/tmp/metrics/tls/private",
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+			TLSOpts:        metricsTlsOpts,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: "/tmp/webhook/tls/private",
+			TLSOpts: webhookTlsOpts,
+		}),
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create manager")
+		os.Exit(1)
 	}
 
 	setupLog.Info("setting up webhook server")
@@ -235,7 +264,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	mgrCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 	shutdownContainer := func() {
 		cancel()
@@ -282,15 +311,47 @@ func main() {
 		}
 	}
 
+	if err = (&controller.TLSProfileReconciler{
+		Client:            mgr.GetClient(),
+		ShutdownContainer: shutdownContainer,
+		InitialGeneration: initialTLSGeneration,
+		Namespace:         utils.GetOperatorNamespace(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TLSProfile")
+		os.Exit(1)
+	}
+
 	alertCollector := alert.NewCollector(alertRunnable)
 	resourceCollector := alert.NewResourceCollector(mgr.GetClient())
 	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
+	if err := mgr.Start(mgrCtx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func buildServerTLSOpts(profile *ocstlsv1.TLSProfile, domain, server string) ([]func(*tls.Config), error) {
+	if profile == nil {
+		return nil, nil
+	}
+	tlsConfig, exist := ocstlsv1.GetConfigForServer(profile, domain, server)
+	if !exist {
+		return nil, nil
+	}
+	if err := ocstlsv1.ValidateTLSConfig(tlsConfig); err != nil {
+		return nil, err
+	}
+	goTLS := ocstlsv1.GetGoTLSConfig(tlsConfig)
+	return []func(*tls.Config){
+		func(cfg *tls.Config) {
+			cfg.MinVersion = goTLS.MinVersion
+			cfg.MaxVersion = goTLS.MaxVersion
+			cfg.CipherSuites = goTLS.CipherSuites
+			cfg.CurvePreferences = goTLS.CurvePreferences
+		},
+	}, nil
 }
 
 func getAvailableCRDNames(ctx context.Context, cl client.Client) (map[string]bool, error) {
