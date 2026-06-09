@@ -403,11 +403,6 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-		if err := c.reconcileClientOperatorSubscription(); err != nil {
-			c.log.Error(err, "unable to reconcile client operator subscription")
-			return ctrl.Result{}, err
-		}
-
 		if err := c.reconcileCSIAddonsOperatorSubscription(); err != nil {
 			c.log.Error(err, "unable to reconcile CSI Addons subscription")
 			return ctrl.Result{}, err
@@ -1093,30 +1088,6 @@ func (c *OperatorConfigMapReconciler) reconcileSubscriptionValidatingWebhook() e
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) reconcileClientOperatorSubscription() error {
-
-	clientSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ocs-client-operator")
-	if err != nil {
-		return err
-	}
-
-	updateRequired := utils.AddLabel(clientSubscription, subscriptionLabelKey, subscriptionLabelValue)
-	if c.subscriptionChannel != "" && c.subscriptionChannel != clientSubscription.Spec.Channel {
-		clientSubscription.Spec.Channel = c.subscriptionChannel
-		// TODO: https://github.com/red-hat-storage/ocs-client-operator/issues/130
-		// there can be a possibility that platform is behind, even then updating the channel will only make subscription to be in upgrading state
-		// without any side effects for already running workloads. However, this will be a silent failure and need to be fixed via above TODO issue.
-		updateRequired = true
-	}
-
-	if updateRequired {
-		if err := c.update(clientSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription channel to %v: %v", c.subscriptionChannel, err)
-		}
-	}
-	return nil
-}
-
 func (c *OperatorConfigMapReconciler) reconcileCSIAddonsOperatorSubscription() error {
 	addonsSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "odf-csi-addons-operator")
 	if kerrors.IsNotFound(err) {
@@ -1261,6 +1232,19 @@ func (c *OperatorConfigMapReconciler) getDesiredSubscriptionChannel(storageClien
 			}
 		}
 	}
+
+	clientSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ocs-client-operator")
+	if err != nil {
+		return "", err
+	}
+
+	if desiredChannel != clientSubscription.Spec.Channel {
+		// this condition happens when the provider is ahead of the client(s) but client operator upgrade is not
+		// triggered, we shouldn't error out here but go ahead and complete the current reconcile
+		c.log.Info("Skipping subs update of dependencies: client operator Subscription channel needs an update")
+		return "", nil
+	}
+
 	return desiredChannel, nil
 }
 
