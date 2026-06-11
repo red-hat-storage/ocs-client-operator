@@ -25,7 +25,6 @@ import (
 	"os"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -828,12 +827,14 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 											Value: operatorVersion,
 										},
 										{
+											// ref ../../config/default/metrics_service.yaml for the value
 											Name:  utils.MetricsServiceNameEnvVar,
-											Value: templates.MetricsServiceName,
+											Value: "ocs-client-operator-metrics",
 										},
 										{
+											// ref ../../config/default/metrics_service.yaml for the value
 											Name:  utils.MetricsPortEnvVar,
-											Value: strconv.Itoa(int(templates.MetricsServicePort)),
+											Value: "8443",
 										},
 									},
 								},

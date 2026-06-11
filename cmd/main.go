@@ -22,7 +22,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
@@ -48,10 +47,12 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	ramenv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	odfgsapiv1b1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -62,7 +63,6 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -97,6 +97,7 @@ func init() {
 	utilruntime.Must(groupsnapapi.AddToScheme(scheme))
 	utilruntime.Must(odfgsapiv1b1.AddToScheme(scheme))
 	utilruntime.Must(csiaddonsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(ocstlsv1.AddToScheme(scheme))
 	// ObjectBucketClaim/ObjectBucket (objectbucket.io); nbapis.AddToScheme does not register these types
 	// this part was added to avoid direct import of lib-bucket-provisioner
 	objectBucketGV := schema.GroupVersion{Group: "objectbucket.io", Version: "v1alpha1"}
@@ -111,99 +112,19 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var enableLeaderElection bool
-	var enableHTTP2 bool
-	var probeAddr string
-	var secureMetrics bool
-	var consolePort int
-	var webhookPort int
-	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
-		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
-		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
-		"The directory that contains the metrics server certificate.")
-	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics")
+	var metricsAddr, healthProbeAddr string
+	var webhookPort, consolePort int
+
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8443", "The address the metrics endpoint binds to.")
+	flag.StringVar(&healthProbeAddr, "health-probe-bind-address", ":8081", "The address the health probe endpoint binds to.")
 	flag.IntVar(&webhookPort, "webhook-port", 7443, "The port the webhook sever binds to.")
 	flag.IntVar(&consolePort, "console-port", 9001, "The port where the console server will be serving it's payload")
-	opts := zap.Options{
-		Development: true,
-	}
+
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	// if the enable-http2 flag is false (the default), http/2 should be disabled
-	// due to its vulnerabilities. More specifically, disabling http/2 will
-	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
-	// Rapid Reset CVEs. For more information see:
-	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
-	// - https://github.com/advisories/GHSA-4374-p667-p6c8
-	disableHTTP2 := func(c *tls.Config) {
-		setupLog.Info("disabling http/2")
-		c.NextProtos = []string{"http/1.1"}
-	}
-
-	if !enableHTTP2 {
-		tlsOpts = append(tlsOpts, disableHTTP2)
-	}
-	// Create watchers for metrics certificates
-	var metricsCertWatcher *certwatcher.CertWatcher
-	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
-	// More info:
-	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.0/pkg/metrics/server
-	// - https://book.kubebuilder.io/reference/metrics.html
-	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
-		TLSOpts:       tlsOpts,
-	}
-
-	if secureMetrics {
-		// FilterProvider is used to protect the metrics endpoint with authn/authz.
-		// These configurations ensure that only authorized users and service accounts
-		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
-		// https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.0/pkg/metrics/filters#WithAuthenticationAndAuthorization
-		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
-	}
-
-	// If the certificate is not specified, controller-runtime will automatically
-	// generate self-signed certificates for the metrics server. While convenient for development and testing,
-	// this setup is not recommended for production.
-	//
-	// TODO(user): If you enable certManager, uncomment the following lines:
-	// - [METRICS-WITH-CERTS] at config/default/kustomization.yaml to generate and use certificates
-	// managed by cert-manager for the metrics server.
-	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
-	if len(metricsCertPath) > 0 {
-		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
-
-		var err error
-		metricsCertWatcher, err = certwatcher.New(
-			filepath.Join(metricsCertPath, metricsCertName),
-			filepath.Join(metricsCertPath, metricsCertKey),
-		)
-		if err != nil {
-			setupLog.Error(err, "to initialize metrics certificate watcher", "error", err)
-			os.Exit(1)
-		}
-
-		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(config *tls.Config) {
-			config.GetCertificate = metricsCertWatcher.GetCertificate
-		})
-	}
 
 	defaultNamespaces := map[string]cache.Config{}
 	operatorNamespace := utils.GetOperatorNamespace()
@@ -218,6 +139,7 @@ func main() {
 		}
 	}
 
+	apiCtx := context.Background()
 	// apiclient.New() returns a client without cache. cache is not initialized before mgr.Start()
 	// we need this because we need to watch for CRDs the operator is dependent on
 	apiClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{
@@ -227,30 +149,12 @@ func main() {
 		setupLog.Error(err, "Unable to get API client")
 		os.Exit(1)
 	}
-	availCrds, err := getAvailableCRDNames(context.Background(), apiClient)
+	availCrds, err := getAvailableCRDNames(apiCtx, apiClient)
 	if err != nil {
 		setupLog.Error(err, "Unable get a list of available CRD names")
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsServerOptions,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "7cb6f2e5.ocs.openshift.io",
-		Cache:                  buildCacheAvailableCRDs(availCrds, defaultNamespaces, operatorNamespace),
-		WebhookServer: webhook.NewServer(webhook.Options{
-			Port:    webhookPort,
-			CertDir: "/etc/tls/private",
-		}),
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to create manager")
-		os.Exit(1)
-	}
-
-	// set namespace
 	err = utils.ValidateOperatorNamespace()
 	if err != nil {
 		setupLog.Error(err, "unable to validate operator namespace")
@@ -266,6 +170,55 @@ func main() {
 	podName, err := utils.GetOperatorPodName()
 	if err != nil {
 		setupLog.Error(err, "Failed to get operator pod name")
+	}
+
+	var initialTLSGeneration int64
+	startupProfile := &ocstlsv1.TLSProfile{}
+	startupProfile.Name = controller.TLSProfileName
+	startupProfile.Namespace = utils.GetOperatorNamespace()
+	if err := apiClient.Get(apiCtx, client.ObjectKeyFromObject(startupProfile), startupProfile); err != nil {
+		if !kerrors.IsNotFound(err) {
+			setupLog.Error(err, "failed to get TLSProfile at startup")
+			os.Exit(1)
+		}
+		startupProfile = nil
+	} else {
+		initialTLSGeneration = startupProfile.Generation
+	}
+
+	webhookTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "webhook")
+	if err != nil {
+		setupLog.Error(err, "invalid TLSProfile config for webhook server")
+		os.Exit(1)
+	}
+	metricsTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "metrics")
+	if err != nil {
+		setupLog.Error(err, "invalid TLSProfile config for metrics server")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Cache:  buildCacheAvailableCRDs(availCrds, defaultNamespaces, operatorNamespace),
+
+		// servers
+		HealthProbeBindAddress: healthProbeAddr,
+		Metrics: metricsserver.Options{
+			BindAddress:    metricsAddr,
+			SecureServing:  true,
+			CertDir:        "/tmp/metrics/tls/private",
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+			TLSOpts:        metricsTlsOpts,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    webhookPort,
+			CertDir: "/tmp/webhook/tls/private",
+			TLSOpts: webhookTlsOpts,
+		}),
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create manager")
+		os.Exit(1)
 	}
 
 	setupLog.Info("setting up webhook server")
@@ -291,14 +244,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
-		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
-
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -319,7 +264,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	mgrCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 	shutdownContainer := func() {
 		cancel()
@@ -366,15 +311,47 @@ func main() {
 		}
 	}
 
+	if err = (&controller.TLSProfileReconciler{
+		Client:            mgr.GetClient(),
+		ShutdownContainer: shutdownContainer,
+		InitialGeneration: initialTLSGeneration,
+		Namespace:         utils.GetOperatorNamespace(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "TLSProfile")
+		os.Exit(1)
+	}
+
 	alertCollector := alert.NewCollector(alertRunnable)
 	resourceCollector := alert.NewResourceCollector(mgr.GetClient())
 	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
+	if err := mgr.Start(mgrCtx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func buildServerTLSOpts(profile *ocstlsv1.TLSProfile, domain, server string) ([]func(*tls.Config), error) {
+	if profile == nil {
+		return nil, nil
+	}
+	tlsConfig, exist := ocstlsv1.GetConfigForServer(profile, domain, server)
+	if !exist {
+		return nil, nil
+	}
+	if err := ocstlsv1.ValidateTLSConfig(tlsConfig); err != nil {
+		return nil, err
+	}
+	goTLS := ocstlsv1.GetGoTLSConfig(tlsConfig)
+	return []func(*tls.Config){
+		func(cfg *tls.Config) {
+			cfg.MinVersion = goTLS.MinVersion
+			cfg.MaxVersion = goTLS.MaxVersion
+			cfg.CipherSuites = goTLS.CipherSuites
+			cfg.CurvePreferences = goTLS.CurvePreferences
+		},
+	}, nil
 }
 
 func getAvailableCRDNames(ctx context.Context, cl client.Client) (map[string]bool, error) {

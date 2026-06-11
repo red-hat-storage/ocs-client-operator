@@ -333,6 +333,9 @@ github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces
+# github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260427105901-0c5f6d8fcd65
+## explicit; go 1.25.0
+github.com/red-hat-storage/ocs-tls-profiles/api/v1
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus

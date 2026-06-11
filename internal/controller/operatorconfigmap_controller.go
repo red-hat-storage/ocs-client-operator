@@ -1158,7 +1158,7 @@ func (c *OperatorConfigMapReconciler) reconcileWebhookService() error {
 		if err := c.own(svc); err != nil {
 			return err
 		}
-		utils.AddAnnotation(svc, "service.beta.openshift.io/serving-cert-secret-name", "webhook-cert-secret")
+		utils.AddAnnotation(svc, "service.beta.openshift.io/serving-cert-secret-name", "ocs-client-webhook-cert-secret")
 		templates.WebhookService.Spec.DeepCopyInto(&svc.Spec)
 		return nil
 	})
