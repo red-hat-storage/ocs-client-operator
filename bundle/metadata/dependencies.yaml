@@ -15,3 +15,7 @@ dependencies:
     value:
       packageName: odf-external-snapshotter-operator
       version: ">=4.20.0"
+  - type: olm.package
+    value:
+      packageName: ocs-tls-profiles
+      version: ">=4.22.0"

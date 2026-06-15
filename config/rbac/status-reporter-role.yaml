@@ -6,17 +6,9 @@ metadata:
   name: status-reporter
 rules:
 - apiGroups:
-  - operators.coreos.com
+  - ""
   resources:
-  - clusterserviceversions
+  - configmaps
   verbs:
   - get
   - list
-  - watch
-- apiGroups:
-  - csi.ceph.io
-  resources:
-  - cephconnections
-  verbs:
-  - get
-  - patch

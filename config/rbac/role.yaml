@@ -222,6 +222,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - ocs.openshift.io
+  resources:
+  - tlsprofiles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - operators.coreos.com
   resources:
   - clusterserviceversions

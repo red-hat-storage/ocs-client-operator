@@ -6,7 +6,15 @@ metadata:
 spec:
   endpoints:
   - path: /metrics
-    port: metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      # the alternate is to supply configmap but also the serverName
+      # since the serverName contains namespace it can't be deployed via bundle
+      # this'll eventually moved into code
+      insecureSkipVerify: true
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
   selector:
     matchLabels:
       app: ocs-client-operator
+      server: metrics

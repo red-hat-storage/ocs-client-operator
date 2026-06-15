@@ -32,15 +32,13 @@ spec:
       containers:
       - command:
         - /ocs-client-operator
-        args:
-        - "--metrics-bind-address=:8080"
-        - "--metrics-secure=false"
-        - "--console-port=9001"
         image: controller:latest
         name: manager
         volumeMounts:
-        - mountPath: /etc/tls/private
+        - mountPath: /tmp/webhook/tls/private
           name: webhook-cert-secret
+        - mountPath: /tmp/metrics/tls/private
+          name: metrics-cert-secret
         env:
         - name: OPERATOR_NAMESPACE
           valueFrom:
@@ -78,7 +76,10 @@ spec:
       volumes:
       - name: webhook-cert-secret
         secret:
-          secretName: webhook-cert-secret
+          secretName: ocs-client-webhook-cert-secret
+      - name: metrics-cert-secret
+        secret:
+          secretName: ocs-client-metrics-cert-secret
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
       tolerations:
