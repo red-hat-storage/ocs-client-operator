@@ -23,47 +23,27 @@ import (
 const (
 	testNamespace         = "test-ns"
 	fake417ClusterVersion = "4.17.0"
+	fake418ClusterVersion = "4.18.0"
+	fake419ClusterVersion = "4.19.0"
+	fake500ClusterVersion = "5.0.0"
+	fake510ClusterVersion = "5.1.0"
 )
 
-var fake418ImageSet = &corev1.ConfigMap{
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "418-config",
-		Namespace: testNamespace,
-		Labels: map[string]string{
-			csiImagesConfigMapLabel: "4.18.1",
+func newFakeImageSet(name, imageVersion string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+			Labels:    map[string]string{csiImagesConfigMapLabel: imageVersion},
 		},
-	},
+	}
 }
 
-var fake417ImageSet = &corev1.ConfigMap{
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "417-config",
-		Namespace: testNamespace,
-		Labels: map[string]string{
-			csiImagesConfigMapLabel: "4.17.2",
-		},
-	},
-}
-
-var fake416ImageSet = &corev1.ConfigMap{
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "416-config",
-		Namespace: testNamespace,
-		Labels: map[string]string{
-			csiImagesConfigMapLabel: "4.16.3",
-		},
-	},
-}
-
-var fake415ImageSet = &corev1.ConfigMap{
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "415-config",
-		Namespace: testNamespace,
-		Labels: map[string]string{
-			csiImagesConfigMapLabel: "4.15",
-		},
-	},
-}
+var fake418ImageSet = newFakeImageSet("418-config", "4.18.1")
+var fake417ImageSet = newFakeImageSet("417-config", "4.17.2")
+var fake416ImageSet = newFakeImageSet("416-config", "4.16.3")
+var fake415ImageSet = newFakeImageSet("415-config", "4.15")
+var fake500ImageSet = newFakeImageSet("500-config", "5.0.0")
 
 func newFakeScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
@@ -159,6 +139,60 @@ func TestGetImageSet(t *testing.T) {
 	cm, err = r.getImageSetConfigMapName(fake417ClusterVersion)
 	assert.Nil(t, err, "should not fail when compatible imagesets  exists")
 	assert.Equal(t, fake415ImageSet.Name, cm, "should prefer 415 imageset as it is lesser than 417 and nothing closer exists")
+
+	r.Client = newFakeClientBuilder(r.Scheme).
+		WithRuntimeObjects(fake418ImageSet).
+		WithRuntimeObjects(fake416ImageSet).
+		WithRuntimeObjects(fake415ImageSet).
+		Build()
+	cm, err = r.getImageSetConfigMapName(fake500ClusterVersion)
+	assert.Nil(t, err, "should not fail when compatible imagesets  exists")
+	assert.Equal(t, fake418ImageSet.Name, cm, "should prefer 418 imageset which is closer to 500")
+
+	r.Client = newFakeClientBuilder(r.Scheme).
+		WithRuntimeObjects(fake418ImageSet).
+		WithRuntimeObjects(fake500ImageSet).
+		Build()
+	cm, err = r.getImageSetConfigMapName(fake500ClusterVersion)
+	assert.Nil(t, err, "should not fail when exact 500 imageset exists")
+	assert.Equal(t, fake500ImageSet.Name, cm, "should prefer exact 500 imageset over 418")
+
+	r.Client = newFakeClientBuilder(r.Scheme).
+		WithRuntimeObjects(fake418ImageSet).
+		WithRuntimeObjects(fake500ImageSet).
+		Build()
+	cm, err = r.getImageSetConfigMapName(fake419ClusterVersion)
+	assert.Nil(t, err, "should not fail when compatible imagesets exist")
+	assert.Equal(t, fake418ImageSet.Name, cm, "should prefer 418 imageset when 500 is ahead of 419")
+
+	// use a name that sorts before "418-config" to force same-major to be processed first,
+	fake510ImageSetEarly := newFakeImageSet("100-510-config", "5.1.0")
+	r.Client = newFakeClientBuilder(r.Scheme).
+		WithRuntimeObjects(fake418ImageSet).
+		WithRuntimeObjects(fake510ImageSetEarly).
+		Build()
+	cm, err = r.getImageSetConfigMapName(fake510ClusterVersion)
+	assert.Nil(t, err, "should not fail when compatible imagesets exist")
+	assert.Equal(t, fake510ImageSetEarly.Name, cm, "should prefer same-major 510 imageset over lower-major 418 for 510")
+
+	// force order: 5.1 -> 5.2 -> 4.19 -> 4.18 via alphabetical names
+	r.Client = newFakeClientBuilder(r.Scheme).
+		WithRuntimeObjects(newFakeImageSet("a-config", "5.1.0")).
+		WithRuntimeObjects(newFakeImageSet("b-config", "5.2.0")).
+		WithRuntimeObjects(newFakeImageSet("c-config", "4.19.0")).
+		WithRuntimeObjects(newFakeImageSet("d-config", "4.18.0")).
+		Build()
+	cm, err = r.getImageSetConfigMapName(fake418ClusterVersion)
+	assert.Nil(t, err, "should not fail when exact imageset exists")
+	assert.Equal(t, "d-config", cm, "should pick exact 418 imageset when higher versions exist")
+
+	r.Client = newFakeClientBuilder(r.Scheme).
+		WithRuntimeObjects(fake418ImageSet).
+		WithRuntimeObjects(fake500ImageSet).
+		WithRuntimeObjects(fake510ImageSetEarly).
+		Build()
+	_, err = r.getImageSetConfigMapName(fake417ClusterVersion)
+	assert.NotNil(t, err, "should fail when imageset configmaps is ahead of platform")
 }
 
 func TestTopologyLabelsFromConfigMap(t *testing.T) {
