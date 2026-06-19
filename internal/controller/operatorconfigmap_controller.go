@@ -1254,7 +1254,7 @@ func (c *OperatorConfigMapReconciler) getImageSetConfigMapName(clusterVersion st
 		return "", err
 	}
 	platformVersion := version.MustParseGeneric(clusterVersion)
-	closestMinor := int64(-1)
+	closestMinor, largestMinor := int64(-1), int64(-1)
 	var configMapName string
 	for idx := range configMaps.Items {
 		cm := &configMaps.Items[idx]
@@ -1271,6 +1271,13 @@ func (c *OperatorConfigMapReconciler) getImageSetConfigMapName(clusterVersion st
 			// exact match and early exit
 			if closestMinor == int64(platformVersion.Minor()) {
 				break
+			}
+		} else if imageVersion.Major() < platformVersion.Major() && closestMinor == -1 {
+			// cross major versions and no early exit as closestMinor may still
+			// can be found in same major release in the remaining slice
+			if int64(imageVersion.Minor()) > largestMinor {
+				configMapName = cm.Name
+				largestMinor = int64(imageVersion.Minor())
 			}
 		} else {
 			c.log.Info("skipping imagesets with version greater than platform version")
