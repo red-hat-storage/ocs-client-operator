@@ -62,8 +62,8 @@ const (
 
 	CronScheduleWeekly = "@weekly"
 
-	OwnerUIDIndexName    = "index:ownerUID"
-	PVClusterIDIndexName = "index:persistentVolumeClusterID"
+	OwnerUIDIndexName     = "index:ownerUID"
+	PVClusterIDIndexName  = "index:persistentVolumeClusterID"
 	VSCClusterIDIndexName = "index:volumeSnapshotContentCSIDriver"
 
 	OcsClientTimeout = 10 * time.Second
