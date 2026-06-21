@@ -658,6 +658,12 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
+	if storageClientResponse.NvmeofDriverRequirements != nil {
+		r.storageClient.Status.NvmeofDriverRequirements = &v1alpha1.NvmeofDriverRequirements{
+			CtrlPluginHostNetwork: storageClientResponse.NvmeofDriverRequirements.CtrlPluginHostNetwork,
+		}
+	}
+
 	if update {
 		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)

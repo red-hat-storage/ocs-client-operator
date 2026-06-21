@@ -58,6 +58,7 @@ type StorageClientStatus struct {
 	RbdDriverRequirements    *RbdDriverRequirements    `json:"rbdDriverRequirements,omitempty"`
 	CephFsDriverRequirements *CephFsDriverRequirements `json:"cephFsDriverRequirements,omitempty"`
 	NfsDriverRequirements    *NfsDriverRequirements    `json:"nfsDriverRequirements,omitempty"`
+	NvmeofDriverRequirements *NvmeofDriverRequirements `json:"nvmeofDriverRequirements,omitempty"`
 }
 
 type RbdDriverRequirements struct {
@@ -70,6 +71,10 @@ type CephFsDriverRequirements struct {
 }
 
 type NfsDriverRequirements struct {
+	CtrlPluginHostNetwork *bool `json:"ctrlPluginHostNetwork,omitempty"`
+}
+
+type NvmeofDriverRequirements struct {
 	CtrlPluginHostNetwork *bool `json:"ctrlPluginHostNetwork,omitempty"`
 }
 
