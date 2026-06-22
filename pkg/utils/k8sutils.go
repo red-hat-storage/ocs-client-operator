@@ -72,6 +72,10 @@ const (
 
 	MetricsServiceNameEnvVar = "METRICS_SERVICE_NAME"
 	MetricsPortEnvVar        = "METRICS_PORT"
+
+	OpenShiftServiceCAConfigMapName = "openshift-service-ca.crt"
+	ServiceCACertKey                = "service-ca.crt"
+	ServingCertSecretAnnotation     = "service.beta.openshift.io/serving-cert-secret-name"
 )
 
 // GetOperatorNamespace returns the namespace where the operator is deployed.
