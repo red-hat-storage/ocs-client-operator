@@ -661,8 +661,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	enableRbdDriver := c.shouldEnableDriver(enableRbdDriverKey)
 	enableCephFsDriver := c.shouldEnableDriver(enableCephFsDriverKey)
 	enableNfsDriver := c.shouldEnableDriver(enableNfsDriverKey)
+	enableNvmeofDriver := false
 
-	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin bool
+	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin, useHostNetForNvmeofCtrlPlugin bool
 
 	// if the storage client status has the driver requirements info, then it has higher precedence than the configmap.
 	for i := range storageClients.Items {
@@ -682,6 +683,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			enableNfsDriver = true
 			if useHostNetwork := storageClients.Items[i].Status.NfsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
 				useHostNetForNfsCtrlPlugin = useHostNetForNfsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
+		}
+		if storageClients.Items[i].Status.NvmeofDriverRequirements != nil {
+			enableNvmeofDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.NvmeofDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForNvmeofCtrlPlugin = useHostNetForNvmeofCtrlPlugin || ptr.Deref(useHostNetwork, false)
 			}
 		}
 	}
@@ -756,6 +763,29 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		if err := c.delete(nfsDriver); err != nil {
 			return fmt.Errorf("failed to delete csi nfs driver: %v", err)
+		}
+	}
+
+	// nvmeof driver config
+	nvmeofDriver := &csiopv1.Driver{}
+	nvmeofDriver.Name = templates.NvmeofDriverName
+	nvmeofDriver.Namespace = c.OperatorNamespace
+	if enableNvmeofDriver {
+		if err := c.createOrUpdate(nvmeofDriver, func() error {
+			if err := c.own(nvmeofDriver); err != nil {
+				return fmt.Errorf("failed to own csi nvmeof driver: %v", err)
+			}
+			if nvmeofDriver.Spec.ControllerPlugin == nil {
+				nvmeofDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
+			nvmeofDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNvmeofCtrlPlugin)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile nvmeof driver: %v", err)
+		}
+	} else {
+		if err := c.delete(nvmeofDriver); err != nil {
+			return fmt.Errorf("failed to delete csi nvmeof driver: %v", err)
 		}
 	}
 
