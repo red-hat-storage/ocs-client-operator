@@ -22,3 +22,7 @@ endif
 ifeq ($(IMAGE_BUILD_CMD),)
 IMAGE_BUILD_CMD := $(shell command -v podman || echo "")
 endif
+
+ifeq ($(IMAGE_BUILD_CMD),)
+IMAGE_BUILD_CMD := $(shell command -v container || echo "")
+endif

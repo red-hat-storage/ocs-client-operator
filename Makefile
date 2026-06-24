@@ -82,7 +82,7 @@ container-build: test ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
 
 container-push: ## Push container image with the manager.
-	$(IMAGE_BUILD_CMD) push ${IMG}
+	$(IMAGE_BUILD_CMD) image push ${IMG}
 
 ##@ Deployment
 
@@ -138,7 +138,7 @@ bundle-build: bundle ## Build the bundle image.
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
-	$(IMAGE_BUILD_CMD) push $(BUNDLE_IMG)
+	$(IMAGE_BUILD_CMD) image push $(BUNDLE_IMG)
 
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
@@ -150,4 +150,4 @@ catalog-build: opm ## Build a catalog image.
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
-	$(IMAGE_BUILD_CMD) push $(CATALOG_IMG)
+	$(IMAGE_BUILD_CMD) image push $(CATALOG_IMG)
