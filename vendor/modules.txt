@@ -1,3 +1,4 @@
+## workspace
 # cel.dev/expr v0.25.1
 ## explicit; go 1.23.0
 cel.dev/expr
@@ -326,8 +327,7 @@ github.com/ramendr/ramen/api/v1alpha1
 ## explicit; go 1.22.0
 github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1
 # github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000 => ./api
-## explicit; go 1.25.6
-github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
+## explicit; go 1.26.1
 # github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260429150604-e17cd01ca408
 ## explicit; go 1.25.8
 github.com/red-hat-storage/ocs-operator/services/provider/api/v4
@@ -1257,6 +1257,5 @@ sigs.k8s.io/structured-merge-diff/v6/value
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3
-# github.com/red-hat-storage/ocs-client-operator/api => ./api
 # k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
 # vbom.ml/util => github.com/fvbommel/util v0.0.0-20180919145318-efcd4e0f9787

@@ -46,11 +46,14 @@ vet: ## Run go vet against code.
 lint: ## Run golangci-lint against code.
 	$(IMAGE_BUILD_CMD) run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
 
-godeps-update:  ## Run go mod tidy & vendor
+godeps-update:  ## Run go mod tidy & vendor with workspace sync
 	@echo "Running godeps-update"
-	go mod tidy && go mod vendor
+	go mod tidy
 	@echo "Running godeps-update on api submodule"
-	cd api && go mod tidy && go mod vendor
+	cd api && go mod tidy
+	@echo "Syncing workspace dependencies"
+	go work sync
+	go work vendor
 
 godeps-verify: godeps-update
 	@echo "Verifying go-deps"
@@ -70,7 +73,7 @@ e2e-test: ginkgo ## TODO: Run end to end functional tests.
 
 ##@ Build
 
-build: container-build ## Build manager binary
+build: test container-build ## Build manager binary
 
 go-build: ## Run go build against code.
 	@GOBIN=${GOBIN} ./hack/go-build.sh
@@ -78,7 +81,7 @@ go-build: ## Run go build against code.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
-container-build: test ## Build container image with the manager.
+container-build: ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
 
 container-push: ## Push container image with the manager.
