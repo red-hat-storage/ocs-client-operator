@@ -51,7 +51,7 @@
             "lower-case"
         ],
         "subject-empty": [
-            2,
+            0,
             "never"
         ],
         "type-case": [
@@ -60,31 +60,8 @@
             "lower-case"
         ],
         "type-empty": [
-            2,
+            0,
             "never"
-        ],
-        "type-enum": [
-            2,
-            "always",
-            [
-                "action",
-                "api",
-                "bundle",
-                "ci",
-                "cleanup",
-                "csi",
-                "console",
-                "controllers",
-                "docs",
-                "godeps",
-                "hack",
-                "makefile",
-                "metrics",
-                "repo",
-                "test",
-                "vendor",
-                "webhook"
-            ]
         ]
     }
 }
