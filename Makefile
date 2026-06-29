@@ -73,7 +73,7 @@ e2e-test: ginkgo ## TODO: Run end to end functional tests.
 
 ##@ Build
 
-build: container-build ## Build manager binary
+build: test container-build ## Build manager binary
 
 go-build: ## Run go build against code.
 	@GOBIN=${GOBIN} ./hack/go-build.sh
@@ -81,7 +81,7 @@ go-build: ## Run go build against code.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
-container-build: test ## Build container image with the manager.
+container-build: ## Build container image with the manager.
 	$(IMAGE_BUILD_CMD) build --platform="linux/amd64" -t ${IMG} .
 
 container-push: ## Push container image with the manager.
