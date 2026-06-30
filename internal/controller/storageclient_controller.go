@@ -89,6 +89,7 @@ const (
 	OdfVolumeGroupSnapshotClassCrdName = "volumegroupsnapshotclasses.groupsnapshot.storage.openshift.io"
 	ObjectBucketClaimCrdName           = "objectbucketclaims.objectbucket.io"
 	ObjectBucketCrdName                = "objectbuckets.objectbucket.io"
+	VolumeAttributesClassResourceName  = "volumeattributesclasses.storage.k8s.io"
 
 	knownFieldSize = 64
 )
@@ -115,6 +116,7 @@ var (
 		&nbv1.ObjectBucketClaim{},
 		&nbv1.ObjectBucket{},
 		&corev1.ConfigMap{},
+		&storagev1.VolumeAttributesClass{},
 	}
 )
 
@@ -259,6 +261,9 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			),
 			builder.OnlyMetadata,
 		)
+	if r.AvailableCrds[VolumeAttributesClassResourceName] {
+		bldr = bldr.Owns(&storagev1.VolumeAttributesClass{})
+	}
 	if r.AvailableCrds[ObjectBucketClaimCrdName] {
 		bldr = bldr.Watches(
 			&nbv1.ObjectBucketClaim{},
@@ -279,6 +284,9 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.crdsBeingWatched.Store(VolumeGroupSnapshotClassCrdName, false)
 	r.crdsBeingWatched.Store(OdfVolumeGroupSnapshotClassCrdName, false)
 	r.crdsBeingWatched.Store(ObjectBucketCrdName, false)
+	if !r.AvailableCrds[VolumeAttributesClassResourceName] {
+		r.crdsBeingWatched.Store(VolumeAttributesClassResourceName, false)
+	}
 
 	return err
 }
@@ -311,6 +319,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims/status,verbs=update;patch
 //+kubebuilder:rbac:groups=objectbucket.io,resources=objectbuckets/status,verbs=update;patch
+//+kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattributesclasses,verbs=get;list;watch;create;delete;update
 
 func (r *StorageClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	handler := storageClientReconcile{StorageClientReconciler: r}
@@ -361,6 +370,10 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 	}
 
 	if err := r.setupObjectBucketWatch(); err != nil {
+		return err
+	}
+
+	if err := r.setupVolumeAttributesClassWatch(); err != nil {
 		return err
 	}
 
@@ -543,6 +556,41 @@ func (r *storageClientReconcile) setupObjectBucketWatch() error {
 	}
 
 	r.crdsBeingWatched.Store(ObjectBucketCrdName, true)
+	return nil
+}
+
+func (r *storageClientReconcile) setupVolumeAttributesClassWatch() error {
+	if watchExists, found := r.crdsBeingWatched.Load(VolumeAttributesClassResourceName); !found || watchExists.(bool) {
+		return nil
+	}
+
+	vacList := &storagev1.VolumeAttributesClassList{}
+	if err := r.list(vacList, client.Limit(1)); err != nil {
+		if meta.IsNoMatchError(err) {
+			return nil
+		}
+		return err
+	}
+
+	if err := r.controller.Watch(
+		source.Kind(
+			r.cache,
+			client.Object(&storagev1.VolumeAttributesClass{}),
+			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []ctrl.Request {
+				owner := metav1.GetControllerOf(o)
+				if owner != nil &&
+					owner.Kind == "StorageClient" &&
+					owner.APIVersion == v1alpha1.GroupVersion.String() {
+					return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: owner.Name}}}
+				}
+				return nil
+			}),
+		),
+	); err != nil {
+		return fmt.Errorf("failed to setup dynamic watch on VolumeAttributesClass: %v", err)
+	}
+
+	r.crdsBeingWatched.Store(VolumeAttributesClassResourceName, true)
 	return nil
 }
 

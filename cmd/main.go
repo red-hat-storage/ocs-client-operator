@@ -53,6 +53,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -219,6 +220,10 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
 		os.Exit(1)
+	}
+
+	if isAPIResourceAvailable(mgr.GetRESTMapper(), schema.GroupVersion{Group: "storage.k8s.io", Version: "v1"}, "volumeattributesclasses") {
+		availCrds[controller.VolumeAttributesClassResourceName] = true
 	}
 
 	setupLog.Info("setting up webhook server")
@@ -404,4 +409,9 @@ func buildCacheAvailableCRDs(
 		}
 	}
 	return cacheAvailableCrd
+}
+
+func isAPIResourceAvailable(mapper apimeta.RESTMapper, gv schema.GroupVersion, resource string) bool {
+	resources, err := mapper.ResourcesFor(gv.WithResource(resource))
+	return err == nil && len(resources) > 0
 }
