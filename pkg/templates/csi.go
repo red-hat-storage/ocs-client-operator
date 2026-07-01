@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"slices"
 
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	secv1 "github.com/openshift/api/security/v1"
@@ -14,6 +15,38 @@ import (
 const RBDDriverName = "openshift-storage.rbd.csi.ceph.com"
 const CephFsDriverName = "openshift-storage.cephfs.csi.ceph.com"
 const NfsDriverName = "openshift-storage.nfs.csi.ceph.com"
+
+// Snapshot metadata sidecar automation (KEP-3314 / CBT)
+const SnapshotMetadataServiceName = "openshift-storage-rbd-snapshot-metadata"
+const SnapshotMetadataTLSSecretName = "openshift-storage-rbd-snapshot-metadata-tls"
+const SnapshotMetadataConfigName = RBDDriverName // must match driver name
+const SnapshotMetadataGRPCPort = int32(50051)
+const SnapshotMetadataServicePort = int32(6443)
+const snapshotMetadataTLSKeyVolumeName = "tls-key"
+
+func InjectSnapshotMetadataTLSVolume(cp *csiopv1.ControllerPluginSpec) {
+	vol := csiopv1.VolumeSpec{
+		Volume: corev1.Volume{
+			Name: snapshotMetadataTLSKeyVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: SnapshotMetadataTLSSecretName},
+			},
+		},
+		Mount: corev1.VolumeMount{
+			Name:      snapshotMetadataTLSKeyVolumeName,
+			MountPath: "/tmp/certificates",
+			ReadOnly:  true,
+		},
+	}
+	idx := slices.IndexFunc(cp.Volumes, func(v csiopv1.VolumeSpec) bool {
+		return v.Volume.Name == snapshotMetadataTLSKeyVolumeName
+	})
+	if idx == -1 {
+		cp.Volumes = append(cp.Volumes, vol)
+	} else {
+		cp.Volumes[idx] = vol
+	}
+}
 
 // security context constraints
 const SCCName = "ceph-csi-op-scc"

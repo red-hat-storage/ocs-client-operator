@@ -183,14 +183,14 @@ const (
 
 func getCABundle(ctx context.Context, cl client.Client, namespace string) ([]byte, error) {
 	configMap := &corev1.ConfigMap{}
-	configMap.Name = "openshift-service-ca.crt"
+	configMap.Name = utils.OpenShiftServiceCAConfigMapName
 	configMap.Namespace = namespace
 
 	if err := cl.Get(ctx, client.ObjectKeyFromObject(configMap), configMap); err != nil {
 		return nil, fmt.Errorf("failed to get CA bundle ConfigMap: %v", err)
 	}
 
-	caBundle, ok := configMap.Data["service-ca.crt"]
+	caBundle, ok := configMap.Data[utils.ServiceCACertKey]
 	if !ok {
 		return nil, fmt.Errorf("service-ca.crt key not found in ConfigMap")
 	}
