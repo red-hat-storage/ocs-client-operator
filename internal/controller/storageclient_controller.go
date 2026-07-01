@@ -804,6 +804,9 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 					ActiveDeadlineSeconds:   &jobDeadLineSeconds,
 					TTLSecondsAfterFinished: &keepJobResourceSeconds,
 					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Annotations: templates.RestrictedSCCPodAnnotations,
+						},
 						Spec: corev1.PodSpec{
 							ActiveDeadlineSeconds: &podDeadLineSeconds,
 							Containers: []corev1.Container{
