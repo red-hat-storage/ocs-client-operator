@@ -28,6 +28,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/red-hat-storage/ocs-operator/services/provider/api/v4/interfaces"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -217,4 +218,8 @@ func SetClusterInformation(
 	status.SetClusterName(clusterDNS.Spec.BaseDomain)
 
 	return nil
+}
+
+func AdjustCPU(cpuQty resource.Quantity, adjustFactor float64) resource.Quantity {
+	return *resource.NewMilliQuantity(int64(float64(cpuQty.MilliValue())*adjustFactor), resource.DecimalSI)
 }

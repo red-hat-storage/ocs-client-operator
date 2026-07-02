@@ -11,11 +11,13 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
+	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -531,4 +533,106 @@ func TestDeleteDelegatedCSI(t *testing.T) {
 	r := newSMSReconciler(t)
 	err := r.deleteDelegatedCSI()
 	assert.NoError(t, err)
+}
+
+func TestResourceRequirementsFromStruct(t *testing.T) {
+	t.Run("collects all controller plugin resource fields", func(t *testing.T) {
+		spec := &csiopv1.ControllerPluginResourcesSpec{
+			Attacher:      newCPUResourceRequirements("50m"),
+			Snapshotter:   newCPUResourceRequirements("50m"),
+			Resizer:       newCPUResourceRequirements("50m"),
+			Provisioner:   newCPUResourceRequirements("50m"),
+			OMapGenerator: newCPUResourceRequirements("50m"),
+			Liveness:      newCPUResourceRequirements("10m"),
+			Addons:        newCPUResourceRequirements("50m"),
+			LogRotator:    newCPUResourceRequirements("10m"),
+			Plugin:        newCPUResourceRequirements("100m"),
+		}
+
+		assertResourceRequirementsCollected(t, spec, []*corev1.ResourceRequirements{
+			spec.Attacher,
+			spec.Snapshotter,
+			spec.Resizer,
+			spec.Provisioner,
+			spec.OMapGenerator,
+			spec.Liveness,
+			spec.Addons,
+			spec.LogRotator,
+			spec.Plugin,
+		})
+	})
+
+	t.Run("collects all node plugin resource fields", func(t *testing.T) {
+		spec := &csiopv1.NodePluginResourcesSpec{
+			Registrar:  newCPUResourceRequirements("10m"),
+			Liveness:   newCPUResourceRequirements("10m"),
+			Addons:     newCPUResourceRequirements("50m"),
+			LogRotator: newCPUResourceRequirements("10m"),
+			Plugin:     newCPUResourceRequirements("100m"),
+		}
+
+		assertResourceRequirementsCollected(t, spec, []*corev1.ResourceRequirements{
+			spec.Registrar,
+			spec.Liveness,
+			spec.Addons,
+			spec.LogRotator,
+			spec.Plugin,
+		})
+	})
+
+	t.Run("collects default controller plugin template resources", func(t *testing.T) {
+		resources := templates.CSIOperatorConfigSpec.DriverSpecDefaults.ControllerPlugin.Resources
+
+		assertResourceRequirementsCollected(t, &resources, []*corev1.ResourceRequirements{
+			resources.Attacher,
+			resources.Snapshotter,
+			resources.Resizer,
+			resources.Provisioner,
+			resources.OMapGenerator,
+			resources.Addons,
+			resources.LogRotator,
+			resources.Plugin,
+		})
+	})
+
+	t.Run("collects default node plugin template resources", func(t *testing.T) {
+		resources := templates.CSIOperatorConfigSpec.DriverSpecDefaults.NodePlugin.Resources
+
+		assertResourceRequirementsCollected(t, &resources, []*corev1.ResourceRequirements{
+			resources.Registrar,
+			resources.Addons,
+			resources.LogRotator,
+			resources.Plugin,
+		})
+	})
+
+	t.Run("skips nil fields", func(t *testing.T) {
+		spec := &csiopv1.ControllerPluginResourcesSpec{
+			Attacher: newCPUResourceRequirements("50m"),
+		}
+
+		got := resourceRequirementsFromStruct(spec)
+
+		assert.Len(t, got, 1)
+		assert.Equal(t, spec.Attacher, got[0])
+	})
+}
+
+func newCPUResourceRequirements(cpu string) *corev1.ResourceRequirements {
+	return &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse(cpu),
+		},
+	}
+}
+
+func assertResourceRequirementsCollected(t *testing.T, spec any, want []*corev1.ResourceRequirements) {
+	t.Helper()
+
+	got := resourceRequirementsFromStruct(spec)
+
+	assert.Len(t, got, len(want))
+	for _, req := range want {
+		assert.Contains(t, got, req)
+	}
 }
