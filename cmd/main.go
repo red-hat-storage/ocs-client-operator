@@ -53,6 +53,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -149,7 +150,7 @@ func main() {
 		setupLog.Error(err, "Unable to get API client")
 		os.Exit(1)
 	}
-	availCrds, err := getAvailableCRDNames(apiCtx, apiClient)
+	availCrdsOrResources, err := getAvailableCRDNames(apiCtx, apiClient)
 	if err != nil {
 		setupLog.Error(err, "Unable get a list of available CRD names")
 		os.Exit(1)
@@ -199,7 +200,7 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
-		Cache:  buildCacheAvailableCRDs(availCrds, defaultNamespaces, operatorNamespace),
+		Cache:  buildCacheAvailableCRDs(availCrdsOrResources, defaultNamespaces, operatorNamespace),
 
 		// servers
 		HealthProbeBindAddress: healthProbeAddr,
@@ -221,6 +222,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if isAPIResourceAvailable(mgr.GetRESTMapper(), schema.GroupVersion{Group: "storage.k8s.io", Version: "v1"}, "volumeattributesclasses") {
+		availCrdsOrResources[controller.VolumeAttributesClassResourceName] = true
+	}
+
 	setupLog.Info("setting up webhook server")
 	hookServer := mgr.GetWebhookServer()
 
@@ -234,11 +239,11 @@ func main() {
 	)
 
 	if err = (&controller.StorageClientReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		OperatorNamespace: utils.GetOperatorNamespace(),
-		OperatorPodName:   podName,
-		AvailableCrds:     availCrds,
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		OperatorNamespace:    utils.GetOperatorNamespace(),
+		OperatorPodName:      podName,
+		AvailCrdsOrResources: availCrdsOrResources,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "StorageClient")
 		os.Exit(1)
@@ -275,14 +280,14 @@ func main() {
 		Scheme:                  mgr.GetScheme(),
 		OperatorNamespace:       utils.GetOperatorNamespace(),
 		ConsolePort:             int32(consolePort),
-		AvailableCrds:           availCrds,
+		AvailableCrds:           availCrdsOrResources,
 		UpdateAlertPollInterval: alertRunnable.SetPollInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
 		os.Exit(1)
 	}
 
-	if availCrds[controller.MaintenanceModeCRDName] {
+	if availCrdsOrResources[controller.MaintenanceModeCRDName] {
 		if err = (&controller.MaintenanceModeReconciler{
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
@@ -294,14 +299,14 @@ func main() {
 
 	if err = (&controller.CrdsPresenceReconciler{
 		Client:            mgr.GetClient(),
-		AvailableCrds:     availCrds,
+		AvailableCrds:     availCrdsOrResources,
 		ShutdownContainer: shutdownContainer,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CrdsPresence")
 		os.Exit(1)
 	}
 
-	if availCrds[controller.ObjectBucketClaimCrdName] {
+	if availCrdsOrResources[controller.ObjectBucketClaimCrdName] {
 		if err = (&controller.ObcReconciler{
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
@@ -404,4 +409,9 @@ func buildCacheAvailableCRDs(
 		}
 	}
 	return cacheAvailableCrd
+}
+
+func isAPIResourceAvailable(mapper apimeta.RESTMapper, gv schema.GroupVersion, resource string) bool {
+	resources, err := mapper.ResourcesFor(gv.WithResource(resource))
+	return err == nil && len(resources) > 0
 }
