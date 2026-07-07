@@ -15,18 +15,38 @@ on:
       VERSION:
         required: false
         default: ""
+
+permissions:
+  contents: read
+
 jobs:
   docker-push:
     name: docker-push
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      with:
+        persist-credentials: false
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
       with:
           go-version-file: go.mod
           cache: false
+    - name: Validate inputs
+      run: |
+        if [[ ! "${{ github.event.inputs.REGISTRY_NAMESPACE }}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+          echo "Invalid REGISTRY_NAMESPACE format"
+          exit 1
+        fi
+        if [[ -n "${{ github.event.inputs.IMAGE_TAG }}" ]] && [[ ! "${{ github.event.inputs.IMAGE_TAG }}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+          echo "Invalid IMAGE_TAG format"
+          exit 1
+        fi
+        if [[ -n "${{ github.event.inputs.VERSION }}" ]] && [[ ! "${{ github.event.inputs.VERSION }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Invalid VERSION format (expected semver)"
+          exit 1
+        fi
     - name: Login to Quay
-      uses: docker/login-action@v3
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
       with:
         registry: quay.io
         username: ${{ secrets.QUAY_USERNAME }}
@@ -38,7 +58,6 @@ jobs:
         VERSION: ${{ github.event.inputs.VERSION }}
         IMAGE_TAG_SHA: ${{ github.ref_name }}-${{ github.sha }}
       run: |
-        # Set IMAGE_TAG to a calculated <branch>-<sha> if not specified
         export IMAGE_TAG=${IMAGE_TAG:-${IMAGE_TAG_SHA:0:-33}}
         make container-build container-push
         make bundle-build bundle-push

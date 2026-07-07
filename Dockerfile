@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.25 as builder
+FROM golang:1.26.1 AS builder
 
 WORKDIR /workspace
 
@@ -22,8 +22,6 @@ COPY service/ service/
 # Build
 RUN make go-build
 
-# Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM registry.access.redhat.com/ubi9/ubi-minimal
 WORKDIR /
 COPY --from=builder /workspace/bin/ocs-client-operator .

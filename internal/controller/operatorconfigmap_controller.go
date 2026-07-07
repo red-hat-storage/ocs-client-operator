@@ -51,6 +51,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/version"
 	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/klog/v2"
@@ -176,7 +177,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return false
 				}
 
-				if obj.GetName() == operatorConfigMapName {
+				if obj.GetName() == operatorConfigMapName || obj.GetName() == utils.OpenShiftServiceCAConfigMapName {
 					return true
 				}
 
@@ -699,9 +700,16 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 				rbdDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
 			}
 			rbdDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForRbdCtrlPlugin)
+			templates.InjectSnapshotMetadataTLSVolume(rbdDriver.Spec.ControllerPlugin)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile rbd driver: %v", err)
+		}
+		if err := c.reconcileRbdSMSService(); err != nil {
+			return fmt.Errorf("failed to reconcile snapshot metadata service: %w", err)
+		}
+		if err := c.reconcileRbdSMSSpecConfigMap(); err != nil {
+			return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
 		}
 	}
 
@@ -1158,7 +1166,7 @@ func (c *OperatorConfigMapReconciler) reconcileWebhookService() error {
 		if err := c.own(svc); err != nil {
 			return err
 		}
-		utils.AddAnnotation(svc, "service.beta.openshift.io/serving-cert-secret-name", "ocs-client-webhook-cert-secret")
+		utils.AddAnnotation(svc, utils.ServingCertSecretAnnotation, "ocs-client-webhook-cert-secret")
 		templates.WebhookService.Spec.DeepCopyInto(&svc.Spec)
 		return nil
 	})
@@ -1350,4 +1358,62 @@ func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithNfsDriver() (
 		return false, fmt.Errorf("failed to list NFS driver VolumeSnapshotContents: %v", err)
 	}
 	return len(vscList.Items) != 0, nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileRbdSMSService() error {
+	svc := &corev1.Service{}
+	svc.Name = templates.SnapshotMetadataServiceName
+	svc.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(svc, func() error {
+		if err := c.own(svc); err != nil {
+			return err
+		}
+		utils.AddAnnotation(svc, utils.ServingCertSecretAnnotation, templates.SnapshotMetadataTLSSecretName)
+		svc.Spec.Ports = []corev1.ServicePort{{
+			Port:       templates.SnapshotMetadataServicePort,
+			TargetPort: intstr.FromInt32(templates.SnapshotMetadataGRPCPort),
+		}}
+		svc.Spec.Selector = map[string]string{"app": templates.RBDDriverName + "-ctrlplugin"}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile snapshot metadata service: %w", err)
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileRbdSMSSpecConfigMap() error {
+	// openshift-service-ca.crt is auto-created per namespace by OpenShift service-CA operator
+	caCM := &corev1.ConfigMap{}
+	caCM.Name = utils.OpenShiftServiceCAConfigMapName
+	caCM.Namespace = c.OperatorNamespace
+	if err := c.get(caCM); err != nil {
+		return fmt.Errorf("failed to get ConfigMap %s/%s: %w", c.OperatorNamespace, utils.OpenShiftServiceCAConfigMapName, err)
+	}
+	caCert := caCM.Data[utils.ServiceCACertKey]
+	if caCert == "" {
+		c.log.Info("service CA cert not yet available, waiting for requeue", "configMap", utils.OpenShiftServiceCAConfigMapName)
+		return nil
+	}
+
+	cm := &corev1.ConfigMap{}
+	cm.Name = templates.SnapshotMetadataConfigName
+	cm.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(cm, func() error {
+		if err := c.own(cm); err != nil {
+			return err
+		}
+		cm.Data = map[string]string{
+			"address": fmt.Sprintf("%s.%s.svc:%d",
+				templates.SnapshotMetadataServiceName,
+				c.OperatorNamespace,
+				templates.SnapshotMetadataServicePort),
+			"audience":   templates.RBDDriverName,
+			"caCert":     caCert,
+			"driverName": templates.RBDDriverName,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
+	}
+	return nil
 }

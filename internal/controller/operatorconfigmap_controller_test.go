@@ -1,21 +1,26 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
 
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/console"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -61,6 +66,18 @@ func newFakeScheme(t *testing.T) *runtime.Scheme {
 	assert.Nil(t, err, "failed to add v1alpha1 scheme")
 
 	return scheme
+}
+
+// newSMSReconciler builds a reconciler wired with a fake client and the ownerRef ConfigMap set.
+func newSMSReconciler(t *testing.T, objs ...client.Object) OperatorConfigMapReconciler {
+	r := newFakeConfigMapReconciler(t)
+	ownerCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "owner-cm", Namespace: testNamespace, UID: "test-uid"}}
+	allObjs := append([]client.Object{ownerCM}, objs...)
+	r.Client = newFakeClientBuilder(r.Scheme).WithObjects(allObjs...).Build()
+	r.ctx = context.Background()
+	r.operatorConfigMap = ownerCM
+	r.AvailableCrds = map[string]bool{}
+	return r
 }
 
 func newFakeConfigMapReconciler(t *testing.T) OperatorConfigMapReconciler {
@@ -466,4 +483,52 @@ func TestBuildDesiredNginxDataWithProxies(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileSMSService(t *testing.T) {
+	r := newSMSReconciler(t)
+	err := r.reconcileRbdSMSService()
+	assert.NoError(t, err)
+
+	svc := &corev1.Service{}
+	err = r.Get(r.ctx, types.NamespacedName{Name: templates.SnapshotMetadataServiceName, Namespace: testNamespace}, svc)
+	assert.NoError(t, err)
+	assert.Equal(t, templates.SnapshotMetadataServicePort, svc.Spec.Ports[0].Port)
+	assert.Equal(t, templates.SnapshotMetadataTLSSecretName, svc.Annotations["service.beta.openshift.io/serving-cert-secret-name"])
+}
+
+func TestReconcileSMSSpecConfigMap_CANotYetInjected(t *testing.T) {
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "openshift-service-ca.crt", Namespace: testNamespace},
+	}
+	r := newSMSReconciler(t, caCM)
+	err := r.reconcileRbdSMSSpecConfigMap()
+	assert.NoError(t, err)
+
+	cm := &corev1.ConfigMap{}
+	err = r.Get(r.ctx, types.NamespacedName{Name: templates.SnapshotMetadataConfigName, Namespace: testNamespace}, cm)
+	assert.True(t, kerrors.IsNotFound(err), "spec ConfigMap should not be created when CA not yet injected")
+}
+
+func TestReconcileSMSSpecConfigMap(t *testing.T) {
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "openshift-service-ca.crt", Namespace: testNamespace},
+		Data:       map[string]string{"service-ca.crt": "fake-ca-cert"},
+	}
+	r := newSMSReconciler(t, caCM)
+	err := r.reconcileRbdSMSSpecConfigMap()
+	assert.NoError(t, err)
+
+	cm := &corev1.ConfigMap{}
+	err = r.Get(r.ctx, types.NamespacedName{Name: templates.SnapshotMetadataConfigName, Namespace: testNamespace}, cm)
+	assert.NoError(t, err)
+	assert.Equal(t, "fake-ca-cert", cm.Data["caCert"])
+	assert.Equal(t, templates.RBDDriverName, cm.Data["audience"])
+	assert.Contains(t, cm.Data["address"], templates.SnapshotMetadataServiceName)
+}
+
+func TestDeleteDelegatedCSI(t *testing.T) {
+	r := newSMSReconciler(t)
+	err := r.deleteDelegatedCSI()
+	assert.NoError(t, err)
 }
