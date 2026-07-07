@@ -22,6 +22,7 @@ import (
 	"maps"
 	"net/url"
 	"reflect"
+	goruntime "runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -114,6 +115,9 @@ const (
 
 	pvDriverIndexName  = "index:persistentVolumeDriver"
 	vscDriverIndexName = "index:volumeSnapshotContentDriver"
+
+	ibmZCpuArch         = "s390x"
+	ibmZCpuAdjustFactor = 0.5
 )
 
 // ConfigMapData value from the provider that contains the s3 endpoint info (key is the unique identifier, using which the endpoint is exposed).
@@ -633,6 +637,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		driverSpecDefaults := csiOperatorConfig.Spec.DriverSpecDefaults
+		if goruntime.GOARCH == ibmZCpuArch {
+			adjustPluginCpuResourcesForIbmZ(&driverSpecDefaults.ControllerPlugin.Resources, ibmZCpuAdjustFactor)
+			adjustPluginCpuResourcesForIbmZ(&driverSpecDefaults.NodePlugin.Resources, ibmZCpuAdjustFactor)
+		}
 		if isTnfCluster {
 			templates.CSIOperatorTNFControllerPluginResourceSpec.DeepCopyInto(&driverSpecDefaults.ControllerPlugin.Resources)
 			templates.CSIOperatorTNFNodePluginResourceSpec.DeepCopyInto(&driverSpecDefaults.NodePlugin.Resources)
@@ -1416,4 +1424,34 @@ func (c *OperatorConfigMapReconciler) reconcileRbdSMSSpecConfigMap() error {
 		return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
 	}
 	return nil
+}
+
+func adjustPluginCpuResourcesForIbmZ(resources any, adjustFactor float64) {
+	if resources == nil {
+		return
+	}
+	for _, req := range resourceRequirementsFromStruct(resources) {
+		adjustCpuResourcesForIbmZ(req, adjustFactor)
+	}
+}
+
+func resourceRequirementsFromStruct(spec any) []*corev1.ResourceRequirements {
+	v := reflect.ValueOf(spec).Elem()
+	reqs := make([]*corev1.ResourceRequirements, 0, v.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		req, ok := v.Field(i).Interface().(*corev1.ResourceRequirements)
+		if ok && req != nil {
+			reqs = append(reqs, req)
+		}
+	}
+	return reqs
+}
+
+func adjustCpuResourcesForIbmZ(req *corev1.ResourceRequirements, adjustFactor float64) {
+	if req == nil {
+		return
+	}
+	if cpuQty, exists := req.Requests[corev1.ResourceCPU]; exists {
+		req.Requests[corev1.ResourceCPU] = utils.AdjustCPU(cpuQty, adjustFactor)
+	}
 }
