@@ -1,5 +1,5 @@
 /*
-Copyright 2024 Red Hat, Inc.
+Copyright 2026 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
@@ -30,19 +31,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	ocsClientOperatorPackageName = "ocs-client-operator"
+)
+
 var _ prometheus.Collector = &ResourceCollector{}
 
-// ResourceCollector exposes resource counts as Prometheus metrics.
+// ResourceCollector exposes resource counts and upgrade status as Prometheus metrics.
 // It reads from the controller-runtime cache (cached client) during each
 // Prometheus scrape, so no background polling loop is needed.
 type ResourceCollector struct {
-	client client.Client
+	client            client.Client
+	operatorNamespace string
 }
 
-// NewResourceCollector creates a collector that counts CephFS PVs and
-// ODF VolumeGroupSnapshotContent resources using the cached client.
-func NewResourceCollector(c client.Client) *ResourceCollector {
-	return &ResourceCollector{client: c}
+// NewResourceCollector creates a collector that counts CephFS PVs,
+// ODF VolumeGroupSnapshotContent resources, and checks upgrade status.
+func NewResourceCollector(c client.Client, operatorNamespace string) *ResourceCollector {
+	return &ResourceCollector{client: c, operatorNamespace: operatorNamespace}
 }
 
 // Describe implements prometheus.Collector.
@@ -60,6 +66,7 @@ func (c *ResourceCollector) Collect(ch chan<- prometheus.Metric) {
 
 	c.collectPVCount(ctx, ch, storageClients, templates.CephFsDriverName)
 	c.collectVSCCount(ctx, ch, storageClients, templates.CephFsDriverName)
+	c.collectUpgradeRequired(ctx, ch, storageClients)
 }
 
 func (c *ResourceCollector) clientProfileName(ctx context.Context, sc *v1alpha1.StorageClient) (string, error) {
@@ -143,4 +150,62 @@ func (c *ResourceCollector) collectVSCCount(ctx context.Context, ch chan<- prome
 		}
 		ch <- m
 	}
+}
+
+func (c *ResourceCollector) collectUpgradeRequired(ctx context.Context, ch chan<- prometheus.Metric, storageClients *v1alpha1.StorageClientList) {
+	// Get current ocs-client-operator subscription channel
+	currentChannel, err := c.getCurrentSubscriptionChannel(ctx)
+	if err != nil || currentChannel == "" {
+		return
+	}
+
+	desc := prometheus.NewDesc(
+		"ocs_client_operator_upgrade_required",
+		"Indicates if client operator upgrade is required to match provider (1 = upgrade required)",
+		[]string{"storage_client", "desired_channel", "current_channel"}, nil,
+	)
+
+	for i := range storageClients.Items {
+		sc := &storageClients.Items[i]
+
+		// Get desired channel from annotation
+		desiredChannel := sc.GetAnnotations()[utils.DesiredSubscriptionChannelAnnotationKey]
+		if desiredChannel == "" {
+			// No desired channel annotation, skip this client
+			continue
+		}
+
+		// Check if upgrade is required
+		if desiredChannel != currentChannel {
+			m, err := prometheus.NewConstMetric(
+				desc,
+				prometheus.GaugeValue,
+				1, // upgrade required
+				sc.Name,
+				desiredChannel,
+				currentChannel,
+			)
+			if err != nil {
+				continue
+			}
+			ch <- m
+		}
+	}
+}
+
+// getCurrentSubscriptionChannel returns the current channel of the ocs-client-operator subscription.
+func (c *ResourceCollector) getCurrentSubscriptionChannel(ctx context.Context) (string, error) {
+	subscriptions := &opv1a1.SubscriptionList{}
+	if err := c.client.List(ctx, subscriptions, client.InNamespace(c.operatorNamespace)); err != nil {
+		return "", err
+	}
+
+	for i := range subscriptions.Items {
+		sub := &subscriptions.Items[i]
+		if sub.Spec.Package == ocsClientOperatorPackageName {
+			return sub.Spec.Channel, nil
+		}
+	}
+
+	return "", nil
 }

@@ -40,3 +40,13 @@ spec:
       for: 5s
       labels:
         severity: warning
+    - alert: StorageClientUpgradeRequired
+      annotations:
+        description: Storage provider has upgraded to channel {{ $labels.desired_channel }}. Client operator on this cluster is still on {{ $labels.current_channel }}. Manual upgrade of the ocs-client-operator subscription is required.
+        message: Storage provider upgraded. Client {{ $labels.storage_client }} requires manual upgrade from {{ $labels.current_channel }} to {{ $labels.desired_channel }}.
+        severity_level: warning
+      expr: |
+        ocs_client_operator_upgrade_required > 0
+      for: 5m
+      labels:
+        severity: warning
