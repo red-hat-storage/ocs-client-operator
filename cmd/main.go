@@ -327,7 +327,7 @@ func main() {
 	}
 
 	alertCollector := alert.NewCollector(alertRunnable)
-	resourceCollector := alert.NewResourceCollector(mgr.GetClient())
+	resourceCollector := alert.NewResourceCollector(mgr.GetClient(), operatorNamespace)
 	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
