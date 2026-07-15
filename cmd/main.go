@@ -281,6 +281,7 @@ func main() {
 		OperatorNamespace:       utils.GetOperatorNamespace(),
 		ConsolePort:             int32(consolePort),
 		AvailableCrds:           availCrdsOrResources,
+		TlsProfile:              startupProfile,
 		UpdateAlertPollInterval: alertRunnable.SetPollInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
