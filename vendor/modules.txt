@@ -326,7 +326,7 @@ github.com/ramendr/ramen/api/v1alpha1
 ## explicit; go 1.22.0
 github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1
 # github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000 => ./api
-## explicit; go 1.25.2
+## explicit; go 1.25.10
 github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
 # github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260429150604-e17cd01ca408
 ## explicit; go 1.25.8
