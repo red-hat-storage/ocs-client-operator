@@ -883,6 +883,7 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 							},
 							RestartPolicy:      corev1.RestartPolicyOnFailure,
 							ServiceAccountName: "ocs-client-operator-status-reporter",
+							NodeSelector:       ptr.Deref(clientSubscription.Spec.Config, opv1a1.SubscriptionConfig{}).NodeSelector,
 							Tolerations: append(
 								[]corev1.Toleration{
 									{
