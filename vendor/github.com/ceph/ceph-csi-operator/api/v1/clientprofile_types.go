@@ -58,8 +58,18 @@ type RbdConfigSpec struct {
 	CephCsiSecrets *CephCsiSecretsSpec `json:"cephCsiSecrets,omitempty"`
 }
 
-// NfsConfigSpec cdefines the desired NFS configuration
+// NfsConfigSpec defines the desired NFS configuration
 type NfsConfigSpec struct {
+}
+
+// NvmeofConfigSpec defines the desired NVMe-oF configuration
+type NvmeofConfigSpec struct {
+	//+kubebuilder:validation:XValidation:rule="self == oldSelf",message="field is immutable"
+	//+kubebuilder:validation:Optional
+	RadosNamespace string `json:"radosNamespace,omitempty"`
+
+	//+kubebuilder:validation:Optional
+	CephCsiSecrets *CephCsiSecretsSpec `json:"cephCsiSecrets,omitempty"`
 }
 
 // ClientProfileSpec defines the desired state of Ceph CSI
@@ -78,6 +88,9 @@ type ClientProfileSpec struct {
 
 	//+kubebuilder:validation:Optional
 	Nfs *NfsConfigSpec `json:"nfs,omitempty"`
+
+	//+kubebuilder:validation:Optional
+	Nvmeof *NvmeofConfigSpec `json:"nvmeof,omitempty"`
 }
 
 // ClientProfileStatus defines the observed state of Ceph CSI

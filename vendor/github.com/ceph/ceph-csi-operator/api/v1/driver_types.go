@@ -89,10 +89,10 @@ type EncryptionSpec struct {
 }
 
 type VolumeSpec struct {
-	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Optional
 	Volume corev1.Volume `json:"volume,omitempty"`
 
-	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Optional
 	Mount corev1.VolumeMount `json:"mount,omitempty"`
 }
 
@@ -178,6 +178,15 @@ type NodePluginSpec struct {
 	// Topology settings for the plugin pods
 	//+kubebuilder:validation:Optional
 	Topology *TopologySpec `json:"topology,omitempty"`
+
+	// Extra arguments for containers in the node plugin daemonset.
+	// The key is the container name, the value is a list of CLI arguments.
+	// The operator will not override the default CLI argument values it's setting.
+	// This is more for customizing what comes as default with cephcsi.
+	// Examples of container names: csi-rbdplugin, driver-registrar, csi-addons,
+	// liveness-prometheus, etc.
+	//+kubebuilder:validation:Optional
+	ContainerExtraArgs map[string][]string `json:"containerExtraArgs,omitempty"`
 }
 
 type ControllerPluginResourcesSpec struct {
@@ -216,7 +225,7 @@ type ControllerPluginSpec struct {
 	PodCommonSpec `json:",inline"`
 
 	// DeploymentStrategy describes how to replace existing pods with new ones
-	// Default value is RollingUpdate with MaxUnavailable and MaxSurege as 25% (kubernetes default)
+	// Default value is Recreate
 	//+kubebuilder:validation:Optional
 	DeploymentStrategy *appsv1.DeploymentStrategy `json:"deploymentStrategy,omitempty"`
 
@@ -234,6 +243,15 @@ type ControllerPluginSpec struct {
 	// For example, OpenShift with SELinux restrictions requires the pod to be privileged to write to hostPath.
 	//+kubebuilder:validation:Optional
 	Privileged *bool `json:"privileged,omitempty"`
+
+	// Extra arguments for containers in the controller plugin deployment.
+	// The key is the container name, the value is a list of CLI arguments.
+	// The operator will not override the default CLI argument values it's setting.
+	// This is more for customizing what comes as default with cephcsi.
+	// Examples of container names: csi-rbdplugin, csi-provisioner, csi-attacher,
+	// csi-resizer, csi-snapshotter, csi-omap-generator, liveness-prometheus, etc.
+	//+kubebuilder:validation:Optional
+	ContainerExtraArgs map[string][]string `json:"containerExtraArgs,omitempty"`
 }
 
 type LivenessSpec struct {
@@ -291,9 +309,7 @@ type DriverSpec struct {
 	//+kubebuilder:validation:Optional
 	ClusterName *string `json:"clusterName,omitempty"`
 
-	// Set to true to enable adding volume metadata on the CephFS subvolumes and RBD images.
-	// Not all users might be interested in getting volume/snapshot details as metadata on CephFS subvolume and RBD images.
-	// Hence enable metadata is false by default.
+	// Deprecated: This field is no longer used by the ceph-csi driver and will be ignored.
 	//+kubebuilder:validation:Optional
 	EnableMetadata *bool `json:"enableMetadata,omitempty"`
 
@@ -386,7 +402,7 @@ type DriverStatus struct {
 //+kubebuilder:storageversion
 //+kubebuilder:subresource:status
 
-// +kubebuilder:validation:XValidation:rule=self.metadata.name.matches('^(.+\\.)?(rbd|cephfs|nfs)?\\.csi\\.ceph\\.com$'),message=".metadata.name must match: '[<prefix>.](rbd|cephfs|nfs).csi.ceph.com'"
+// +kubebuilder:validation:XValidation:rule=self.metadata.name.matches('^(.+\\.)?(rbd|cephfs|nfs|nvmeof)?\\.csi\\.ceph\\.com$'),message=".metadata.name must match: '[<prefix>.](rbd|cephfs|nfs|nvmeof).csi.ceph.com'"
 // Driver is the Schema for the drivers API
 type Driver struct {
 	metav1.TypeMeta   `json:",inline"`

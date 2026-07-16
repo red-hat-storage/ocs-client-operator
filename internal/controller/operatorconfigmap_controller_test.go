@@ -14,6 +14,7 @@ import (
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -634,5 +635,163 @@ func assertResourceRequirementsCollected(t *testing.T, spec any, want []*corev1.
 	assert.Len(t, got, len(want))
 	for _, req := range want {
 		assert.Contains(t, got, req)
+	}
+}
+
+func TestCsiContainerTLSExtraArgs(t *testing.T) {
+	tls12Config := ocstlsv1.TLSConfig{
+		Version: ocstlsv1.VersionTLS1_2,
+		Ciphers: []ocstlsv1.TLSCipherSuite{
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		},
+		Groups: []ocstlsv1.TLSGroupName{"secp256r1", "secp384r1"},
+	}
+	tls12Args := []string{
+		"--tls-min-version=VersionTLS12",
+		"--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"--tls-curve-preferences=CurveP256,CurveP384",
+	}
+
+	tests := []struct {
+		name     string
+		profile  *ocstlsv1.TLSProfile
+		expected map[string][]string
+	}{
+		{
+			name:     "no TLSProfile returns nil",
+			profile:  nil,
+			expected: nil,
+		},
+		{
+			name: "no matching selector returns nil",
+			profile: &ocstlsv1.TLSProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      TLSProfileName,
+					Namespace: testNamespace,
+				},
+				Spec: ocstlsv1.TLSProfileSpec{
+					Rules: []ocstlsv1.TLSProfileRules{
+						{
+							Selectors: []ocstlsv1.Selector{"rook.io"},
+							Config:    tls12Config,
+						},
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name: "csi-addons only when csiaddons.openshift.io matches",
+			profile: &ocstlsv1.TLSProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      TLSProfileName,
+					Namespace: testNamespace,
+				},
+				Spec: ocstlsv1.TLSProfileSpec{
+					Rules: []ocstlsv1.TLSProfileRules{
+						{
+							Selectors: []ocstlsv1.Selector{"csiaddons.openshift.io"},
+							Config:    tls12Config,
+						},
+					},
+				},
+			},
+			expected: map[string][]string{
+				"csi-addons": tls12Args,
+			},
+		},
+		{
+			name: "csi-snapshot-metadata only when cbt.storage.k8s.io matches",
+			profile: &ocstlsv1.TLSProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      TLSProfileName,
+					Namespace: testNamespace,
+				},
+				Spec: ocstlsv1.TLSProfileSpec{
+					Rules: []ocstlsv1.TLSProfileRules{
+						{
+							Selectors: []ocstlsv1.Selector{"cbt.storage.k8s.io"},
+							Config:    tls12Config,
+						},
+					},
+				},
+			},
+			expected: map[string][]string{
+				"csi-snapshot-metadata": tls12Args,
+			},
+		},
+		{
+			name: "TLS 1.3 with hybrid groups",
+			profile: &ocstlsv1.TLSProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      TLSProfileName,
+					Namespace: testNamespace,
+				},
+				Spec: ocstlsv1.TLSProfileSpec{
+					Rules: []ocstlsv1.TLSProfileRules{
+						{
+							Selectors: []ocstlsv1.Selector{"csiaddons.openshift.io"},
+							Config: ocstlsv1.TLSConfig{
+								Version: ocstlsv1.VersionTLS1_3,
+								Ciphers: []ocstlsv1.TLSCipherSuite{
+									"TLS_AES_128_GCM_SHA256",
+									"TLS_AES_256_GCM_SHA384",
+								},
+								Groups: []ocstlsv1.TLSGroupName{"X25519", "X25519MLKEM768"},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string][]string{
+				"csi-addons": {
+					"--tls-min-version=VersionTLS13",
+					"--tls-cipher-suites=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384",
+					"--tls-curve-preferences=X25519,X25519MLKEM768",
+				},
+			},
+		},
+		{
+			name: "wildcard selector populates both containers",
+			profile: &ocstlsv1.TLSProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      TLSProfileName,
+					Namespace: testNamespace,
+				},
+				Spec: ocstlsv1.TLSProfileSpec{
+					Rules: []ocstlsv1.TLSProfileRules{
+						{
+							Selectors: []ocstlsv1.Selector{"*"},
+							Config: ocstlsv1.TLSConfig{
+								Version: ocstlsv1.VersionTLS1_2,
+								Ciphers: []ocstlsv1.TLSCipherSuite{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+								Groups:  []ocstlsv1.TLSGroupName{"X25519"},
+							},
+						},
+					},
+				},
+			},
+			expected: map[string][]string{
+				"csi-addons": {
+					"--tls-min-version=VersionTLS12",
+					"--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+					"--tls-curve-preferences=X25519",
+				},
+				"csi-snapshot-metadata": {
+					"--tls-min-version=VersionTLS12",
+					"--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+					"--tls-curve-preferences=X25519",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := buildContainerExtraArgs(tt.profile)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

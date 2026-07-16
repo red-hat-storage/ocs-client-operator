@@ -187,12 +187,12 @@ func main() {
 		initialTLSGeneration = startupProfile.Generation
 	}
 
-	webhookTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "webhook")
+	webhookTlsConfig, err := utils.BuildServerTLSOpts(startupProfile, "ocs.openshift.io", "webhook")
 	if err != nil {
 		setupLog.Error(err, "invalid TLSProfile config for webhook server")
 		os.Exit(1)
 	}
-	metricsTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "metrics")
+	metricsTlsConfig, err := utils.BuildServerTLSOpts(startupProfile, "ocs.openshift.io", "metrics")
 	if err != nil {
 		setupLog.Error(err, "invalid TLSProfile config for metrics server")
 		os.Exit(1)
@@ -209,12 +209,12 @@ func main() {
 			SecureServing:  true,
 			CertDir:        "/tmp/metrics/tls/private",
 			FilterProvider: filters.WithAuthenticationAndAuthorization,
-			TLSOpts:        metricsTlsOpts,
+			TLSOpts:        tlsConfigToOpts(metricsTlsConfig),
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    webhookPort,
 			CertDir: "/tmp/webhook/tls/private",
-			TLSOpts: webhookTlsOpts,
+			TLSOpts: tlsConfigToOpts(webhookTlsConfig),
 		}),
 	})
 	if err != nil {
@@ -281,6 +281,7 @@ func main() {
 		OperatorNamespace:       utils.GetOperatorNamespace(),
 		ConsolePort:             int32(consolePort),
 		AvailableCrds:           availCrdsOrResources,
+		TlsProfile:              startupProfile,
 		UpdateAlertPollInterval: alertRunnable.SetPollInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
@@ -337,26 +338,18 @@ func main() {
 	}
 }
 
-func buildServerTLSOpts(profile *ocstlsv1.TLSProfile, domain, server string) ([]func(*tls.Config), error) {
-	if profile == nil {
-		return nil, nil
+func tlsConfigToOpts(cfg *tls.Config) []func(*tls.Config) {
+	if cfg == nil {
+		return nil
 	}
-	tlsConfig, exist := ocstlsv1.GetConfigForServer(profile, domain, server)
-	if !exist {
-		return nil, nil
-	}
-	if err := ocstlsv1.ValidateTLSConfig(tlsConfig); err != nil {
-		return nil, err
-	}
-	goTLS := ocstlsv1.GetGoTLSConfig(tlsConfig)
 	return []func(*tls.Config){
-		func(cfg *tls.Config) {
-			cfg.MinVersion = goTLS.MinVersion
-			cfg.MaxVersion = goTLS.MaxVersion
-			cfg.CipherSuites = goTLS.CipherSuites
-			cfg.CurvePreferences = goTLS.CurvePreferences
+		func(c *tls.Config) {
+			c.MinVersion = cfg.MinVersion
+			c.MaxVersion = cfg.MaxVersion
+			c.CipherSuites = cfg.CipherSuites
+			c.CurvePreferences = cfg.CurvePreferences
 		},
-	}, nil
+	}
 }
 
 func getAvailableCRDNames(ctx context.Context, cl client.Client) (map[string]bool, error) {
