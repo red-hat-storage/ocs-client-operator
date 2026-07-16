@@ -115,6 +115,7 @@ rules:
   resources:
   - cephconnections
   - clientprofilemappings
+  - clientprofilereplications
   - clientprofiles
   - drivers
   - operatorconfigs
