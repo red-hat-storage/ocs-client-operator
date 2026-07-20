@@ -103,6 +103,7 @@ var (
 		&quotav1.ClusterResourceQuota{},
 		&csiopv1.CephConnection{},
 		&csiopv1.ClientProfileMapping{},
+		&csiopv1.ClientProfileReplication{},
 		&corev1.Secret{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
@@ -244,6 +245,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&csiopv1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.ClientProfileReplication{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{}).
 		Owns(&replicationv1a1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
@@ -297,6 +299,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilereplications,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;delete;update

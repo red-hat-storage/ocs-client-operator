@@ -229,7 +229,10 @@ type ControllerPluginSpec struct {
 	//+kubebuilder:validation:Optional
 	DeploymentStrategy *appsv1.DeploymentStrategy `json:"deploymentStrategy,omitempty"`
 
-	// Set replicas for controller plugin's deployment. Defaults to 2
+	// Set replicas for controller plugin's deployment.
+	// If not set, defaults to 2 or to the number of available nodes
+	// on single-node clusters. When OperatorConfig specifies a replica
+	// count, it is used as the default for all drivers.
 	//+kubebuilder:validation:Optional
 	//+kubebuilder:validation:Minimum:=1
 	Replicas *int32 `json:"replicas,omitempty"`
