@@ -1165,20 +1165,13 @@ func (r *storageClientReconcile) getOperatorVersion() (string, error) {
 	if err := r.get(deployment); err != nil {
 		return "", fmt.Errorf("failed to get deployment: %v", err)
 	}
-	ownerCsvIdx := slices.IndexFunc(deployment.OwnerReferences, func(owner metav1.OwnerReference) bool {
-		return owner.Kind == "ClusterServiceVersion"
-	})
-	if ownerCsvIdx == -1 {
-		return "", fmt.Errorf("unable to find csv from deployment owners")
+
+	// TODO: Add a version package
+	if version, ok := deployment.Annotations["olm.operatorframework.io/bundle-version"]; ok {
+		return version, nil
 	}
 
-	csv := &opv1a1.ClusterServiceVersion{}
-	csv.Name = deployment.OwnerReferences[ownerCsvIdx].Name
-	csv.Namespace = r.OperatorNamespace
-	if err := r.get(csv); err != nil {
-		return "", fmt.Errorf("failed to get csv: %v", err)
-	}
-	return csv.Spec.Version.String(), nil
+	return "", fmt.Errorf("failed to get version from deployment: %v", deployment.Name)
 }
 
 // crdEstablished reports whether the CRD is served by the apiserver (status.conditions Established=True).
