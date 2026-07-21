@@ -36,7 +36,7 @@ import (
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	replicationv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
-	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
@@ -187,12 +187,12 @@ func main() {
 		initialTLSGeneration = startupProfile.Generation
 	}
 
-	webhookTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "webhook")
+	webhookTlsConfig, err := utils.BuildServerTLSOpts(startupProfile, "ocs.openshift.io", "webhook")
 	if err != nil {
 		setupLog.Error(err, "invalid TLSProfile config for webhook server")
 		os.Exit(1)
 	}
-	metricsTlsOpts, err := buildServerTLSOpts(startupProfile, "ocs.openshift.io", "metrics")
+	metricsTlsConfig, err := utils.BuildServerTLSOpts(startupProfile, "ocs.openshift.io", "metrics")
 	if err != nil {
 		setupLog.Error(err, "invalid TLSProfile config for metrics server")
 		os.Exit(1)
@@ -209,12 +209,12 @@ func main() {
 			SecureServing:  true,
 			CertDir:        "/tmp/metrics/tls/private",
 			FilterProvider: filters.WithAuthenticationAndAuthorization,
-			TLSOpts:        metricsTlsOpts,
+			TLSOpts:        tlsConfigToOpts(metricsTlsConfig),
 		},
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    webhookPort,
 			CertDir: "/tmp/webhook/tls/private",
-			TLSOpts: webhookTlsOpts,
+			TLSOpts: tlsConfigToOpts(webhookTlsConfig),
 		}),
 	})
 	if err != nil {
@@ -281,6 +281,7 @@ func main() {
 		OperatorNamespace:       utils.GetOperatorNamespace(),
 		ConsolePort:             int32(consolePort),
 		AvailableCrds:           availCrdsOrResources,
+		TlsProfile:              startupProfile,
 		UpdateAlertPollInterval: alertRunnable.SetPollInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
@@ -327,7 +328,7 @@ func main() {
 	}
 
 	alertCollector := alert.NewCollector(alertRunnable)
-	resourceCollector := alert.NewResourceCollector(mgr.GetClient())
+	resourceCollector := alert.NewResourceCollector(mgr.GetClient(), operatorNamespace)
 	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
@@ -337,26 +338,18 @@ func main() {
 	}
 }
 
-func buildServerTLSOpts(profile *ocstlsv1.TLSProfile, domain, server string) ([]func(*tls.Config), error) {
-	if profile == nil {
-		return nil, nil
+func tlsConfigToOpts(cfg *tls.Config) []func(*tls.Config) {
+	if cfg == nil {
+		return nil
 	}
-	tlsConfig, exist := ocstlsv1.GetConfigForServer(profile, domain, server)
-	if !exist {
-		return nil, nil
-	}
-	if err := ocstlsv1.ValidateTLSConfig(tlsConfig); err != nil {
-		return nil, err
-	}
-	goTLS := ocstlsv1.GetGoTLSConfig(tlsConfig)
 	return []func(*tls.Config){
-		func(cfg *tls.Config) {
-			cfg.MinVersion = goTLS.MinVersion
-			cfg.MaxVersion = goTLS.MaxVersion
-			cfg.CipherSuites = goTLS.CipherSuites
-			cfg.CurvePreferences = goTLS.CurvePreferences
+		func(c *tls.Config) {
+			c.MinVersion = cfg.MinVersion
+			c.MaxVersion = cfg.MaxVersion
+			c.CipherSuites = cfg.CipherSuites
+			c.CurvePreferences = cfg.CurvePreferences
 		},
-	}, nil
+	}
 }
 
 func getAvailableCRDNames(ctx context.Context, cl client.Client) (map[string]bool, error) {

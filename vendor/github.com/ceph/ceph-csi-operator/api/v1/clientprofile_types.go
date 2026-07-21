@@ -27,6 +27,8 @@ import (
 type CephCsiSecretsSpec struct {
 	//+kubebuilder:validation:Optional
 	ControllerPublishSecret corev1.SecretReference `json:"controllerPublishSecret,omitempty"`
+	//+kubebuilder:validation:Optional
+	NodePublishSecret corev1.SecretReference `json:"nodePublishSecret,omitempty"`
 }
 
 // CephFsConfigSpec defines the desired CephFs configuration
@@ -58,8 +60,18 @@ type RbdConfigSpec struct {
 	CephCsiSecrets *CephCsiSecretsSpec `json:"cephCsiSecrets,omitempty"`
 }
 
-// NfsConfigSpec cdefines the desired NFS configuration
+// NfsConfigSpec defines the desired NFS configuration
 type NfsConfigSpec struct {
+}
+
+// NvmeofConfigSpec defines the desired NVMe-oF configuration
+type NvmeofConfigSpec struct {
+	//+kubebuilder:validation:XValidation:rule="self == oldSelf",message="field is immutable"
+	//+kubebuilder:validation:Optional
+	RadosNamespace string `json:"radosNamespace,omitempty"`
+
+	//+kubebuilder:validation:Optional
+	CephCsiSecrets *CephCsiSecretsSpec `json:"cephCsiSecrets,omitempty"`
 }
 
 // ClientProfileSpec defines the desired state of Ceph CSI
@@ -78,13 +90,34 @@ type ClientProfileSpec struct {
 
 	//+kubebuilder:validation:Optional
 	Nfs *NfsConfigSpec `json:"nfs,omitempty"`
+
+	//+kubebuilder:validation:Optional
+	Nvmeof *NvmeofConfigSpec `json:"nvmeof,omitempty"`
 }
 
 // ClientProfileStatus defines the observed state of Ceph CSI
 // configuration for volumes and snapshots configured to use
 // this profile
 type ClientProfileStatus struct {
+	// Phase indicates the current state of this CR
+	// +optional
+	Phase string `json:"phase,omitempty"`
+
+	// Message provides human-readable details about the current phase
+	// +optional
+	Message string `json:"message,omitempty"`
 }
+
+const (
+	// ClientProfilePhaseReady indicates the CR is reconciled successfully
+	ClientProfilePhaseReady = "Ready"
+
+	// ClientProfilePhaseFailed indicates reconciliation failed
+	ClientProfilePhaseFailed = "Failed"
+
+	// ClientProfilePhasePending indicates reconciliation is in progress
+	ClientProfilePhasePending = "Pending"
+)
 
 //+kubebuilder:object:root=true
 //+kubebuilder:storageversion

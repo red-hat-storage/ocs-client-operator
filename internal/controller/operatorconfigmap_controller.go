@@ -17,11 +17,13 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"net/url"
 	"reflect"
+	goruntime "runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -44,6 +46,7 @@ import (
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	admrv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -114,6 +117,9 @@ const (
 
 	pvDriverIndexName  = "index:persistentVolumeDriver"
 	vscDriverIndexName = "index:volumeSnapshotContentDriver"
+
+	ibmZCpuArch         = "s390x"
+	ibmZCpuAdjustFactor = 0.5
 )
 
 // ConfigMapData value from the provider that contains the s3 endpoint info (key is the unique identifier, using which the endpoint is exposed).
@@ -128,6 +134,7 @@ type OperatorConfigMapReconciler struct {
 	ConsolePort             int32
 	Scheme                  *runtime.Scheme
 	AvailableCrds           map[string]bool
+	TlsProfile              *ocstlsv1.TLSProfile
 	UpdateAlertPollInterval func(time.Duration)
 
 	log                 logr.Logger
@@ -624,6 +631,11 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	if err != nil {
 		return fmt.Errorf("failed to get desired imageset configmap name: %v", err)
 	}
+	csiExtraArgs, err := buildContainerExtraArgs(c.TlsProfile)
+	if err != nil {
+		return err
+	}
+
 	csiOperatorConfig := &csiopv1.OperatorConfig{}
 	csiOperatorConfig.Name = templates.CSIOperatorConfigName
 	csiOperatorConfig.Namespace = c.OperatorNamespace
@@ -633,6 +645,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		templates.CSIOperatorConfigSpec.DeepCopyInto(&csiOperatorConfig.Spec)
 		driverSpecDefaults := csiOperatorConfig.Spec.DriverSpecDefaults
+		if goruntime.GOARCH == ibmZCpuArch {
+			adjustPluginCpuResourcesForIbmZ(&driverSpecDefaults.ControllerPlugin.Resources, ibmZCpuAdjustFactor)
+			adjustPluginCpuResourcesForIbmZ(&driverSpecDefaults.NodePlugin.Resources, ibmZCpuAdjustFactor)
+		}
 		if isTnfCluster {
 			templates.CSIOperatorTNFControllerPluginResourceSpec.DeepCopyInto(&driverSpecDefaults.ControllerPlugin.Resources)
 			templates.CSIOperatorTNFNodePluginResourceSpec.DeepCopyInto(&driverSpecDefaults.NodePlugin.Resources)
@@ -654,6 +670,10 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			}
 		}
 		driverSpecDefaults.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
+		if len(csiExtraArgs) > 0 {
+			driverSpecDefaults.ControllerPlugin.ContainerExtraArgs = csiExtraArgs
+			driverSpecDefaults.NodePlugin.ContainerExtraArgs = csiExtraArgs
+		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
@@ -1416,4 +1436,98 @@ func (c *OperatorConfigMapReconciler) reconcileRbdSMSSpecConfigMap() error {
 		return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
 	}
 	return nil
+}
+
+func adjustPluginCpuResourcesForIbmZ(resources any, adjustFactor float64) {
+	if resources == nil {
+		return
+	}
+	for _, req := range resourceRequirementsFromStruct(resources) {
+		adjustCpuResourcesForIbmZ(req, adjustFactor)
+	}
+}
+
+func resourceRequirementsFromStruct(spec any) []*corev1.ResourceRequirements {
+	v := reflect.ValueOf(spec).Elem()
+	reqs := make([]*corev1.ResourceRequirements, 0, v.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		req, ok := v.Field(i).Interface().(*corev1.ResourceRequirements)
+		if ok && req != nil {
+			reqs = append(reqs, req)
+		}
+	}
+	return reqs
+}
+
+func adjustCpuResourcesForIbmZ(req *corev1.ResourceRequirements, adjustFactor float64) {
+	if req == nil {
+		return
+	}
+	if cpuQty, exists := req.Requests[corev1.ResourceCPU]; exists {
+		req.Requests[corev1.ResourceCPU] = utils.AdjustCPU(cpuQty, adjustFactor)
+	}
+}
+
+func buildContainerExtraArgs(tlsProfile *ocstlsv1.TLSProfile) (map[string][]string, error) {
+	tlsContainers := []struct {
+		name   string
+		domain string
+	}{
+		{"csi-addons", "csiaddons.openshift.io"},
+		{"csi-snapshot-metadata", "cbt.storage.k8s.io"},
+	}
+
+	extraArgs := map[string][]string{}
+
+	for _, ct := range tlsContainers {
+		args, err := containerTLSArgs(tlsProfile, ct.domain)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TLSProfile config for %s: %w", ct.name, err)
+		}
+		if len(args) > 0 {
+			extraArgs[ct.name] = append(extraArgs[ct.name], args...)
+		}
+	}
+
+	if len(extraArgs) == 0 {
+		return nil, nil
+	}
+	return extraArgs, nil
+}
+
+func containerTLSArgs(tlsProfile *ocstlsv1.TLSProfile, domain string) ([]string, error) {
+	goTLS, err := utils.BuildServerTLSOpts(tlsProfile, domain, "")
+	if err != nil {
+		return nil, err
+	}
+	if goTLS == nil {
+		return nil, nil
+	}
+
+	var args []string
+
+	switch goTLS.MinVersion {
+	case tls.VersionTLS12:
+		args = append(args, "--tls-min-version=VersionTLS12")
+	case tls.VersionTLS13:
+		args = append(args, "--tls-min-version=VersionTLS13")
+	}
+
+	if len(goTLS.CipherSuites) > 0 {
+		ciphers := make([]string, len(goTLS.CipherSuites))
+		for i, id := range goTLS.CipherSuites {
+			ciphers[i] = tls.CipherSuiteName(id)
+		}
+		args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(ciphers, ",")))
+	}
+
+	if len(goTLS.CurvePreferences) > 0 {
+		curves := make([]string, len(goTLS.CurvePreferences))
+		for i, id := range goTLS.CurvePreferences {
+			curves[i] = id.String()
+		}
+		args = append(args, fmt.Sprintf("--tls-curve-preferences=%s", strings.Join(curves, ",")))
+	}
+
+	return args, nil
 }

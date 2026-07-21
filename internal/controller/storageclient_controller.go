@@ -39,7 +39,7 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	replicationv1a1 "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
-	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	groupsnapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapapi "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
 	quotav1 "github.com/openshift/api/quota/v1"
@@ -103,6 +103,7 @@ var (
 		&quotav1.ClusterResourceQuota{},
 		&csiopv1.CephConnection{},
 		&csiopv1.ClientProfileMapping{},
+		&csiopv1.ClientProfileReplication{},
 		&corev1.Secret{},
 		&storagev1.StorageClass{},
 		&snapapi.VolumeSnapshotClass{},
@@ -110,8 +111,7 @@ var (
 		&replicationv1a1.VolumeGroupReplicationClass{},
 		&csiopv1.ClientProfile{},
 		&odfgsapiv1b1.VolumeGroupSnapshotClass{},
-		// TODO: enable vgsc after GA of API
-		// &groupsnapapi.VolumeGroupSnapshotClass{},
+		&groupsnapapi.VolumeGroupSnapshotClass{},
 		&csiaddonsv1alpha1.NetworkFenceClass{},
 		&nbv1.ObjectBucketClaim{},
 		&nbv1.ObjectBucket{},
@@ -245,6 +245,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&csiopv1.CephConnection{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&csiopv1.ClientProfileMapping{}, builder.WithPredicates(generationChangePredicate)).
+		Owns(&csiopv1.ClientProfileReplication{}, builder.WithPredicates(generationChangePredicate)).
 		Owns(&storagev1.StorageClass{}).
 		Owns(&snapapi.VolumeSnapshotClass{}).
 		Owns(&replicationv1a1.VolumeReplicationClass{}, builder.WithPredicates(generationChangePredicate)).
@@ -298,6 +299,7 @@ func (r *StorageClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=cephconnections,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilemappings,verbs=get;list;update;create;watch;delete
+//+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofilereplications,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=clientprofiles,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;create;delete;update
 //+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;delete;update
@@ -358,10 +360,9 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *storageClientReconcile) reconcileDynamicWatches() error {
-	// TODO: enable vgsc after GA of API
-	// if err := r.reconcileVolumeGroupSnapshot(); err != nil {
-	// 	return err
-	// }
+	if err := r.reconcileVolumeGroupSnapshot(); err != nil {
+		return err
+	}
 
 	if err := r.reconcileOdfVolumeGroupSnapshot(); err != nil {
 		return err
@@ -378,7 +379,6 @@ func (r *storageClientReconcile) reconcileDynamicWatches() error {
 	return nil
 }
 
-//nolint:unused
 func (r *storageClientReconcile) reconcileVolumeGroupSnapshot() error {
 	if watchExists, foundCrd := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !foundCrd || watchExists.(bool) {
 		return nil
@@ -731,12 +731,11 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		} else if exist {
 			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
 		}
-		// TODO: enable vgsc after GA of API
-		// if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
-		// 	return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
-		// } else if exist {
-		// 	return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
-		// }
+		if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
+		} else if exist {
+			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+		}
 		if exist, err := r.hasOdfVolumeGroupSnapshotContents(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify odf-volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
@@ -887,6 +886,7 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 							},
 							RestartPolicy:      corev1.RestartPolicyOnFailure,
 							ServiceAccountName: "ocs-client-operator-status-reporter",
+							NodeSelector:       ptr.Deref(clientSubscription.Spec.Config, opv1a1.SubscriptionConfig{}).NodeSelector,
 							Tolerations: append(
 								[]corev1.Toleration{
 									{
@@ -939,7 +939,6 @@ func (r *storageClientReconcile) hasVolumeSnapshotContents(clientProfileNames []
 	return false, nil
 }
 
-//nolint:unused
 func (r *storageClientReconcile) hasVolumeGroupSnapshotContents(clientProfileNames []string) (bool, error) {
 	if val, _ := r.crdsBeingWatched.Load(VolumeGroupSnapshotClassCrdName); !val.(bool) {
 		return false, nil
