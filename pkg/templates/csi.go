@@ -214,6 +214,9 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 			PodCommonSpec: csiopv1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-cluster-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
+				Annotations: map[string]string{
+					secv1.RequiredSCCAnnotation: SCCName,
+				},
 				Tolerations: []corev1.Toleration{
 					{
 						Effect:   corev1.TaintEffectNoSchedule,
@@ -273,6 +276,9 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 			PodCommonSpec: csiopv1.PodCommonSpec{
 				PrioritylClassName: ptr.To("system-node-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
+				Annotations: map[string]string{
+					secv1.RequiredSCCAnnotation: SCCName,
+				},
 				Tolerations: []corev1.Toleration{
 					{
 						Effect:   corev1.TaintEffectNoSchedule,
