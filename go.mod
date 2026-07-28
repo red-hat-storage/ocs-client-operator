@@ -2,7 +2,7 @@ module github.com/red-hat-storage/ocs-client-operator
 
 go 1.24.3
 
-toolchain go1.24.5
+toolchain go1.24.8
 
 replace (
 	github.com/portworx/sched-ops => github.com/portworx/sched-ops v0.20.4-openstorage-rc3 // required by Rook v1.12
