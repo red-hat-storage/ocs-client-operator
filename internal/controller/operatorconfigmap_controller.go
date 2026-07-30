@@ -119,7 +119,7 @@ const (
 	vscDriverIndexName = "index:volumeSnapshotContentDriver"
 
 	ibmZCpuArch         = "s390x"
-	ibmZCpuAdjustFactor = 0.5
+	ibmZCpuAdjustFactor = 0.2
 )
 
 // ConfigMapData value from the provider that contains the s3 endpoint info (key is the unique identifier, using which the endpoint is exposed).
