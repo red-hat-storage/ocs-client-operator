@@ -781,6 +781,29 @@ func (r *storageClientReconcile) reconcileResourcesByGVK(
 	}
 }
 
+func mergeLabelsAnnotations(obj client.Object, externalLabels, externalAnnotations map[string]string) {
+	finalLabels := make(map[string]string)
+	finalAnnotations := make(map[string]string)
+
+	for k, v := range externalLabels {
+		finalLabels[k] = v
+	}
+	for k, v := range externalAnnotations {
+		finalAnnotations[k] = v
+	}
+
+	// server sent labels and annotations takes precedence
+	for k, v := range obj.GetLabels() {
+		finalLabels[k] = v
+	}
+	for k, v := range obj.GetAnnotations() {
+		finalAnnotations[k] = v
+	}
+
+	obj.SetLabels(finalLabels)
+	obj.SetAnnotations(finalAnnotations)
+}
+
 func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredState desiredKubeObject) error {
 
 	mutateFunc := func() error {
@@ -806,14 +829,14 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredSta
 
 		obj.SetName(desiredState.Name)
 		obj.SetNamespace(desiredState.Namespace)
-		obj.SetLabels(labels)
-		obj.SetAnnotations(annotations)
 		obj.SetOwnerReferences(ownerRefs)
 		obj.SetFinalizers(finalizers)
 		obj.SetUID(uid)
 		obj.SetCreationTimestamp(creationTimestamp)
 		obj.SetResourceVersion(resourceVersion)
 		removeStorageClaimAsOwner(obj)
+
+		mergeLabelsAnnotations(obj, labels, annotations)
 
 		if err := r.own(obj); err != nil {
 			return fmt.Errorf("failed to own %s resource: %v", desiredState.Name, err)
