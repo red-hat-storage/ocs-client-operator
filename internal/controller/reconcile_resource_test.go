@@ -119,3 +119,67 @@ func TestReconcileResource_PreservesMetadata(t *testing.T) {
 	assert.Equal(t, "annotation", result.Annotations["external"], "annotations must be preserved across reconcile")
 	assert.Contains(t, result.Finalizers, "some-controller/finalizer", "finalizers must be preserved across reconcile")
 }
+
+// TestReconcileResource_AppliesProviderLabelsOnCreate verifies provider labels are applied when creating new objects.
+func TestReconcileResource_AppliesProviderLabelsOnCreate(t *testing.T) {
+	r := newFakeStorageClientReconcile(t)
+
+	desired := &storagev1.VolumeAttributesClass{
+		TypeMeta: vacTypeMeta(),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-vac",
+			Labels:      map[string]string{"provider": "label", "version": "1"},
+			Annotations: map[string]string{"provider": "anno"},
+		},
+		DriverName: templates.RBDDriverName,
+	}
+	err := r.reconcileResource(
+		&storagev1.VolumeAttributesClass{},
+		marshalVAC(t, desired),
+		types.NamespacedName{Name: "test-vac"},
+	)
+	assert.NoError(t, err)
+
+	result := &storagev1.VolumeAttributesClass{}
+	assert.NoError(t, r.Get(r.ctx, types.NamespacedName{Name: "test-vac"}, result))
+	assert.Equal(t, "label", result.Labels["provider"], "provider labels must be applied on create")
+	assert.Equal(t, "1", result.Labels["version"], "all provider labels must be applied on create")
+	assert.Equal(t, "anno", result.Annotations["provider"], "provider annotations must be applied on create")
+}
+
+// TestReconcileResource_MergesLabelsOnUpdate verifies provider labels override but external labels preserved on update.
+func TestReconcileResource_MergesLabelsOnUpdate(t *testing.T) {
+	existing := &storagev1.VolumeAttributesClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-vac",
+			Labels:      map[string]string{"external": "label", "version": "old"},
+			Annotations: map[string]string{"external": "anno"},
+		},
+		DriverName: templates.RBDDriverName,
+	}
+	r := newFakeStorageClientReconcile(t, existing)
+
+	desired := &storagev1.VolumeAttributesClass{
+		TypeMeta: vacTypeMeta(),
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-vac",
+			Labels:      map[string]string{"version": "new", "provider": "label"},
+			Annotations: map[string]string{"provider": "anno"},
+		},
+		DriverName: templates.RBDDriverName,
+	}
+	err := r.reconcileResource(
+		&storagev1.VolumeAttributesClass{},
+		marshalVAC(t, desired),
+		types.NamespacedName{Name: "test-vac"},
+	)
+	assert.NoError(t, err)
+
+	result := &storagev1.VolumeAttributesClass{}
+	assert.NoError(t, r.Get(r.ctx, types.NamespacedName{Name: "test-vac"}, result))
+	assert.Equal(t, "label", result.Labels["external"], "external labels must be preserved")
+	assert.Equal(t, "new", result.Labels["version"], "provider labels override external")
+	assert.Equal(t, "label", result.Labels["provider"], "new provider labels added")
+	assert.Equal(t, "anno", result.Annotations["external"], "external annotations preserved")
+	assert.Equal(t, "anno", result.Annotations["provider"], "provider annotations applied")
+}
