@@ -9,6 +9,8 @@ spec:
       app.kubernetes.io/name: ocs-client-operator-console
   template:
     metadata:
+      annotations:
+        openshift.io/required-scc: restricted-v2
       labels:
         app.kubernetes.io/name: ocs-client-operator-console
     spec:
