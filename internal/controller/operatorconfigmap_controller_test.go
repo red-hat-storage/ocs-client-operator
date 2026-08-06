@@ -413,7 +413,7 @@ func TestBuildS3EndpointProxyConfigForClient(t *testing.T) {
 				WithRuntimeObjects(secret).
 				Build()
 
-			content, buildErr := r.buildS3EndpointProxyConfigForClient("client-1", tt.endpoints)
+			content, buildErr := r.buildS3EndpointProxyConfigForClient("client-1", tt.endpoints, nil)
 			if tt.expectErr {
 				assert.Error(t, buildErr)
 			} else {
@@ -475,14 +475,14 @@ func TestBuildDesiredNginxDataWithProxies(t *testing.T) {
 				WithRuntimeObjects(labeledCM).
 				Build()
 
-			out, err := r.buildDesiredNginxDataWithProxies()
+			out, err := r.buildDesiredNginxDataWithProxies(nil)
 			if tt.expectErr {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), "parse endpoints ConfigMap")
-				assert.Equal(t, console.GetNginxRootConf(), out["nginx.conf"])
+				assert.Equal(t, console.GenerateNginxRootConf(nil), out["nginx.conf"])
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, map[string]string{"nginx.conf": console.GetNginxRootConf()}, out)
+				assert.Equal(t, map[string]string{"nginx.conf": console.GenerateNginxRootConf(nil)}, out)
 			}
 		})
 	}
