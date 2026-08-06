@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	consolev1 "github.com/openshift/api/console/v1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -85,25 +86,66 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 	}
 }
 
-func GetNginxRootConf() string {
-	return nginxRootConf
+type tlsTemplateData struct {
+	Protocol     string
+	Ciphers      string
+	Ciphersuites string
+	Groups       string
 }
 
-func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, certsPath string) (string, error) {
+func newTLSTemplateData(ossl *ocstlsv1.OpenSSLConfig) tlsTemplateData {
+	if ossl == nil {
+		return tlsTemplateData{}
+	}
+	var data tlsTemplateData
+	data.Protocol = ossl.Protocol
+	if len(ossl.Ciphers) > 0 {
+		joined := strings.Join(ossl.Ciphers, ":")
+		if ossl.Protocol == "TLSv1.3" {
+			data.Ciphersuites = joined
+		} else {
+			data.Ciphers = joined
+		}
+	}
+	if len(ossl.Groups) > 0 {
+		data.Groups = strings.Join(ossl.Groups, ":")
+	}
+	return data
+}
+
+func GenerateNginxRootConf(ossl *ocstlsv1.OpenSSLConfig) string {
+	t := template.Must(template.New("nginxRootConf").Parse(nginxRootConf))
+	var sb strings.Builder
+	if err := t.Execute(&sb, newTLSTemplateData(ossl)); err != nil {
+		panic(fmt.Sprintf("failed to render nginx root config: %v", err))
+	}
+	return sb.String()
+}
+
+func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, certsPath string, ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 	type nginxProxyConfData struct {
-		UniqueIdentifier string
-		ExposeAs         string
-		EndpointURL      string
-		EndpointHost     string
-		CertsPath        string
+		UniqueIdentifier    string
+		ExposeAs            string
+		EndpointURL         string
+		EndpointHost        string
+		CertsPath           string
+		ProxySSLProtocol    string
+		ProxySSLCiphers     string
+		ProxySSLCiphersuites string
+		ProxySSLGroups      string
 	}
 
+	tls := newTLSTemplateData(ossl)
 	data := nginxProxyConfData{
-		UniqueIdentifier: uniqueIdentifier,
-		ExposeAs:         exposeAs,
-		EndpointURL:      endpointURL,
-		EndpointHost:     endpointHost,
-		CertsPath:        certsPath,
+		UniqueIdentifier:    uniqueIdentifier,
+		ExposeAs:            exposeAs,
+		EndpointURL:         endpointURL,
+		EndpointHost:        endpointHost,
+		CertsPath:           certsPath,
+		ProxySSLProtocol:    tls.Protocol,
+		ProxySSLCiphers:     tls.Ciphers,
+		ProxySSLCiphersuites: tls.Ciphersuites,
+		ProxySSLGroups:      tls.Groups,
 	}
 
 	t, err := template.New("nginxProxyConf").Parse(nginxProxyConf)
