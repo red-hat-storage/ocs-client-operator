@@ -315,6 +315,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;create;update
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
@@ -874,6 +875,18 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 
 	if err != nil {
 		c.log.Error(err, "failed to create/update service for console")
+		return err
+	}
+
+	consoleNetworkPolicy := console.GetNetworkPolicy(c.OperatorNamespace)
+	err = c.createOrUpdate(consoleNetworkPolicy, func() error {
+		resourceVersion := consoleNetworkPolicy.ResourceVersion
+		console.GetNetworkPolicy(c.OperatorNamespace).DeepCopyInto(consoleNetworkPolicy)
+		consoleNetworkPolicy.ResourceVersion = resourceVersion
+		return controllerutil.SetControllerReference(c.consoleDeployment, consoleNetworkPolicy, c.Scheme)
+	})
+	if err != nil {
+		c.log.Error(err, "failed to create/update network policy for console")
 		return err
 	}
 

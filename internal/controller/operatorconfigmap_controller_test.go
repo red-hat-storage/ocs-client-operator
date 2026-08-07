@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
@@ -10,12 +11,17 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	configv1 "github.com/openshift/api/config/v1"
+	consolev1 "github.com/openshift/api/console/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -76,6 +82,34 @@ func newFakeConfigMapReconciler(t *testing.T) OperatorConfigMapReconciler {
 func newFakeClientBuilder(scheme *runtime.Scheme) *fake.ClientBuilder {
 	return fake.NewClientBuilder().
 		WithScheme(scheme)
+}
+
+func TestEnsureConsolePluginCreatesOwnedNetworkPolicy(t *testing.T) {
+	r := newFakeConfigMapReconciler(t)
+	assert.NoError(t, consolev1.AddToScheme(r.Scheme))
+	r.ctx = context.Background()
+	r.ConsolePort = 9001
+	r.operatorConfigMap = &corev1.ConfigMap{}
+	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name: console.DeploymentName, Namespace: testNamespace, UID: types.UID("deployment-uid"),
+	}}
+	r.Client = newFakeClientBuilder(r.Scheme).WithObjects(deployment).Build()
+
+	assert.NoError(t, r.ensureConsolePlugin())
+
+	policy := &networkingv1.NetworkPolicy{}
+	key := client.ObjectKey{Name: console.DeploymentName, Namespace: testNamespace}
+	assert.NoError(t, r.Client.Get(context.Background(), key, policy))
+	assert.True(t, metav1.IsControlledBy(policy, deployment))
+	assert.Equal(t, console.GetNetworkPolicy(testNamespace).Spec, policy.Spec)
+
+	policy.Spec.PolicyTypes = nil
+	policy.OwnerReferences = nil
+	assert.NoError(t, r.Client.Update(context.Background(), policy))
+	assert.NoError(t, r.ensureConsolePlugin())
+	assert.NoError(t, r.Client.Get(context.Background(), key, policy))
+	assert.True(t, metav1.IsControlledBy(policy, deployment))
+	assert.Equal(t, console.GetNetworkPolicy(testNamespace).Spec, policy.Spec)
 }
 
 func TestGetImageSet(t *testing.T) {

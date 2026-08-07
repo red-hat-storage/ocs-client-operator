@@ -168,6 +168,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - update
+- apiGroups:
   - objectbucket.io
   resources:
   - objectbucketclaims
