@@ -21,4 +21,16 @@ location /{{.UniqueIdentifier}}/{{.ExposeAs}}/ {
     proxy_ssl_verify on;
     proxy_ssl_server_name on;
     proxy_ssl_trusted_certificate {{.CertsPath}};
+    {{- if .ProxySSLProtocol}}
+    proxy_ssl_protocols {{.ProxySSLProtocol}};
+    {{- end}}
+    {{- if .ProxySSLCiphersuites}}
+    proxy_ssl_conf_command Ciphersuites {{.ProxySSLCiphersuites}};
+    {{- end}}
+    {{- if .ProxySSLCiphers}}
+    proxy_ssl_ciphers {{.ProxySSLCiphers}};
+    {{- end}}
+    {{- if .ProxySSLGroups}}
+    proxy_ssl_conf_command Groups {{.ProxySSLGroups}};
+    {{- end}}
 }

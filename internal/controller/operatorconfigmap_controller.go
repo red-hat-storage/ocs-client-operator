@@ -867,6 +867,12 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		return err
 	}
 
+	goTLS, err := utils.BuildServerTLSOpts(c.TlsProfile, "ocs.openshift.io", "client-console")
+	if err != nil {
+		return fmt.Errorf("invalid TLSProfile config for console nginx: %w", err)
+	}
+	ossl := ocstlsv1.OpenSSLConfigFrom(goTLS)
+
 	nginxConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      console.NginxConfigMapName,
@@ -874,7 +880,7 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		},
 	}
 	nginxConfigMapResult, err := c.createOrUpdateWithResult(nginxConfigMap, func() error {
-		desiredData, buildErr := c.buildDesiredNginxDataWithProxies()
+		desiredData, buildErr := c.buildDesiredNginxDataWithProxies(ossl)
 		if buildErr != nil {
 			return buildErr
 		}
@@ -922,10 +928,14 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[string]string, error) {
+func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies(ossl *ocstlsv1.OpenSSLConfig) (map[string]string, error) {
+	nginxConf, err := console.GenerateNginxRootConf(ossl)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]string{
 		// Root config is mandatory for nginx to start. Proxy configs (per client) are optional.
-		"nginx.conf": console.GetNginxRootConf(),
+		"nginx.conf": nginxConf,
 	}
 
 	if c.operatorConfigMap.Data != nil {
@@ -941,11 +951,11 @@ func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[st
 		}
 	}
 
-	err := c.computeDesiredProxyConfigByKey(out)
+	err = c.computeDesiredProxyConfigByKey(out, ossl)
 	return out, err
 }
 
-func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[string]string) error {
+func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[string]string, ossl *ocstlsv1.OpenSSLConfig) error {
 	extList := &corev1.ConfigMapList{}
 	if err := c.list(extList,
 		client.InNamespace(c.OperatorNamespace),
@@ -962,7 +972,7 @@ func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[str
 		if err != nil {
 			return fmt.Errorf("parse endpoints ConfigMap %s: %w", client.ObjectKeyFromObject(cm), err)
 		}
-		content, err := c.buildS3EndpointProxyConfigForClient(uniqueIdentifier, endpoints)
+		content, err := c.buildS3EndpointProxyConfigForClient(uniqueIdentifier, endpoints, ossl)
 		if err != nil {
 			return err
 		}
@@ -990,7 +1000,7 @@ func parseEndpointConfigs(data map[string]string) (map[string]s3EndpointConfig, 
 	return out, nil
 }
 
-func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(uniqueIdentifier string, endpoints map[string]s3EndpointConfig) (string, error) {
+func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(uniqueIdentifier string, endpoints map[string]s3EndpointConfig, ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 	if len(endpoints) == 0 {
 		return "", nil
 	}
@@ -1045,6 +1055,7 @@ func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(unique
 			endpointURL,
 			endpointHost,
 			certsPath,
+			ossl,
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to build proxy config for %q: %w", exposeAs, err)
