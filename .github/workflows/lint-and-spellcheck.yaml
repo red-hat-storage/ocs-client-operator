@@ -25,11 +25,10 @@ jobs:
           exclude_file: go.sum
           check_filenames: true
           check_hidden: true
-          skip: vendor
   commitlint:
     name: commitlint
     runs-on: ubuntu-latest
-    if: github.triggering_actor != 'dependabot[bot]'
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:

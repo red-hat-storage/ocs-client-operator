@@ -4,10 +4,11 @@ FROM golang:1.26.5 AS builder
 WORKDIR /workspace
 
 # Copy the Go Modules manifests
+COPY api/go.mod api/go.mod
+COPY api/go.sum api/go.sum
+COPY go.work ./
 COPY go.mod go.sum ./
-# cache deps before building and copying source so that we don't need to re-build as much
-# and so that source changes don't invalidate our built layer
-COPY vendor/ vendor/
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 # Copy the project source
 COPY Makefile ./
@@ -20,7 +21,7 @@ COPY pkg/ pkg/
 COPY service/ service/
 
 # Build
-RUN make go-build
+RUN --mount=type=cache,target=/go/pkg/mod make go-build
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal
 WORKDIR /
