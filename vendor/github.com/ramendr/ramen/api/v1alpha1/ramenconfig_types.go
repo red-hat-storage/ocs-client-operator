@@ -57,7 +57,9 @@ type S3StoreProfile struct {
 	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
 	S3Bucket string `json:"s3Bucket"`
 
-	// S3 compatible endpoint of the object store of this S3 profile
+	// S3CompatibleEndpoint is the object store endpoint for this S3 profile.
+	// If the scheme is not specified, "https://" is assumed. Using "http://"
+	// is insecure and should be used for testing purposes only.
 	S3CompatibleEndpoint string `json:"s3CompatibleEndpoint"`
 
 	// S3 Region; the AWS go client SDK does not have a default region; hence,
@@ -191,6 +193,11 @@ type RamenConfig struct {
 
 	// RamenOpsNamespace is the namespace where resources for unmanaged apps are created
 	RamenOpsNamespace string `json:"ramenOpsNamespace,omitempty"`
+
+	// RetainNamespaceSCCAcrossPeers controls whether Security Context Constraints (SCC) annotations
+	// should be retained when creating namespaces on secondary clusters during DR enablement.
+	// +optional
+	RetainNamespaceSCCAcrossPeers bool `json:"retainNamespaceSCCAcrossPeers,omitempty"`
 }
 
 func init() {
