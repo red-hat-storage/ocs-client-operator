@@ -4,7 +4,6 @@ updates:
   - package-ecosystem: "gomod"
     directories:
       - "/"
-      - "/api"
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -15,12 +14,19 @@ updates:
       semver-minor-days: 3
       semver-patch-days: 3
     groups:
-      go-dependencies:
+      golang-dependencies:
+        patterns:
+          - "github.com/golang*"
+      k8s-dependencies:
+        patterns:
+          - "k8s.io*"
+          - "sigs.k8s.io*"
+      github-dependencies:
+        patterns:
+          - "github.com*"
+      other-dependencies:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
     labels:
       - "dependencies"
       - "go"

@@ -49,11 +49,7 @@ lint: ## Run golangci-lint against code.
 godeps-update:  ## Run go mod tidy & vendor with workspace sync
 	@echo "Running godeps-update"
 	go mod tidy
-	@echo "Running godeps-update on api submodule"
-	cd api && go mod tidy
-	@echo "Syncing workspace dependencies"
-	go work sync
-	go work vendor
+	go mod vendor
 
 godeps-verify: godeps-update
 	@echo "Verifying go-deps"

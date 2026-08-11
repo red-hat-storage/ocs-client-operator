@@ -44,6 +44,7 @@ testbin/
 
 # Go workspace file
 /go.work.sum
+/go.work
 
 ### Vim ###
 # Swap
