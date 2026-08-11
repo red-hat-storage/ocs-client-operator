@@ -50,7 +50,19 @@ func InjectSnapshotMetadataTLSVolume(cp *csiopv1.ControllerPluginSpec) {
 }
 
 // security context constraints
-const SCCName = "ceph-csi-op-scc"
+const (
+	SCCName           = "ceph-csi-op-scc"
+	restrictedSCCName = "restricted-v2"
+)
+
+var (
+	csiSCCPodAnnotations = map[string]string{
+		secv1.RequiredSCCAnnotation: SCCName,
+	}
+	RestrictedSCCPodAnnotations = map[string]string{
+		secv1.RequiredSCCAnnotation: restrictedSCCName,
+	}
+)
 
 // TODO: could pull directly from ceph-csi-operator when available
 var securityContextConstraints = secv1.SecurityContextConstraints{
@@ -213,6 +225,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 			},
 			PodCommonSpec: csiopv1.PodCommonSpec{
+				Annotations:        csiSCCPodAnnotations,
 				PrioritylClassName: ptr.To("system-cluster-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{
@@ -272,6 +285,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 			},
 			KubeletDirPath: "/var/lib/kubelet",
 			PodCommonSpec: csiopv1.PodCommonSpec{
+				Annotations:        csiSCCPodAnnotations,
 				PrioritylClassName: ptr.To("system-node-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{
