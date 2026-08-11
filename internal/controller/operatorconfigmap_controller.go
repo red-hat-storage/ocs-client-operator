@@ -91,6 +91,7 @@ const (
 	enableRbdDriverKey                = "enableRbdDriver"
 	enableCephFsDriverKey             = "enableCephFsDriver"
 	enableNfsDriverKey                = "enableNfsDriver"
+	enableNvmeofDriverKey             = "enableNvmeofDriver"
 
 	// AlertPollIntervalKey is the ConfigMap key for the client alert polling interval.
 	AlertPollIntervalKey = "alertPollInterval"
@@ -682,8 +683,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	enableRbdDriver := c.shouldEnableDriver(enableRbdDriverKey)
 	enableCephFsDriver := c.shouldEnableDriver(enableCephFsDriverKey)
 	enableNfsDriver := c.shouldEnableDriver(enableNfsDriverKey)
+	enableNvmeofDriver := c.shouldEnableDriver(enableNvmeofDriverKey)
 
-	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin bool
+	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin, useHostNetForNvmeofCtrlPlugin bool
 
 	// if the storage client status has the driver requirements info, then it has higher precedence than the configmap.
 	for i := range storageClients.Items {
@@ -703,6 +705,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			enableNfsDriver = true
 			if useHostNetwork := storageClients.Items[i].Status.NfsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
 				useHostNetForNfsCtrlPlugin = useHostNetForNfsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
+		}
+		if storageClients.Items[i].Status.NvmeofDriverRequirements != nil {
+			enableNvmeofDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.NvmeofDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForNvmeofCtrlPlugin = useHostNetForNvmeofCtrlPlugin || ptr.Deref(useHostNetwork, false)
 			}
 		}
 	}
@@ -770,13 +778,13 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			return fmt.Errorf("failed to reconcile nfs driver: %v", err)
 		}
 	} else {
-		if hasPvs, err := c.hasPersistentVolumesWithNfsDriver(); err != nil {
+		if hasPvs, err := c.hasPersistentVolumesWithDriver(templates.NfsDriverName); err != nil {
 			return fmt.Errorf("failed to check if NFS driver has PVs: %v", err)
 		} else if hasPvs {
 			c.log.Info("NFS driver has PVs, skipping deletion")
 			return nil
 		}
-		if hasVscs, err := c.hasVolumeSnapshotContentsWithNfsDriver(); err != nil {
+		if hasVscs, err := c.hasVolumeSnapshotContentsWithDriver(templates.NfsDriverName); err != nil {
 			return fmt.Errorf("failed to check if NFS driver has volumesnapshotcontents: %v", err)
 		} else if hasVscs {
 			c.log.Info("NFS driver has volumesnapshotcontents, skipping deletion")
@@ -784,6 +792,41 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		if err := c.delete(nfsDriver); err != nil {
 			return fmt.Errorf("failed to delete csi nfs driver: %v", err)
+		}
+	}
+
+	// nvmeof driver config
+	nvmeofDriver := &csiopv1.Driver{}
+	nvmeofDriver.Name = templates.NvmeofDriverName
+	nvmeofDriver.Namespace = c.OperatorNamespace
+	if enableNvmeofDriver {
+		if err := c.createOrUpdate(nvmeofDriver, func() error {
+			if err := c.own(nvmeofDriver); err != nil {
+				return fmt.Errorf("failed to own csi nvmeof driver: %v", err)
+			}
+			if nvmeofDriver.Spec.ControllerPlugin == nil {
+				nvmeofDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
+			nvmeofDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNvmeofCtrlPlugin)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile nvmeof driver: %v", err)
+		}
+	} else {
+		if hasPvs, err := c.hasPersistentVolumesWithDriver(templates.NvmeofDriverName); err != nil {
+			return fmt.Errorf("failed to check if NVMeoF driver has PVs: %v", err)
+		} else if hasPvs {
+			c.log.Info("NVMeoF driver has PVs, skipping deletion")
+			return nil
+		}
+		if hasVscs, err := c.hasVolumeSnapshotContentsWithDriver(templates.NvmeofDriverName); err != nil {
+			return fmt.Errorf("failed to check if NVMeoF driver has volumesnapshotcontents: %v", err)
+		} else if hasVscs {
+			c.log.Info("NVMeoF driver has volumesnapshotcontents, skipping deletion")
+			return nil
+		}
+		if err := c.delete(nvmeofDriver); err != nil {
+			return fmt.Errorf("failed to delete csi nvmeof driver: %v", err)
 		}
 	}
 
@@ -1375,18 +1418,18 @@ func (c *OperatorConfigMapReconciler) checkIfTNFCluster() (bool, error) {
 	return isTnfCluster, nil
 }
 
-func (c *OperatorConfigMapReconciler) hasPersistentVolumesWithNfsDriver() (bool, error) {
+func (c *OperatorConfigMapReconciler) hasPersistentVolumesWithDriver(driverName string) (bool, error) {
 	pvList := &corev1.PersistentVolumeList{}
-	if err := c.list(pvList, client.MatchingFields{pvDriverIndexName: templates.NfsDriverName}, client.Limit(1)); err != nil {
-		return false, fmt.Errorf("failed to list NFS driver PVs: %v", err)
+	if err := c.list(pvList, client.MatchingFields{pvDriverIndexName: driverName}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list %s driver PVs: %v", driverName, err)
 	}
 	return len(pvList.Items) != 0, nil
 }
 
-func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithNfsDriver() (bool, error) {
+func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithDriver(driverName string) (bool, error) {
 	vscList := &snapapi.VolumeSnapshotContentList{}
-	if err := c.list(vscList, client.MatchingFields{vscDriverIndexName: templates.NfsDriverName}, client.Limit(1)); err != nil {
-		return false, fmt.Errorf("failed to list NFS driver VolumeSnapshotContents: %v", err)
+	if err := c.list(vscList, client.MatchingFields{vscDriverIndexName: driverName}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list %s driver VolumeSnapshotContents: %v", driverName, err)
 	}
 	return len(vscList.Items) != 0, nil
 }

@@ -15,6 +15,7 @@ import (
 const RBDDriverName = "openshift-storage.rbd.csi.ceph.com"
 const CephFsDriverName = "openshift-storage.cephfs.csi.ceph.com"
 const NfsDriverName = "openshift-storage.nfs.csi.ceph.com"
+const NvmeofDriverName = "openshift-storage.nvmeof.csi.ceph.com"
 
 // Snapshot metadata sidecar automation (KEP-3314 / CBT)
 const SnapshotMetadataServiceName = "openshift-storage-rbd-snapshot-metadata"

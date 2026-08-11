@@ -685,6 +685,12 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		update = true
 	}
 
+	if update {
+		if err := r.update(&r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+		}
+	}
+
 	if storageClientResponse.RbdDriverRequirements != nil {
 		r.storageClient.Status.RbdDriverRequirements = &v1alpha1.RbdDriverRequirements{
 			TopologyDomainLabels:  append([]string{}, storageClientResponse.RbdDriverRequirements.TopologyDomainLables...),
@@ -704,10 +710,12 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
-	if update {
-		if err := r.update(&r.storageClient); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+	if storageClientResponse.NvmeofDriverRequirements != nil {
+		r.storageClient.Status.NvmeofDriverRequirements = &v1alpha1.NvmeofDriverRequirements{
+			CtrlPluginHostNetwork: storageClientResponse.NvmeofDriverRequirements.CtrlPluginHostNetwork,
 		}
+	} else {
+		r.storageClient.Status.NvmeofDriverRequirements = nil
 	}
 
 	return reconcile.Result{}, nil
