@@ -77,6 +77,11 @@ spec:
                   ctrlPluginHostNetwork:
                     type: boolean
                 type: object
+              nvmeofDriverRequirements:
+                properties:
+                  ctrlPluginHostNetwork:
+                    type: boolean
+                type: object
               phase:
                 type: string
               rbdDriverRequirements:

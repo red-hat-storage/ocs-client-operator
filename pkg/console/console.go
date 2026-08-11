@@ -128,28 +128,28 @@ func GenerateNginxRootConf(ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 
 func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, certsPath string, ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 	type nginxProxyConfData struct {
-		UniqueIdentifier    string
-		ExposeAs            string
-		EndpointURL         string
-		EndpointHost        string
-		CertsPath           string
-		ProxySSLProtocol    string
-		ProxySSLCiphers     string
+		UniqueIdentifier     string
+		ExposeAs             string
+		EndpointURL          string
+		EndpointHost         string
+		CertsPath            string
+		ProxySSLProtocol     string
+		ProxySSLCiphers      string
 		ProxySSLCiphersuites string
-		ProxySSLGroups      string
+		ProxySSLGroups       string
 	}
 
 	tls := newTLSTemplateData(ossl)
 	data := nginxProxyConfData{
-		UniqueIdentifier:    uniqueIdentifier,
-		ExposeAs:            exposeAs,
-		EndpointURL:         endpointURL,
-		EndpointHost:        endpointHost,
-		CertsPath:           certsPath,
-		ProxySSLProtocol:    tls.Protocol,
-		ProxySSLCiphers:     tls.Ciphers,
+		UniqueIdentifier:     uniqueIdentifier,
+		ExposeAs:             exposeAs,
+		EndpointURL:          endpointURL,
+		EndpointHost:         endpointHost,
+		CertsPath:            certsPath,
+		ProxySSLProtocol:     tls.Protocol,
+		ProxySSLCiphers:      tls.Ciphers,
 		ProxySSLCiphersuites: tls.Ciphersuites,
-		ProxySSLGroups:      tls.Groups,
+		ProxySSLGroups:       tls.Groups,
 	}
 
 	var sb strings.Builder
