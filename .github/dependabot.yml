@@ -5,6 +5,7 @@ updates:
     directories:
       - "/"
       - "/api"
+    vendor-dependencies: false
     schedule:
       interval: "weekly"
       day: "tuesday"
