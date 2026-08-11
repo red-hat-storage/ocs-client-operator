@@ -17,6 +17,8 @@ type ReplicationGroupDestinationSpec struct {
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
 
 	RDSpecs []VolSyncReplicationDestinationSpec `json:"rdSpecs,omitempty"`
+
+	Paused bool `json:"paused,omitempty"`
 }
 
 // ReplicationGroupDestinationStatus defines the observed state of ReplicationGroupDestination
@@ -51,6 +53,7 @@ type ReplicationGroupDestinationStatus struct {
 // +kubebuilder:printcolumn:name="Last sync",type="string",format="date-time",JSONPath=`.status.lastSyncTime`
 // +kubebuilder:printcolumn:name="Duration",type="string",JSONPath=`.status.lastSyncDuration`
 // +kubebuilder:printcolumn:name="Last sync start",type="string",format="date-time",JSONPath=`.status.lastSyncStartTime`
+// +kubebuilder:resource:shortName=rgd
 
 // ReplicationGroupDestination is the Schema for the replicationgroupdestinations API
 type ReplicationGroupDestination struct {

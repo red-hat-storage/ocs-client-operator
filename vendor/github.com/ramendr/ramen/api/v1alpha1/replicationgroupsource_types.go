@@ -17,6 +17,9 @@ type ReplicationGroupSourceSpec struct {
 
 	// +required
 	VolumeGroupSnapshotSource *metav1.LabelSelector `json:"volumeGroupSnapshotSource,omitempty"`
+
+	//+optional
+	RSSpec []VolSyncReplicationSourceSpec `json:"rsSpecs,omitempty"`
 }
 
 // ReplicationSourceTriggerSpec defines when a volume will be synchronized with
@@ -72,6 +75,7 @@ type ReplicationGroupSourceStatus struct {
 // +kubebuilder:printcolumn:name="Next sync",type="string",format="date-time",JSONPath=`.status.nextSyncTime`
 // +kubebuilder:printcolumn:name="Source",type="string",JSONPath=`.spec.volumeGroupSnapshotSource`
 // +kubebuilder:printcolumn:name="Last sync start",type="string",format="date-time",JSONPath=`.status.lastSyncStartTime`
+// +kubebuilder:resource:shortName=rgs
 
 // ReplicationGroupSource is the Schema for the replicationgroupsources API
 type ReplicationGroupSource struct {

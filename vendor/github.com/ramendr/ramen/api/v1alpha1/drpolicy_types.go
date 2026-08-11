@@ -88,9 +88,14 @@ type PeerClass struct {
 	//+optional
 	ReplicationID string `json:"replicationID,omitempty"`
 
+	// GroupReplicationID is the common value for the label "ramendr.openshift.io/groupreplicationID" on
+	// the corresponding VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+	//+optional
+	GroupReplicationID string `json:"groupreplicationID,omitempty"`
+
 	// StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
 	// StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
-	// and distict if storage instances are different.
+	// and distinct if storage instances are different.
 	//+optional
 	StorageID []string `json:"storageID,omitempty"`
 
@@ -101,6 +106,20 @@ type PeerClass struct {
 	// ClusterIDs is a list of two clusterIDs that represent this peer relationship for a common StorageClassName
 	// The IDs are based on the value of the metadata.uid of the kube-system namespace
 	ClusterIDs []string `json:"clusterIDs,omitempty"`
+
+	// Grouping reflects if PVCs using the StorageClassName can be grouped for replication, via VolumeGroupSnapshotClass
+	// if ReplicationID is empty, or via VolumeGroupReplicationClass otherwise. This is true only when grouping can be
+	// supported across the clusters in the ClusterIDs list.
+	//+optional
+	Grouping bool `json:"grouping,omitempty"`
+
+	// Offloaded reflects if replication management for PVCs that use the StorageClassName across both clusters in the
+	// ClusterIDs list is offloaded and not managed by the VolumeReplicationGroup resource. It is set to true if the
+	// StorageClass on both clusters is labeled with "ramendr.openshift.io/offloaded". An typical offloaded case
+	// would be to use other storage specific APIs or native interfaces to enable storage replication for PVCs that
+	// need protection.
+	//+optional
+	Offloaded bool `json:"offloaded,omitempty"`
 }
 
 const (

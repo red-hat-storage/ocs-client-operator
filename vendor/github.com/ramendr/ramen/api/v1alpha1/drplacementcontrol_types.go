@@ -38,7 +38,7 @@ const (
 
 	// Deploying, state recorded in the DRPC status to indicate that the
 	// initial deployment is in progress. Deploying means selecting the
-	// preffered cluster and creating a VRG MW for it and waiting for MW
+	// preferred cluster and creating a VRG MW for it and waiting for MW
 	// to be applied in the managed cluster
 	Deploying = DRState("Deploying")
 
@@ -100,9 +100,10 @@ const (
 	ProgressionCreatingMW                          = ProgressionStatus("CreatingMW")
 	ProgressionUpdatingPlRule                      = ProgressionStatus("UpdatingPlRule")
 	ProgressionWaitForReadiness                    = ProgressionStatus("WaitForReadiness")
+	ProgressionCleanupReadiness                    = ProgressionStatus("CleanupReadiness")
 	ProgressionCleaningUp                          = ProgressionStatus("Cleaning Up")
 	ProgressionWaitOnUserToCleanUp                 = ProgressionStatus("WaitOnUserToCleanUp")
-	ProgressionCheckingFailoverPrequisites         = ProgressionStatus("CheckingFailoverPrequisites")
+	ProgressionCheckingFailoverPrerequisites       = ProgressionStatus("CheckingFailoverPrerequisites")
 	ProgressionFailingOverToCluster                = ProgressionStatus("FailingOverToCluster")
 	ProgressionWaitForFencing                      = ProgressionStatus("WaitForFencing")
 	ProgressionWaitForStorageMaintenanceActivation = ProgressionStatus("WaitForStorageMaintenanceActivation")
@@ -144,7 +145,7 @@ type DRPlacementControlSpec struct {
 	PreferredCluster string `json:"preferredCluster,omitempty"`
 
 	// FailoverCluster is the cluster name that the user wants to failover the application to.
-	// If not sepcified, then the DRPC will select the surviving cluster from the DRPolicy
+	// If not specified, then the DRPC will select the surviving cluster from the DRPolicy
 	FailoverCluster string `json:"failoverCluster,omitempty"`
 
 	// Label selector to identify all the PVCs that need DR protection.
@@ -159,12 +160,26 @@ type DRPlacementControlSpec struct {
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// +optional
+	VolSyncSpec *VolSyncSpec `json:"volSyncSpec,omitempty"`
+
+	// RetainNamespaceSCCAcrossPeers controls whether Security Context Constraints (SCC) annotations
+	// should be retained when creating namespaces on secondary clusters during DR enablement.
+	// This flag works in conjunction with the RamenConfig flag of the same name.
+	// Both flags must be true for SCC annotations to be retained.
+	// +optional
+	RetainNamespaceSCCAcrossPeers bool `json:"retainNamespaceSCCAcrossPeers,omitempty"`
 }
 
 // PlacementDecision defines the decision made by controller
 type PlacementDecision struct {
 	ClusterName      string `json:"clusterName,omitempty"`
 	ClusterNamespace string `json:"clusterNamespace,omitempty"`
+}
+
+type Groups struct {
+	Grouped []string `json:"grouped,omitempty"`
 }
 
 // VRGResourceMeta represents the VRG resource.
@@ -185,6 +200,10 @@ type VRGResourceMeta struct {
 	//+optional
 	ProtectedPVCs []string `json:"protectedpvcs,omitempty"`
 
+	// List of CGs that are protected by the VRG resource
+	//+optional
+	PVCGroups []Groups `json:"pvcgroups,omitempty"`
+
 	// ResourceVersion is a value used to identify the version of the
 	// VRG resource object
 	//+optional
@@ -194,12 +213,10 @@ type VRGResourceMeta struct {
 // VRGConditions represents the conditions of the resources deployed on a
 // managed cluster.
 type VRGConditions struct {
-	// ResourceMeta represents the VRG resoure.
-	// +required
+	// ResourceMeta represents the VRG resource.
 	ResourceMeta VRGResourceMeta `json:"resourceMeta,omitempty"`
 
 	// Conditions represents the conditions of this resource on a managed cluster.
-	// +required
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
