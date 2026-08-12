@@ -44,12 +44,20 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 lint: ## Run golangci-lint against code.
-	$(IMAGE_BUILD_CMD) run --rm -v $(PROJECT_DIR):/app:Z -w /app $(GO_LINT_IMG) golangci-lint run ./...
+	@mkdir -p $(HOME)/.cache/golangci-lint
+	$(IMAGE_BUILD_CMD) run --rm -t -v $(PROJECT_DIR):/app:Z -w /app \
+	-v $(shell go env GOCACHE):/.cache/go-build:Z -e GOCACHE=/.cache/go-build \
+	-v $(shell go env GOMODCACHE):/.cache/mod:Z -e GOMODCACHE=/.cache/mod \
+	-v $(HOME)/.cache/golangci-lint:/.cache/golangci-lint:Z -e GOLANGCI_LINT_CACHE=/.cache/golangci-lint \
+	$(GO_LINT_IMG) bash -c "go mod download && golangci-lint run ./..."
 
 godeps-update:  ## Run go mod tidy & vendor with workspace sync
 	@echo "Running godeps-update"
 	go mod tidy
-	go mod vendor
+	@echo "Running godeps-update on api submodule"
+	cd api && go mod tidy
+	@echo "Syncing workspace dependencies"
+	go work sync
 
 godeps-verify: godeps-update
 	@echo "Verifying go-deps"
