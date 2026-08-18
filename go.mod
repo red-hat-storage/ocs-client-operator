@@ -27,13 +27,13 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/openshift/api v0.0.0-20251120040117-916c7003ed78
 	github.com/operator-framework/api v0.45.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
 	github.com/ramendr/ramen/api v0.1.0-rc1
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
 	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260811052053-01752da3d060
 	github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260427105901-0c5f6d8fcd65
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	google.golang.org/grpc v1.83.0
 	k8s.io/api v0.36.3
 	k8s.io/apiextensions-apiserver v0.36.3
