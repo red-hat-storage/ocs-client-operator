@@ -59,6 +59,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -379,7 +380,13 @@ func buildCacheAvailableCRDs(
 			LabelSelector: noobaaLabelSelector,
 		},
 	}
+	csvExcludeCopied, err := labels.NewRequirement("olm.copiedFrom", selection.DoesNotExist, nil)
+	if err != nil {
+		setupLog.Error(err, "failed to create CSV label requirement")
+		os.Exit(1)
+	}
 	cacheAvailableCrd := cache.Options{
+		DefaultTransform: cache.TransformStripManagedFields(),
 		ByObject: map[client.Object]cache.ByObject{
 			&admrv1.ValidatingWebhookConfiguration{}: {
 				// only cache our validation webhook
@@ -390,6 +397,19 @@ func buildCacheAvailableCRDs(
 			},
 			&corev1.Secret{}: {
 				Namespaces: configMapAndSecretCacheByNamespace,
+			},
+			&appsv1.Deployment{}: {
+				Namespaces: map[string]cache.Config{
+					operatorNamespace: {},
+				},
+				// this label is set on client console and operator deployments as part of csv
+				Label: labels.SelectorFromSet(labels.Set{"app.kubernetes.io/part-of": "ocs-client-operator"}),
+			},
+			&opv1a1.ClusterServiceVersion{}: {
+				Namespaces: map[string]cache.Config{
+					operatorNamespace: {},
+				},
+				Label: labels.NewSelector().Add(*csvExcludeCopied),
 			},
 		},
 		DefaultNamespaces: defaultNamespaces,
