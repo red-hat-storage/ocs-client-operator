@@ -48,7 +48,9 @@ import (
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -123,6 +125,11 @@ func main() {
 	}
 
 	subscriptionwebhookSelector := fields.SelectorFromSet(fields.Set{"metadata.name": templates.SubscriptionWebhookName})
+	csvExcludeCopied, err := labels.NewRequirement("olm.copiedFrom", selection.DoesNotExist, nil)
+	if err != nil {
+		setupLog.Error(err, "failed to create CSV label requirement")
+		os.Exit(1)
+	}
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metrics.Options{BindAddress: metricsAddr},
@@ -130,10 +137,24 @@ func main() {
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "7cb6f2e5.ocs.openshift.io",
 		Cache: cache.Options{
+			DefaultTransform: cache.TransformStripManagedFields(),
 			ByObject: map[client.Object]cache.ByObject{
 				&admrv1.ValidatingWebhookConfiguration{}: {
 					// only cache our validation webhook
 					Field: subscriptionwebhookSelector,
+				},
+				&appsv1.Deployment{}: {
+					Namespaces: map[string]cache.Config{
+						operatorNamespace: {},
+					},
+					// this label is set on client console and operator deployments as part of csv
+					Label: labels.SelectorFromSet(labels.Set{"app.kubernetes.io/part-of": "ocs-client-operator"}),
+				},
+				&opv1a1.ClusterServiceVersion{}: {
+					Namespaces: map[string]cache.Config{
+						operatorNamespace: {},
+					},
+					Label: labels.NewSelector().Add(*csvExcludeCopied),
 				},
 			},
 			DefaultNamespaces: defaultNamespaces,
