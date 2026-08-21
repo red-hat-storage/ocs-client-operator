@@ -2,28 +2,31 @@ version: 2
 updates:
   # Go modules
   - package-ecosystem: "gomod"
-    directories:
-      - "/"
-      - "/api"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "tuesday"
       time: "04:00"
       timezone: "UTC"
-    open-pull-requests-limit: 2
+    # matching the number of groups
+    open-pull-requests-limit: 4
     cooldown:
       semver-minor-days: 3
       semver-patch-days: 3
     groups:
-      go-dependencies:
+      golang-dependencies:
+        patterns:
+          - "github.com/golang*"
+      k8s-dependencies:
+        patterns:
+          - "k8s.io*"
+          - "sigs.k8s.io*"
+      github-dependencies:
+        patterns:
+          - "github.com*"
+      other-dependencies:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    labels:
-      - "dependencies"
-      - "go"
     commit-message:
       prefix: "chore"
       include: "scope"
@@ -36,16 +39,32 @@ updates:
       day: "tuesday"
       time: "04:00"
       timezone: "UTC"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
     cooldown:
       default-days: 7
     groups:
       github-actions:
         patterns:
           - "*"
-    labels:
-      - "dependencies"
-      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "04:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      docker-dependencies:
+        patterns:
+          - "*"
     commit-message:
       prefix: "chore"
       include: "scope"

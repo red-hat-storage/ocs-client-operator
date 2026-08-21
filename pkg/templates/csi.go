@@ -15,6 +15,7 @@ import (
 const RBDDriverName = "openshift-storage.rbd.csi.ceph.com"
 const CephFsDriverName = "openshift-storage.cephfs.csi.ceph.com"
 const NfsDriverName = "openshift-storage.nfs.csi.ceph.com"
+const NvmeofDriverName = "openshift-storage.nvmeof.csi.ceph.com"
 
 // Snapshot metadata sidecar automation (KEP-3314 / CBT)
 const SnapshotMetadataServiceName = "openshift-storage-rbd-snapshot-metadata"
@@ -49,7 +50,19 @@ func InjectSnapshotMetadataTLSVolume(cp *csiopv1.ControllerPluginSpec) {
 }
 
 // security context constraints
-const SCCName = "ceph-csi-op-scc"
+const (
+	SCCName           = "ceph-csi-op-scc"
+	restrictedSCCName = "restricted-v2"
+)
+
+var (
+	csiSCCPodAnnotations = map[string]string{
+		secv1.RequiredSCCAnnotation: SCCName,
+	}
+	RestrictedSCCPodAnnotations = map[string]string{
+		secv1.RequiredSCCAnnotation: restrictedSCCName,
+	}
+)
 
 // TODO: could pull directly from ceph-csi-operator when available
 var securityContextConstraints = secv1.SecurityContextConstraints{
@@ -212,6 +225,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 				},
 			},
 			PodCommonSpec: csiopv1.PodCommonSpec{
+				Annotations:        csiSCCPodAnnotations,
 				PrioritylClassName: ptr.To("system-cluster-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{
@@ -271,6 +285,7 @@ var CSIOperatorConfigSpec = csiopv1.OperatorConfigSpec{
 			},
 			KubeletDirPath: "/var/lib/kubelet",
 			PodCommonSpec: csiopv1.PodCommonSpec{
+				Annotations:        csiSCCPodAnnotations,
 				PrioritylClassName: ptr.To("system-node-critical"),
 				ImagePullPolicy:    corev1.PullIfNotPresent,
 				Tolerations: []corev1.Toleration{

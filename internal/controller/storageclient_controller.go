@@ -685,6 +685,12 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		update = true
 	}
 
+	if update {
+		if err := r.update(&r.storageClient); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+		}
+	}
+
 	if storageClientResponse.RbdDriverRequirements != nil {
 		r.storageClient.Status.RbdDriverRequirements = &v1alpha1.RbdDriverRequirements{
 			TopologyDomainLabels:  append([]string{}, storageClientResponse.RbdDriverRequirements.TopologyDomainLables...),
@@ -704,10 +710,12 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		}
 	}
 
-	if update {
-		if err := r.update(&r.storageClient); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+	if storageClientResponse.NvmeofDriverRequirements != nil {
+		r.storageClient.Status.NvmeofDriverRequirements = &v1alpha1.NvmeofDriverRequirements{
+			CtrlPluginHostNetwork: storageClientResponse.NvmeofDriverRequirements.CtrlPluginHostNetwork,
 		}
+	} else {
+		r.storageClient.Status.NvmeofDriverRequirements = nil
 	}
 
 	return reconcile.Result{}, nil
@@ -849,6 +857,9 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 					ActiveDeadlineSeconds:   &jobDeadLineSeconds,
 					TTLSecondsAfterFinished: &keepJobResourceSeconds,
 					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Annotations: templates.RestrictedSCCPodAnnotations,
+						},
 						Spec: corev1.PodSpec{
 							ActiveDeadlineSeconds: &podDeadLineSeconds,
 							Containers: []corev1.Container{
@@ -1077,6 +1088,29 @@ func (r *storageClientReconcile) reconcileResourcesByGK(
 	}
 }
 
+func mergeLabelsAnnotations(obj client.Object, externalLabels, externalAnnotations map[string]string) {
+	finalLabels := make(map[string]string)
+	finalAnnotations := make(map[string]string)
+
+	for k, v := range externalLabels {
+		finalLabels[k] = v
+	}
+	for k, v := range externalAnnotations {
+		finalAnnotations[k] = v
+	}
+
+	// server sent labels and annotations takes precedence
+	for k, v := range obj.GetLabels() {
+		finalLabels[k] = v
+	}
+	for k, v := range obj.GetAnnotations() {
+		finalAnnotations[k] = v
+	}
+
+	obj.SetLabels(finalLabels)
+	obj.SetAnnotations(finalAnnotations)
+}
+
 func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredObjectBytes []byte, namespacedName types.NamespacedName) error {
 
 	mutateFunc := func() error {
@@ -1102,13 +1136,13 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredObj
 
 		obj.SetName(namespacedName.Name)
 		obj.SetNamespace(namespacedName.Namespace)
-		obj.SetLabels(labels)
-		obj.SetAnnotations(annotations)
 		obj.SetOwnerReferences(ownerRefs)
 		obj.SetFinalizers(finalizers)
 		obj.SetUID(uid)
 		obj.SetCreationTimestamp(creationTimestamp)
 		obj.SetResourceVersion(resourceVersion)
+
+		mergeLabelsAnnotations(obj, labels, annotations)
 
 		if err := r.own(obj); err != nil {
 			return fmt.Errorf("failed to own %s resource: %v", namespacedName.Name, err)

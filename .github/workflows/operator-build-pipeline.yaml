@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
             go-version-file: go.mod
-            cache: false
+            cache: true
       - name: Source build env variables
         run: |
           grep -v '^#' hack/build.env >> $GITHUB_ENV
@@ -40,8 +40,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
             go-version-file: go.mod
-            cache: false
+            cache: true
       - name: Build operator container image
+        env:
+          DOCKER_BUILDKIT: 1
         run: make build
   bundle-build:
     name: bundle-build
@@ -53,7 +55,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
             go-version-file: go.mod
-            cache: false
+            cache: true
       - name: Build operator bundle container image
         run: make bundle-build
   catalog-build:
@@ -66,7 +68,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
             go-version-file: go.mod
-            cache: false
+            cache: true
       - name: Build catalog container image
         env:
           IMAGE_REGISTRY: localhost:5000

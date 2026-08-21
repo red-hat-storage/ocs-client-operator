@@ -91,6 +91,7 @@ const (
 	enableRbdDriverKey                = "enableRbdDriver"
 	enableCephFsDriverKey             = "enableCephFsDriver"
 	enableNfsDriverKey                = "enableNfsDriver"
+	enableNvmeofDriverKey             = "enableNvmeofDriver"
 
 	// AlertPollIntervalKey is the ConfigMap key for the client alert polling interval.
 	AlertPollIntervalKey = "alertPollInterval"
@@ -119,7 +120,7 @@ const (
 	vscDriverIndexName = "index:volumeSnapshotContentDriver"
 
 	ibmZCpuArch         = "s390x"
-	ibmZCpuAdjustFactor = 0.5
+	ibmZCpuAdjustFactor = 0.2
 )
 
 // ConfigMapData value from the provider that contains the s3 endpoint info (key is the unique identifier, using which the endpoint is exposed).
@@ -674,6 +675,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			driverSpecDefaults.ControllerPlugin.ContainerExtraArgs = csiExtraArgs
 			driverSpecDefaults.NodePlugin.ContainerExtraArgs = csiExtraArgs
 		}
+		driverSpecDefaults.EnableFencing = ptr.To(!c.shouldDisableAutoFencing())
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
@@ -682,8 +684,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	enableRbdDriver := c.shouldEnableDriver(enableRbdDriverKey)
 	enableCephFsDriver := c.shouldEnableDriver(enableCephFsDriverKey)
 	enableNfsDriver := c.shouldEnableDriver(enableNfsDriverKey)
+	enableNvmeofDriver := c.shouldEnableDriver(enableNvmeofDriverKey)
 
-	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin bool
+	var useHostNetForRbdCtrlPlugin, useHostNetForCephFsCtrlPlugin, useHostNetForNfsCtrlPlugin, useHostNetForNvmeofCtrlPlugin bool
 
 	// if the storage client status has the driver requirements info, then it has higher precedence than the configmap.
 	for i := range storageClients.Items {
@@ -703,6 +706,12 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			enableNfsDriver = true
 			if useHostNetwork := storageClients.Items[i].Status.NfsDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
 				useHostNetForNfsCtrlPlugin = useHostNetForNfsCtrlPlugin || ptr.Deref(useHostNetwork, false)
+			}
+		}
+		if storageClients.Items[i].Status.NvmeofDriverRequirements != nil {
+			enableNvmeofDriver = true
+			if useHostNetwork := storageClients.Items[i].Status.NvmeofDriverRequirements.CtrlPluginHostNetwork; useHostNetwork != nil {
+				useHostNetForNvmeofCtrlPlugin = useHostNetForNvmeofCtrlPlugin || ptr.Deref(useHostNetwork, false)
 			}
 		}
 	}
@@ -770,13 +779,13 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			return fmt.Errorf("failed to reconcile nfs driver: %v", err)
 		}
 	} else {
-		if hasPvs, err := c.hasPersistentVolumesWithNfsDriver(); err != nil {
+		if hasPvs, err := c.hasPersistentVolumesWithDriver(templates.NfsDriverName); err != nil {
 			return fmt.Errorf("failed to check if NFS driver has PVs: %v", err)
 		} else if hasPvs {
 			c.log.Info("NFS driver has PVs, skipping deletion")
 			return nil
 		}
-		if hasVscs, err := c.hasVolumeSnapshotContentsWithNfsDriver(); err != nil {
+		if hasVscs, err := c.hasVolumeSnapshotContentsWithDriver(templates.NfsDriverName); err != nil {
 			return fmt.Errorf("failed to check if NFS driver has volumesnapshotcontents: %v", err)
 		} else if hasVscs {
 			c.log.Info("NFS driver has volumesnapshotcontents, skipping deletion")
@@ -784,6 +793,42 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		if err := c.delete(nfsDriver); err != nil {
 			return fmt.Errorf("failed to delete csi nfs driver: %v", err)
+		}
+	}
+
+	// nvmeof driver config
+	nvmeofDriver := &csiopv1.Driver{}
+	nvmeofDriver.Name = templates.NvmeofDriverName
+	nvmeofDriver.Namespace = c.OperatorNamespace
+	if enableNvmeofDriver {
+		if err := c.createOrUpdate(nvmeofDriver, func() error {
+			if err := c.own(nvmeofDriver); err != nil {
+				return fmt.Errorf("failed to own csi nvmeof driver: %v", err)
+			}
+			if nvmeofDriver.Spec.ControllerPlugin == nil {
+				nvmeofDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
+			}
+			nvmeofDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNvmeofCtrlPlugin)
+			nvmeofDriver.Spec.DeployCsiAddons = new(bool)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile nvmeof driver: %v", err)
+		}
+	} else {
+		if hasPvs, err := c.hasPersistentVolumesWithDriver(templates.NvmeofDriverName); err != nil {
+			return fmt.Errorf("failed to check if NVMeoF driver has PVs: %v", err)
+		} else if hasPvs {
+			c.log.Info("NVMeoF driver has PVs, skipping deletion")
+			return nil
+		}
+		if hasVscs, err := c.hasVolumeSnapshotContentsWithDriver(templates.NvmeofDriverName); err != nil {
+			return fmt.Errorf("failed to check if NVMeoF driver has volumesnapshotcontents: %v", err)
+		} else if hasVscs {
+			c.log.Info("NVMeoF driver has volumesnapshotcontents, skipping deletion")
+			return nil
+		}
+		if err := c.delete(nvmeofDriver); err != nil {
+			return fmt.Errorf("failed to delete csi nvmeof driver: %v", err)
 		}
 	}
 
@@ -867,6 +912,12 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		return err
 	}
 
+	goTLS, err := utils.BuildServerTLSOpts(c.TlsProfile, "ocs.openshift.io", "client-console")
+	if err != nil {
+		return fmt.Errorf("invalid TLSProfile config for console nginx: %w", err)
+	}
+	ossl := ocstlsv1.OpenSSLConfigFrom(goTLS)
+
 	nginxConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      console.NginxConfigMapName,
@@ -874,7 +925,7 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 		},
 	}
 	nginxConfigMapResult, err := c.createOrUpdateWithResult(nginxConfigMap, func() error {
-		desiredData, buildErr := c.buildDesiredNginxDataWithProxies()
+		desiredData, buildErr := c.buildDesiredNginxDataWithProxies(ossl)
 		if buildErr != nil {
 			return buildErr
 		}
@@ -922,10 +973,14 @@ func (c *OperatorConfigMapReconciler) ensureConsolePlugin() error {
 	return nil
 }
 
-func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[string]string, error) {
+func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies(ossl *ocstlsv1.OpenSSLConfig) (map[string]string, error) {
+	nginxConf, err := console.GenerateNginxRootConf(ossl)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]string{
 		// Root config is mandatory for nginx to start. Proxy configs (per client) are optional.
-		"nginx.conf": console.GetNginxRootConf(),
+		"nginx.conf": nginxConf,
 	}
 
 	if c.operatorConfigMap.Data != nil {
@@ -941,11 +996,11 @@ func (c *OperatorConfigMapReconciler) buildDesiredNginxDataWithProxies() (map[st
 		}
 	}
 
-	err := c.computeDesiredProxyConfigByKey(out)
+	err = c.computeDesiredProxyConfigByKey(out, ossl)
 	return out, err
 }
 
-func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[string]string) error {
+func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[string]string, ossl *ocstlsv1.OpenSSLConfig) error {
 	extList := &corev1.ConfigMapList{}
 	if err := c.list(extList,
 		client.InNamespace(c.OperatorNamespace),
@@ -962,7 +1017,7 @@ func (c *OperatorConfigMapReconciler) computeDesiredProxyConfigByKey(out map[str
 		if err != nil {
 			return fmt.Errorf("parse endpoints ConfigMap %s: %w", client.ObjectKeyFromObject(cm), err)
 		}
-		content, err := c.buildS3EndpointProxyConfigForClient(uniqueIdentifier, endpoints)
+		content, err := c.buildS3EndpointProxyConfigForClient(uniqueIdentifier, endpoints, ossl)
 		if err != nil {
 			return err
 		}
@@ -990,7 +1045,7 @@ func parseEndpointConfigs(data map[string]string) (map[string]s3EndpointConfig, 
 	return out, nil
 }
 
-func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(uniqueIdentifier string, endpoints map[string]s3EndpointConfig) (string, error) {
+func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(uniqueIdentifier string, endpoints map[string]s3EndpointConfig, ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 	if len(endpoints) == 0 {
 		return "", nil
 	}
@@ -1045,6 +1100,7 @@ func (c *OperatorConfigMapReconciler) buildS3EndpointProxyConfigForClient(unique
 			endpointURL,
 			endpointHost,
 			certsPath,
+			ossl,
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to build proxy config for %q: %w", exposeAs, err)
@@ -1364,18 +1420,18 @@ func (c *OperatorConfigMapReconciler) checkIfTNFCluster() (bool, error) {
 	return isTnfCluster, nil
 }
 
-func (c *OperatorConfigMapReconciler) hasPersistentVolumesWithNfsDriver() (bool, error) {
+func (c *OperatorConfigMapReconciler) hasPersistentVolumesWithDriver(driverName string) (bool, error) {
 	pvList := &corev1.PersistentVolumeList{}
-	if err := c.list(pvList, client.MatchingFields{pvDriverIndexName: templates.NfsDriverName}, client.Limit(1)); err != nil {
-		return false, fmt.Errorf("failed to list NFS driver PVs: %v", err)
+	if err := c.list(pvList, client.MatchingFields{pvDriverIndexName: driverName}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list %s driver PVs: %v", driverName, err)
 	}
 	return len(pvList.Items) != 0, nil
 }
 
-func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithNfsDriver() (bool, error) {
+func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithDriver(driverName string) (bool, error) {
 	vscList := &snapapi.VolumeSnapshotContentList{}
-	if err := c.list(vscList, client.MatchingFields{vscDriverIndexName: templates.NfsDriverName}, client.Limit(1)); err != nil {
-		return false, fmt.Errorf("failed to list NFS driver VolumeSnapshotContents: %v", err)
+	if err := c.list(vscList, client.MatchingFields{vscDriverIndexName: driverName}, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("failed to list %s driver VolumeSnapshotContents: %v", driverName, err)
 	}
 	return len(vscList.Items) != 0, nil
 }
@@ -1436,6 +1492,19 @@ func (c *OperatorConfigMapReconciler) reconcileRbdSMSSpecConfigMap() error {
 		return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
 	}
 	return nil
+}
+
+func (c *OperatorConfigMapReconciler) shouldDisableAutoFencing() bool {
+	infra := &configv1.Infrastructure{}
+	infra.Name = "cluster"
+	if err := c.get(infra); err != nil {
+		c.log.Info("failed to fetch infrastructure resource", "error", err)
+		return true
+	}
+	if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == configv1.KubevirtPlatformType {
+		return true
+	}
+	return false
 }
 
 func adjustPluginCpuResourcesForIbmZ(resources any, adjustFactor float64) {

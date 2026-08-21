@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	consolev1 "github.com/openshift/api/console/v1"
+	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -30,8 +31,13 @@ var (
 //go:embed nginx_proxy.tmpl
 var nginxProxyConf string
 
-//go:embed nginx_root.conf
+//go:embed nginx_root.tmpl
 var nginxRootConf string
+
+var (
+	nginxRootTmpl  = template.Must(template.New("nginxRootConf").Parse(nginxRootConf))
+	nginxProxyTmpl = template.Must(template.New("nginxProxyConf").Parse(nginxProxyConf))
+)
 
 func GetService(port int32, namespace string) *apiv1.Service {
 	return &apiv1.Service{
@@ -85,33 +91,69 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 	}
 }
 
-func GetNginxRootConf() string {
-	return nginxRootConf
+type tlsTemplateData struct {
+	Protocol     string
+	Ciphers      string
+	Ciphersuites string
+	Groups       string
 }
 
-func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, certsPath string) (string, error) {
-	type nginxProxyConfData struct {
-		UniqueIdentifier string
-		ExposeAs         string
-		EndpointURL      string
-		EndpointHost     string
-		CertsPath        string
+func newTLSTemplateData(ossl *ocstlsv1.OpenSSLConfig) tlsTemplateData {
+	if ossl == nil {
+		return tlsTemplateData{}
 	}
+	var data tlsTemplateData
+	data.Protocol = ossl.Protocol
+	if len(ossl.Ciphers) > 0 {
+		joined := strings.Join(ossl.Ciphers, ":")
+		if ossl.Protocol == string(ocstlsv1.VersionTLS1_3) {
+			data.Ciphersuites = joined
+		} else {
+			data.Ciphers = joined
+		}
+	}
+	if len(ossl.Groups) > 0 {
+		data.Groups = strings.Join(ossl.Groups, ":")
+	}
+	return data
+}
 
-	data := nginxProxyConfData{
-		UniqueIdentifier: uniqueIdentifier,
-		ExposeAs:         exposeAs,
-		EndpointURL:      endpointURL,
-		EndpointHost:     endpointHost,
-		CertsPath:        certsPath,
-	}
-
-	t, err := template.New("nginxProxyConf").Parse(nginxProxyConf)
-	if err != nil {
-		return "", err
-	}
+func GenerateNginxRootConf(ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 	var sb strings.Builder
-	if err := t.Execute(&sb, data); err != nil {
+	if err := nginxRootTmpl.Execute(&sb, newTLSTemplateData(ossl)); err != nil {
+		return "", fmt.Errorf("failed to render nginx root config: %w", err)
+	}
+	return sb.String(), nil
+}
+
+func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, certsPath string, ossl *ocstlsv1.OpenSSLConfig) (string, error) {
+	type nginxProxyConfData struct {
+		UniqueIdentifier     string
+		ExposeAs             string
+		EndpointURL          string
+		EndpointHost         string
+		CertsPath            string
+		ProxySSLProtocol     string
+		ProxySSLCiphers      string
+		ProxySSLCiphersuites string
+		ProxySSLGroups       string
+	}
+
+	tls := newTLSTemplateData(ossl)
+	data := nginxProxyConfData{
+		UniqueIdentifier:     uniqueIdentifier,
+		ExposeAs:             exposeAs,
+		EndpointURL:          endpointURL,
+		EndpointHost:         endpointHost,
+		CertsPath:            certsPath,
+		ProxySSLProtocol:     tls.Protocol,
+		ProxySSLCiphers:      tls.Ciphers,
+		ProxySSLCiphersuites: tls.Ciphersuites,
+		ProxySSLGroups:       tls.Groups,
+	}
+
+	var sb strings.Builder
+	if err := nginxProxyTmpl.Execute(&sb, data); err != nil {
 		return "", err
 	}
 	return sb.String(), nil

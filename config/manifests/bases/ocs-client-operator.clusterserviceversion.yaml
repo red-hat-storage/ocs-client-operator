@@ -10,6 +10,7 @@ metadata:
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
+    features.operators.openshift.io/tls-profiles: "true"
     operatorframework.io/suggested-namespace: openshift-storage
     operators.operatorframework.io/operator-type: standalone
     repository: https://github.com/red-hat-storage/ocs-client-operator
