@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: console
+  labels:
+    app.kubernetes.io/part-of: ocs-client-operator
 spec:
   replicas: 1
   selector:
