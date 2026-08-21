@@ -810,6 +810,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			}
 			nvmeofDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForNvmeofCtrlPlugin)
 			nvmeofDriver.Spec.DeployCsiAddons = new(bool)
+			nvmeofDriver.Spec.SnapshotPolicy = csiopv1.VolumeSnapshotSnapshotPolicy
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile nvmeof driver: %v", err)
