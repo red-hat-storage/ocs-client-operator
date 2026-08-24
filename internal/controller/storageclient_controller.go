@@ -522,15 +522,13 @@ func (r *storageClientReconcile) setupObjectBucketWatch() error {
 		return nil
 	}
 
-	crd := &extv1.CustomResourceDefinition{}
+	crd := &metav1.PartialObjectMetadata{}
+	crd.SetGroupVersionKind(extv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
 	crd.Name = ObjectBucketCrdName
 	if err := r.get(crd); client.IgnoreNotFound(err) != nil {
 		return err
 	}
 	if crd.UID == "" {
-		return nil
-	}
-	if !crdEstablished(crd) {
 		return nil
 	}
 
@@ -1281,16 +1279,4 @@ func (r *storageClientReconcile) getOperatorVersion() (string, error) {
 		return "", fmt.Errorf("failed to get csv: %v", err)
 	}
 	return csv.Spec.Version.String(), nil
-}
-
-// crdEstablished reports whether the CRD is served by the apiserver (status.conditions Established=True).
-// A CRD object can exist before the REST mapping for its resource is available.
-func crdEstablished(crd *extv1.CustomResourceDefinition) bool {
-	for i := range crd.Status.Conditions {
-		c := crd.Status.Conditions[i]
-		if c.Type == extv1.Established && c.Status == extv1.ConditionTrue {
-			return true
-		}
-	}
-	return false
 }
