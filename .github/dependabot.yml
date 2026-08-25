@@ -11,12 +11,14 @@ updates:
     # matching the number of groups
     open-pull-requests-limit: 4
     cooldown:
-      semver-minor-days: 3
-      semver-patch-days: 3
+      default-days: 7
+    # Only propose updates for direct requires; transitive bumps land via make deps-update.
+    allow:
+      - dependency-type: direct
     groups:
       golang-dependencies:
         patterns:
-          - "github.com/golang*"
+          - "google.golang.org*"
       k8s-dependencies:
         patterns:
           - "k8s.io*"
