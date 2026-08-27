@@ -432,6 +432,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 
+		if err := c.reconcileOCSTLSProfilesSubscription(); err != nil {
+			c.log.Error(err, "unable to reconcile OCS TLS Profiles subscription")
+			return ctrl.Result{}, err
+		}
+
 		if c.shouldAutoApproveInstallPlans() {
 			if err := c.reconcileInstallPlans(); err != nil {
 				c.log.Error(err, "unable to reconcile InstallPlans")
@@ -501,6 +506,20 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileOCSTLSProfilesSubscription() error {
+	tlsProfilesSubscription, err := getSubscriptionByPackageName(c.ctx, c.Client, c.OperatorNamespace, "ocs-tls-profiles")
+	if err != nil {
+		return err
+	}
+	if c.subscriptionChannel != "" && c.subscriptionChannel != tlsProfilesSubscription.Spec.Channel {
+		tlsProfilesSubscription.Spec.Channel = c.subscriptionChannel
+		if err := c.update(tlsProfilesSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription channel of 'ocs-tls-profiles' to %v: %v", c.subscriptionChannel, err)
+		}
+	}
+	return nil
 }
 
 func (c *OperatorConfigMapReconciler) shouldAutoApproveInstallPlans() bool {
