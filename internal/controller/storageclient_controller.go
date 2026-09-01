@@ -786,7 +786,7 @@ func (r *storageClientReconcile) reconcileResourcesByGVK(
 	for idx := range existingObjList.Items {
 		obj := &existingObjList.Items[idx]
 		if !reconciledObjects[client.ObjectKeyFromObject(obj)] && metav1.IsControlledBy(obj, &r.storageClient) {
-			if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
+			if err := r.Delete(r.ctx, obj, client.Preconditions{UID: &obj.UID}); client.IgnoreNotFound(err) != nil {
 				multierr.AppendInto(&combinedErr, err)
 				r.log.Error(err, "failed to delete object", "Name", client.ObjectKeyFromObject(obj))
 			}
