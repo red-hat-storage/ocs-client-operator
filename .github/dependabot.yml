@@ -51,22 +51,3 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
-
-  # Docker
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "04:00"
-      timezone: "UTC"
-    open-pull-requests-limit: 1
-    cooldown:
-      default-days: 7
-    groups:
-      docker-dependencies:
-        patterns:
-          - "*"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
