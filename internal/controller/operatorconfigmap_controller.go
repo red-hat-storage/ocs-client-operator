@@ -749,6 +749,8 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			}
 			rbdDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForRbdCtrlPlugin)
 			templates.InjectSnapshotMetadataTLSVolume(rbdDriver.Spec.ControllerPlugin)
+			// enabling csi-addons volume health reporting by default for the CephRBD node plugin
+			utils.AddAnnotation(rbdDriver, templates.CSIAddonsVolumeConditionAnnotationKey, "true")
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile rbd driver: %v", err)
@@ -774,6 +776,8 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 				cephFsDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
 			}
 			cephFsDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForCephFsCtrlPlugin)
+			// enabling csi-addons volume health reporting by default for the CephFS node plugin
+			utils.AddAnnotation(cephFsDriver, templates.CSIAddonsVolumeConditionAnnotationKey, "true")
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cephfs driver: %v", err)
