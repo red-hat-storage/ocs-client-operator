@@ -121,6 +121,10 @@ func SetSecurityContextConstraintsDesiredState(scc *secv1.SecurityContextConstra
 	}
 }
 
+// Set on a Driver CR to enable the
+// csi-addons volume condition reporter on that driver's node plugin.
+const CSIAddonsVolumeConditionAnnotationKey = "addons.csi.ceph.io/volume-condition"
+
 // Ceph CSI Operator Config
 const CSIOperatorConfigName = "ceph-csi-operator-config"
 
