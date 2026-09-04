@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -67,6 +69,9 @@ func newFakeScheme(t *testing.T) *runtime.Scheme {
 
 	err = v1alpha1.AddToScheme(scheme)
 	assert.Nil(t, err, "failed to add v1alpha1 scheme")
+
+	err = monitoringv1.AddToScheme(scheme)
+	assert.Nil(t, err, "failed to add monitoring v1 scheme")
 
 	return scheme
 }
@@ -531,6 +536,41 @@ func TestReconcileSMSSpecConfigMap(t *testing.T) {
 	assert.Equal(t, "fake-ca-cert", cm.Data["caCert"])
 	assert.Equal(t, templates.RBDDriverName, cm.Data["audience"])
 	assert.Contains(t, cm.Data["address"], templates.SnapshotMetadataServiceName)
+}
+
+func TestReconcileMetricsServiceMonitor_CANotYetInjected(t *testing.T) {
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "openshift-service-ca.crt", Namespace: testNamespace},
+	}
+	r := newSMSReconciler(t, caCM)
+	err := r.reconcileMetricsServiceMonitor()
+	assert.NoError(t, err)
+
+	sm := &monitoringv1.ServiceMonitor{}
+	err = r.Get(r.ctx, types.NamespacedName{Name: templates.MetricsServiceMonitorName, Namespace: testNamespace}, sm)
+	assert.True(t, kerrors.IsNotFound(err), "ServiceMonitor should not be created when CA not yet injected")
+}
+
+func TestReconcileMetricsServiceMonitor(t *testing.T) {
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "openshift-service-ca.crt", Namespace: testNamespace},
+		Data:       map[string]string{"service-ca.crt": "fake-ca-cert"},
+	}
+	r := newSMSReconciler(t, caCM)
+	err := r.reconcileMetricsServiceMonitor()
+	assert.NoError(t, err)
+
+	sm := &monitoringv1.ServiceMonitor{}
+	err = r.Get(r.ctx, types.NamespacedName{Name: templates.MetricsServiceMonitorName, Namespace: testNamespace}, sm)
+	assert.NoError(t, err)
+	assert.Len(t, sm.Spec.Endpoints, 1)
+
+	tlsConfig := sm.Spec.Endpoints[0].TLSConfig
+	assert.NotNil(t, tlsConfig)
+	assert.Nil(t, tlsConfig.InsecureSkipVerify, "insecureSkipVerify must not be set")
+	assert.Equal(t, fmt.Sprintf("%s.%s.svc", templates.MetricsServiceName, testNamespace), *tlsConfig.ServerName)
+	assert.Equal(t, "openshift-service-ca.crt", tlsConfig.CA.ConfigMap.Name)
+	assert.Equal(t, "service-ca.crt", tlsConfig.CA.ConfigMap.Key)
 }
 
 func TestDeleteDelegatedCSI(t *testing.T) {
