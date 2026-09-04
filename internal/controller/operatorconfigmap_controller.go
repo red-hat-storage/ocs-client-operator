@@ -231,6 +231,14 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		),
 	)
 
+	serviceMonitorPredicate := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(obj client.Object) bool {
+				return obj.GetNamespace() == c.OperatorNamespace && obj.GetName() == templates.OperatorServiceMonitorName
+			},
+		),
+	)
+
 	s3EndpointCASecretPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(obj client.Object) bool {
@@ -270,6 +278,11 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Service{},
 			enqueueOwnerConfigMapRequest,
 			servicePredicate,
+		).
+		Watches(
+			&monitoringv1.ServiceMonitor{},
+			enqueueOwnerConfigMapRequest,
+			serviceMonitorPredicate,
 		).
 		Watches(
 			&csiopv1.OperatorConfig{},
@@ -324,6 +337,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;patch;update;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=*
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
@@ -490,6 +504,11 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 
 		c.log.Info("client alert prometheus rules deployed", "prometheusRule", klog.KRef(clientAlertRule.Namespace, clientAlertRule.Name))
+
+		if err := c.reconcileOperatorServiceMonitor(); err != nil {
+			c.log.Error(err, "unable to reconcile operator ServiceMonitor")
+			return ctrl.Result{}, err
+		}
 
 	} else {
 		// deletion phase
@@ -1513,6 +1532,45 @@ func (c *OperatorConfigMapReconciler) reconcileRbdSMSSpecConfigMap() error {
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
+	}
+	return nil
+}
+
+func (c *OperatorConfigMapReconciler) reconcileOperatorServiceMonitor() error {
+	// openshift-service-ca.crt is auto-created per namespace by OpenShift service-CA operator
+	caCM := &corev1.ConfigMap{}
+	caCM.Name = utils.OpenShiftServiceCAConfigMapName
+	caCM.Namespace = c.OperatorNamespace
+	if err := c.get(caCM); err != nil {
+		return fmt.Errorf("failed to get ConfigMap %s: %w", client.ObjectKeyFromObject(caCM), err)
+	}
+	if caCM.Data[utils.ServiceCACertKey] == "" {
+		c.log.Info("service CA cert not yet available, waiting for requeue", "configMap", caCM.Name)
+		return nil
+	}
+
+	sm := &monitoringv1.ServiceMonitor{}
+	sm.Name = templates.OperatorServiceMonitorName
+	sm.Namespace = c.OperatorNamespace
+	if err := c.createOrUpdate(sm, func() error {
+		if err := c.own(sm); err != nil {
+			return err
+		}
+		templates.OperatorServiceMonitor.Spec.DeepCopyInto(&sm.Spec)
+		sm.Spec.Endpoints[0].TLSConfig = &monitoringv1.TLSConfig{
+			SafeTLSConfig: monitoringv1.SafeTLSConfig{
+				ServerName: ptr.To(fmt.Sprintf("%s.%s.svc", templates.MetricsServiceName, c.OperatorNamespace)),
+				CA: monitoringv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: utils.OpenShiftServiceCAConfigMapName},
+						Key:                  utils.ServiceCACertKey,
+					},
+				},
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile operator ServiceMonitor: %w", err)
 	}
 	return nil
 }
