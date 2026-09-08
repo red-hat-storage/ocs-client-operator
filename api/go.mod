@@ -1,6 +1,6 @@
 module github.com/red-hat-storage/ocs-client-operator/api
 
-go 1.24.8
+go 1.24.13
 
 require k8s.io/apimachinery v0.31.0
 
