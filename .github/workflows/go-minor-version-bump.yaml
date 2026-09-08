@@ -184,6 +184,7 @@ jobs:
           candidates=(
             go.mod go.sum go.work go.work.sum
             api/go.mod api/go.sum
+            vendor api/vendor
           )
           existing=()
           for p in "${candidates[@]}"; do
