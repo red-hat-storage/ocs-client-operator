@@ -643,9 +643,9 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 		}
 		driverSpecDefaults.ImageSet = &corev1.LocalObjectReference{Name: cmName}
 		driverSpecDefaults.ClusterName = ptr.To(string(clusterVersion.Spec.ClusterID))
-		if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
-			driverSpecDefaults.SnapshotPolicy = csiopv1.VolumeGroupSnapshotPolicy
-		}
+		//if c.AvailableCrds[VolumeGroupSnapshotClassCrdName] {
+		//	driverSpecDefaults.SnapshotPolicy = csiopv1.VolumeGroupSnapshotPolicy
+		//}
 		if cniNetworkAnnotationValue != "" {
 			if driverSpecDefaults.ControllerPlugin.Annotations == nil {
 				driverSpecDefaults.ControllerPlugin.Annotations = map[string]string{}
