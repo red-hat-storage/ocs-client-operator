@@ -65,5 +65,7 @@ resources:
 - ../rbac
 - ../manager
 - ../crd
-- ../prometheus
+# the ServiceMonitor is now reconciled from code (see pkg/templates/operatorservicemonitor.go),
+# so on OLM upgrade the CSV-deployed one below is removed and recreated by the operator
+#- ../prometheus
 - metrics_service.yaml
