@@ -1,8 +1,13 @@
 # go-get-tool will 'go get' any package $2 and install it to $1.
 define go-get-tool
 @[ -f $(1) ] || { \
+set -e ;\
 echo "Downloading $(2)" ;\
-$(shell GOBIN=$(PROJECT_DIR)/bin go install $(2)) \
+if [ "$(GOOS)" = "darwin" ]; then \
+	GOBIN=$(PROJECT_DIR)/bin go install -ldflags='-linkmode=external' $(2) ;\
+else \
+	GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
+fi ;\
 }
 endef
 
