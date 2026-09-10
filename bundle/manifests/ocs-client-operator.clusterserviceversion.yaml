@@ -7,7 +7,7 @@ metadata:
     categories: Storage
     console.openshift.io/plugins: '["odf-client-console"]'
     containerImage: quay.io/ocs-dev/ocs-client-operator:latest
-    createdAt: "2025-05-28T06:29:53Z"
+    createdAt: "2026-09-10T08:03:31Z"
     description: OpenShift Data Foundation client operator enables consumption of
       storage services from a remote centralized OpenShift Data Foundation provider
       cluster.
@@ -463,6 +463,7 @@ spec:
       deployments:
       - label:
           app: ocs-client-operator
+          app.kubernetes.io/part-of: ocs-client-operator
           control-plane: controller-manager
         name: ocs-client-operator-controller-manager
         spec:
@@ -569,6 +570,7 @@ spec:
                   secretName: webhook-cert-secret
       - label:
           app.kubernetes.io/name: ocs-client-operator-console
+          app.kubernetes.io/part-of: ocs-client-operator
         name: ocs-client-operator-console
         spec:
           selector:
