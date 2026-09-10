@@ -41,6 +41,7 @@ func (r *CrdsPresenceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}),
 				utils.EventTypePredicate(true, false, true, false),
 			),
+			builder.OnlyMetadata,
 		).
 		Complete(r)
 }
