@@ -794,20 +794,65 @@ func (r *storageClientReconcile) reconcileResourcesByGVK(
 	}
 }
 
+func mergeLabelsAnnotations(obj client.Object, externalLabels, externalAnnotations map[string]string) {
+	finalLabels := make(map[string]string)
+	finalAnnotations := make(map[string]string)
+
+	for k, v := range externalLabels {
+		finalLabels[k] = v
+	}
+	for k, v := range externalAnnotations {
+		finalAnnotations[k] = v
+	}
+
+	// server sent labels and annotations takes precedence
+	for k, v := range obj.GetLabels() {
+		finalLabels[k] = v
+	}
+	for k, v := range obj.GetAnnotations() {
+		finalAnnotations[k] = v
+	}
+
+	obj.SetLabels(finalLabels)
+	obj.SetAnnotations(finalAnnotations)
+}
+
 func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredState desiredKubeObject) error {
 
 	mutateFunc := func() error {
-		// Unmarshal follows merge semantics, that means that we don't need to worry about overriding the status,
-		// or any metadata fields. There is an exception when it comes to creationTimestamp which gets serialized into
-		// default value.
+		// Preserve metadata that must survive provider updates.
+		labels := obj.GetLabels()
+		annotations := obj.GetAnnotations()
+		ownerRefs := obj.GetOwnerReferences()
+		finalizers := obj.GetFinalizers()
+		uid := obj.GetUID()
 		creationTimestamp := obj.GetCreationTimestamp()
+		resourceVersion := obj.GetResourceVersion()
+
+		// Zero the object so absent fields in the response clear existing
+		// values rather than being silently retained via merge accumulation.
+		goType := reflect.TypeOf(obj).Elem()    // concrete struct type, e.g. CephConnection not *CephConnection
+		zeroValue := reflect.New(goType).Elem() // zeroed struct value of that type
+		objValue := reflect.ValueOf(obj).Elem() // addressable struct value behind obj's pointer
+		objValue.Set(zeroValue)                 // reset in-place, same pointer CreateOrUpdate holds
+
 		if err := json.Unmarshal(desiredState.bytes, obj); err != nil {
-			return fmt.Errorf("failed to unmarshal %s configuration response: %v", obj.GetName(), err)
+			return fmt.Errorf("failed to unmarshal %s configuration response: %v", desiredState.Name, err)
 		}
+
+		obj.SetName(desiredState.Name)
+		obj.SetNamespace(desiredState.Namespace)
+		obj.SetOwnerReferences(ownerRefs)
+		obj.SetFinalizers(finalizers)
+		obj.SetUID(uid)
 		obj.SetCreationTimestamp(creationTimestamp)
+		obj.SetResourceVersion(resourceVersion)
 		removeStorageClaimAsOwner(obj)
+
+		mergeLabelsAnnotations(obj, labels, annotations)
+
 		if err := r.own(obj); err != nil {
-			return fmt.Errorf("failed to own %s resource: %v", obj.GetName(), err)
+			return fmt.Errorf("failed to own %s resource: %v", desiredState.Name, err)
 		}
 		return nil
 	}
