@@ -837,8 +837,8 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 
 	var podDeadLineSeconds int64 = 120
 	jobDeadLineSeconds := podDeadLineSeconds + 35
-	var keepJobResourceSeconds int32 = 600
 	var reducedKeptSuccecsful int32 = 1
+	var reducedKeptFailed int32 = 1
 
 	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, cronJob, func() error {
 		if err := r.own(cronJob); err != nil {
@@ -850,10 +850,10 @@ func (r *storageClientReconcile) reconcileClientStatusReporterJob(operatorVersio
 			Schedule:                   "* * * * *",
 			ConcurrencyPolicy:          batchv1.ForbidConcurrent,
 			SuccessfulJobsHistoryLimit: &reducedKeptSuccecsful,
+			FailedJobsHistoryLimit:     &reducedKeptFailed,
 			JobTemplate: batchv1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
 					ActiveDeadlineSeconds:   &jobDeadLineSeconds,
-					TTLSecondsAfterFinished: &keepJobResourceSeconds,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations: templates.RestrictedSCCPodAnnotations,
