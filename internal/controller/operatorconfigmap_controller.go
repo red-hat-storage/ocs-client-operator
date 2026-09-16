@@ -602,6 +602,14 @@ func (c *OperatorConfigMapReconciler) getTopologyLabels(storageClients *v1alpha1
 	return topologyDomainLablesSet
 }
 
+// supportsRbdSnapshotMetadata reports whether the OpenShift version supports
+// the RBD snapshot metadata sidecar, which is available from 4.23 and 5.0 onward.
+func supportsRbdSnapshotMetadata(clusterVersion string) bool {
+	platformVersion := version.MustParseGeneric(clusterVersion)
+	return platformVersion.Major() >= 5 ||
+		(platformVersion.Major() == 4 && platformVersion.Minor() >= 23)
+}
+
 func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1alpha1.StorageClientList) error {
 	// scc
 	scc := &secv1.SecurityContextConstraints{}
@@ -626,6 +634,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	if historyRecord == nil {
 		return fmt.Errorf("unable to find the updated cluster version")
 	}
+	snapshotMetadataSupported := supportsRbdSnapshotMetadata(historyRecord.Version)
 
 	isTnfCluster, err := c.checkIfTNFCluster()
 	if err != nil {
@@ -748,18 +757,22 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 				rbdDriver.Spec.ControllerPlugin = &csiopv1.ControllerPluginSpec{}
 			}
 			rbdDriver.Spec.ControllerPlugin.HostNetwork = ptr.To(useHostNetForRbdCtrlPlugin)
-			templates.InjectSnapshotMetadataTLSVolume(rbdDriver.Spec.ControllerPlugin)
+			if snapshotMetadataSupported {
+				templates.InjectSnapshotMetadataTLSVolume(rbdDriver.Spec.ControllerPlugin)
+			}
 			// enabling csi-addons volume health reporting by default for the CephRBD node plugin
 			utils.AddAnnotation(rbdDriver, templates.CSIAddonsVolumeConditionAnnotationKey, "true")
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile rbd driver: %v", err)
 		}
-		if err := c.reconcileRbdSMSService(); err != nil {
-			return fmt.Errorf("failed to reconcile snapshot metadata service: %w", err)
-		}
-		if err := c.reconcileRbdSMSSpecConfigMap(); err != nil {
-			return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
+		if snapshotMetadataSupported {
+			if err := c.reconcileRbdSMSService(); err != nil {
+				return fmt.Errorf("failed to reconcile snapshot metadata service: %w", err)
+			}
+			if err := c.reconcileRbdSMSSpecConfigMap(); err != nil {
+				return fmt.Errorf("failed to reconcile snapshot metadata spec ConfigMap: %w", err)
+			}
 		}
 	}
 
