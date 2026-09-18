@@ -1,6 +1,7 @@
 package console
 
 import (
+	"os"
 	"testing"
 
 	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
@@ -62,6 +63,7 @@ func TestGenerateNginxRootConf(t *testing.T) {
 			name: "nil config produces no TLS directives",
 			ossl: nil,
 			expectedIncludes: []string{
+				"worker_processes 8;",
 				"ssl_certificate_key /var/serving-cert/tls.key;",
 				"listen       9001 ssl;",
 			},
@@ -69,6 +71,7 @@ func TestGenerateNginxRootConf(t *testing.T) {
 				"ssl_protocols",
 				"ssl_ciphers",
 				"ssl_conf_command",
+				"worker_processes auto;",
 			},
 		},
 		{
@@ -117,4 +120,42 @@ func TestGenerateNginxRootConf(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetNginxWorkerProcesses(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		setEnv   bool
+		want     string
+	}{
+		{name: "default when unset", setEnv: false, want: DefaultNginxWorkerProcesses},
+		{name: "default when empty", setEnv: true, envValue: "", want: DefaultNginxWorkerProcesses},
+		{name: "positive integer", setEnv: true, envValue: "4", want: "4"},
+		{name: "auto", setEnv: true, envValue: "auto", want: "auto"},
+		{name: "AUTO case insensitive", setEnv: true, envValue: "AUTO", want: "auto"},
+		{name: "invalid falls back", setEnv: true, envValue: "not-a-number", want: DefaultNginxWorkerProcesses},
+		{name: "zero falls back", setEnv: true, envValue: "0", want: DefaultNginxWorkerProcesses},
+		{name: "negative falls back", setEnv: true, envValue: "-1", want: DefaultNginxWorkerProcesses},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setEnv {
+				t.Setenv(NginxWorkerProcessesEnvVar, tt.envValue)
+			} else {
+				t.Setenv(NginxWorkerProcessesEnvVar, "")
+				_ = os.Unsetenv(NginxWorkerProcessesEnvVar)
+			}
+			assert.Equal(t, tt.want, GetNginxWorkerProcesses())
+		})
+	}
+}
+
+func TestGenerateNginxRootConf_WorkerProcessesFromEnv(t *testing.T) {
+	t.Setenv(NginxWorkerProcessesEnvVar, "2")
+	result, err := GenerateNginxRootConf(nil)
+	assert.NoError(t, err)
+	assert.Contains(t, result, "worker_processes 2;")
+	assert.NotContains(t, result, "worker_processes auto;")
 }
