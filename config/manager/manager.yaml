@@ -13,6 +13,7 @@ metadata:
   labels:
     control-plane: controller-manager
     app: ocs-client-operator
+    app.kubernetes.io/part-of: ocs-client-operator
 spec:
   selector:
     matchLabels:
