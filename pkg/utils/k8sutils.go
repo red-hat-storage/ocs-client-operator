@@ -74,6 +74,10 @@ const (
 	MetricsServiceNameEnvVar = "METRICS_SERVICE_NAME"
 	MetricsPortEnvVar        = "METRICS_PORT"
 
+	// NginxWorkerProcessesEnvVar is the constant for env variable NGINX_WORKER_PROCESSES
+	// which controls nginx worker_processes in the console ConfigMap.
+	NginxWorkerProcessesEnvVar = "NGINX_WORKER_PROCESSES"
+
 	OpenShiftServiceCAConfigMapName = "openshift-service-ca.crt"
 	ServiceCACertKey                = "service-ca.crt"
 	ServingCertSecretAnnotation     = "service.beta.openshift.io/serving-cert-secret-name"
