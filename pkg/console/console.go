@@ -3,6 +3,8 @@ package console
 import (
 	_ "embed"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -11,6 +13,18 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+const (
+	// DefaultNginxWorkerProcesses is used when NGINX_WORKER_PROCESSES is unset
+	// or invalid. A fixed value avoids OOM/FD exhaustion on high-CPU nodes
+	// where "auto" would spawn one worker per CPU.
+	DefaultNginxWorkerProcesses = "8"
+
+	// NginxWorkerProcessesEnvVar overrides DefaultNginxWorkerProcesses when set
+	// on the operator pod (e.g. via Subscription config.env). Accepted values
+	// are a positive integer or "auto".
+	NginxWorkerProcessesEnvVar = "NGINX_WORKER_PROCESSES"
 )
 
 var (
@@ -92,17 +106,38 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 }
 
 type tlsTemplateData struct {
-	Protocol     string
-	Ciphers      string
-	Ciphersuites string
-	Groups       string
+	Protocol        string
+	Ciphers         string
+	Ciphersuites    string
+	Groups          string
+	WorkerProcesses string
+}
+
+// GetNginxWorkerProcesses returns the nginx worker_processes value.
+// Prefer NGINX_WORKER_PROCESSES when it is a positive integer or "auto";
+// otherwise fall back to DefaultNginxWorkerProcesses.
+func GetNginxWorkerProcesses() string {
+	value := strings.TrimSpace(os.Getenv(NginxWorkerProcessesEnvVar))
+	if value == "" {
+		return DefaultNginxWorkerProcesses
+	}
+	if strings.EqualFold(value, "auto") {
+		return "auto"
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return DefaultNginxWorkerProcesses
+	}
+	return strconv.Itoa(n)
 }
 
 func newTLSTemplateData(ossl *ocstlsv1.OpenSSLConfig) tlsTemplateData {
-	if ossl == nil {
-		return tlsTemplateData{}
+	data := tlsTemplateData{
+		WorkerProcesses: GetNginxWorkerProcesses(),
 	}
-	var data tlsTemplateData
+	if ossl == nil {
+		return data
+	}
 	data.Protocol = ossl.Protocol
 	if len(ossl.Ciphers) > 0 {
 		joined := strings.Join(ossl.Ciphers, ":")
