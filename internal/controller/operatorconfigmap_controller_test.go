@@ -215,6 +215,27 @@ func TestGetImageSet(t *testing.T) {
 	assert.NotNil(t, err, "should fail when imageset configmaps is ahead of platform")
 }
 
+func TestSupportsRbdSnapshotMetadata(t *testing.T) {
+	tests := []struct {
+		name      string
+		version   string
+		supported bool
+	}{
+		{name: "before minimum version", version: "4.22.9", supported: false},
+		{name: "minimum version", version: "4.23.0", supported: true},
+		{name: "later 4.x version", version: "4.24.0", supported: true},
+		{name: "5.0 version", version: "5.0.0", supported: true},
+		{name: "later major version", version: "6.0.0", supported: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := supportsRbdSnapshotMetadata(tt.version)
+			assert.Equal(t, tt.supported, actual)
+		})
+	}
+}
+
 func TestTopologyLabelsFromConfigMap(t *testing.T) {
 	tests := []struct {
 		name            string
