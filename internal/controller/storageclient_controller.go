@@ -1152,7 +1152,7 @@ func (r *storageClientReconcile) reconcileResource(obj client.Object, desiredObj
 	obj.SetName(namespacedName.Name)
 	obj.SetNamespace(namespacedName.Namespace)
 	_, err = controllerutil.CreateOrUpdate(r.ctx, r.Client, obj, mutateFunc)
-	if utils.IsForbiddenError(err) {
+	if utils.IsForbiddenError(err) || utils.IsFieldImmutable(err) {
 		if err := r.Delete(r.ctx, obj); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf(
 				"failed to replace %v %v/%v: %v",

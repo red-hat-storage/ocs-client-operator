@@ -189,6 +189,18 @@ func IsForbiddenError(err error) bool {
 	return false
 }
 
+func IsFieldImmutable(err error) bool {
+	statusErr, ok := err.(*errors.StatusError)
+	if ok {
+		for i := range statusErr.ErrStatus.Details.Causes {
+			if statusErr.ErrStatus.Details.Causes[i].Type == metav1.CauseTypeFieldValueInvalid {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func SetClusterInformation(
 	ctx context.Context,
 	kubeClient client.Client,
