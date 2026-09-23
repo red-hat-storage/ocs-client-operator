@@ -3,6 +3,8 @@ package console
 import (
 	_ "embed"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -11,6 +13,18 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+const (
+	// DefaultNginxWorkerProcesses is used when CONSOLE_NGINX_WORKER_PROCESSES
+	// is unset or invalid. A fixed value avoids OOM/FD exhaustion on high-CPU
+	// nodes where "auto" would spawn one worker per CPU.
+	DefaultNginxWorkerProcesses = "8"
+
+	// NginxWorkerProcessesEnvVar overrides DefaultNginxWorkerProcesses when set
+	// on the operator pod via Subscription spec.config.env. Accepted values are
+	// a positive integer or "auto".
+	NginxWorkerProcessesEnvVar = "CONSOLE_NGINX_WORKER_PROCESSES"
 )
 
 var (
@@ -91,18 +105,38 @@ func GetConsolePlugin(consolePort int32, serviceNamespace string) *consolev1.Con
 	}
 }
 
-type tlsTemplateData struct {
-	Protocol     string
-	Ciphers      string
-	Ciphersuites string
-	Groups       string
+type nginxTemplateData struct {
+	Protocol        string
+	Ciphers         string
+	Ciphersuites    string
+	Groups          string
+	WorkerProcesses string
 }
 
-func newTLSTemplateData(ossl *ocstlsv1.OpenSSLConfig) tlsTemplateData {
-	if ossl == nil {
-		return tlsTemplateData{}
+// GetNginxWorkerProcesses returns the nginx worker_processes value.
+// Prefer CONSOLE_NGINX_WORKER_PROCESSES when it is a positive integer or "auto";
+// otherwise fall back to DefaultNginxWorkerProcesses.
+func GetNginxWorkerProcesses() string {
+	value := strings.TrimSpace(os.Getenv(NginxWorkerProcessesEnvVar))
+	if value == "" {
+		return DefaultNginxWorkerProcesses
 	}
-	var data tlsTemplateData
+	if strings.EqualFold(value, "auto") {
+		return "auto"
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return DefaultNginxWorkerProcesses
+	}
+	return strconv.Itoa(n)
+}
+
+func newNginxTemplateData(ossl *ocstlsv1.OpenSSLConfig) nginxTemplateData {
+	var data nginxTemplateData
+	data.WorkerProcesses = GetNginxWorkerProcesses()
+	if ossl == nil {
+		return data
+	}
 	data.Protocol = ossl.Protocol
 	if len(ossl.Ciphers) > 0 {
 		joined := strings.Join(ossl.Ciphers, ":")
@@ -120,7 +154,7 @@ func newTLSTemplateData(ossl *ocstlsv1.OpenSSLConfig) tlsTemplateData {
 
 func GenerateNginxRootConf(ossl *ocstlsv1.OpenSSLConfig) (string, error) {
 	var sb strings.Builder
-	if err := nginxRootTmpl.Execute(&sb, newTLSTemplateData(ossl)); err != nil {
+	if err := nginxRootTmpl.Execute(&sb, newNginxTemplateData(ossl)); err != nil {
 		return "", fmt.Errorf("failed to render nginx root config: %w", err)
 	}
 	return sb.String(), nil
@@ -139,7 +173,7 @@ func GetNginxProxyConf(uniqueIdentifier, exposeAs, endpointURL, endpointHost, ce
 		ProxySSLGroups       string
 	}
 
-	tls := newTLSTemplateData(ossl)
+	tls := newNginxTemplateData(ossl)
 	data := nginxProxyConfData{
 		UniqueIdentifier:     uniqueIdentifier,
 		ExposeAs:             exposeAs,
