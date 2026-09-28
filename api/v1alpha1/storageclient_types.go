@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -44,6 +45,21 @@ type StorageClientSpec struct {
 
 	// OnboardingTicket holds an identity information required for consumer to onboard.
 	OnboardingTicket string `json:"onboardingTicket"`
+
+	// ServerCAConfigMap selects the key in a configmap holding the PEM-encoded peer
+	// server CA certificate. Allows pointing at an existing CA bundle (e.g. an
+	// OpenShift-managed configmap) whose key is not "ca.crt".
+	// +optional
+	ServerCAConfigMap corev1.ConfigMapKeySelector `json:"serverCAConfigMap,omitempty"`
+
+	// ServerSAN specifies the expected DNS Subject Alternative Name (SAN) in the server certificate.
+	// +optional
+	ServerSAN string `json:"serverSAN,omitempty"`
+
+	// ClientCertSecret references a secret containing the client certificate.
+	// The secret must be of type kubernetes.io/tls with keys "tls.crt" and "tls.key".
+	// +optional
+	ClientCertSecret corev1.LocalObjectReference `json:"clientCertSecret,omitempty"`
 }
 
 // StorageClientStatus defines the observed state of StorageClient
