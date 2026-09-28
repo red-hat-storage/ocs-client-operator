@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -44,6 +45,18 @@ type StorageClientSpec struct {
 
 	// OnboardingTicket holds an identity information required for consumer to onboard.
 	OnboardingTicket string `json:"onboardingTicket"`
+
+	// ServerCASecret references a secret containing the provider server CA certificate
+	// +optional
+	ServerCASecret *corev1.LocalObjectReference `json:"serverCASecret,omitempty"`
+
+	// ServerName is the expected server identity (SAN) in the provider server certificate
+	// +optional
+	ServerName string `json:"serverName,omitempty"`
+
+	// ClientCertSecret references a secret containing the client certificate (tls.crt and tls.key keys)
+	// +optional
+	ClientCertSecret *corev1.LocalObjectReference `json:"clientCertSecret,omitempty"`
 }
 
 // StorageClientStatus defines the observed state of StorageClient
