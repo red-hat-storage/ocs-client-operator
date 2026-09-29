@@ -326,7 +326,7 @@ github.com/ramendr/ramen/api/v1alpha1
 ## explicit; go 1.22.0
 github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1
 # github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000 => ./api
-## explicit; go 1.25.11
+## explicit; go 1.25.13
 github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
 # github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260429150604-e17cd01ca408
 ## explicit; go 1.25.8
@@ -438,7 +438,7 @@ go.yaml.in/yaml/v3
 # golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 ## explicit; go 1.23.0
 golang.org/x/exp/slices
-# golang.org/x/net v0.53.0
+# golang.org/x/net v0.55.0
 ## explicit; go 1.25.0
 golang.org/x/net/html
 golang.org/x/net/html/atom
@@ -468,10 +468,10 @@ golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.42.0
+# golang.org/x/term v0.43.0
 ## explicit; go 1.25.0
 golang.org/x/term
-# golang.org/x/text v0.36.0
+# golang.org/x/text v0.37.0
 ## explicit; go 1.25.0
 golang.org/x/text/encoding
 golang.org/x/text/encoding/charmap
