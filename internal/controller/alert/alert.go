@@ -18,6 +18,7 @@ package alert
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,8 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	pb "github.com/red-hat-storage/ocs-operator/services/provider/api/v4"
 	providerClient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -155,8 +158,49 @@ func (ca *Runnable) fetchAlerts(ctx context.Context) {
 
 // fetchAlertsForClient calls the GetClientAlerts gRPC RPC for a single StorageClient.
 func (ca *Runnable) fetchAlertsForClient(ctx context.Context, sc *v1alpha1.StorageClient) ([]*pb.AlertInfo, error) {
+	var serverCA []byte
+	var clientCert []byte
+	var clientKey []byte
+
+	if sc.Spec.ServerCASecret != nil && sc.Spec.ServerCASecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := ca.Get(ctx, types.NamespacedName{
+			Name:      sc.Spec.ServerCASecret.Name,
+			Namespace: ca.namespace,
+		}, secret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get server CA secret %s: %v", sc.Spec.ServerCASecret.Name, err)
+		}
+		serverCA = secret.Data["ca.crt"]
+		if len(serverCA) == 0 {
+			return nil, fmt.Errorf("ca.crt not found in server CA secret %s", sc.Spec.ServerCASecret.Name)
+		}
+	}
+
+	if sc.Spec.ClientCertSecret != nil && sc.Spec.ClientCertSecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := ca.Get(ctx, types.NamespacedName{
+			Name:      sc.Spec.ClientCertSecret.Name,
+			Namespace: ca.namespace,
+		}, secret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client cert secret %s: %v", sc.Spec.ClientCertSecret.Name, err)
+		}
+		clientCert = secret.Data["tls.crt"]
+		clientKey = secret.Data["tls.key"]
+		if len(clientCert) == 0 || len(clientKey) == 0 {
+			return nil, fmt.Errorf("tls.crt or tls.key not found in client cert secret %s", sc.Spec.ClientCertSecret.Name)
+		}
+	}
+
 	ocsProviderClient, err := providerClient.NewProviderClient(
-		ctx, sc.Spec.StorageProviderEndpoint, utils.OcsClientTimeout,
+		ctx,
+		sc.Spec.StorageProviderEndpoint,
+		utils.OcsClientTimeout,
+		serverCA,
+		sc.Spec.ServerName,
+		clientCert,
+		clientKey,
 	)
 	if err != nil {
 		return nil, err

@@ -122,10 +122,49 @@ func main() {
 		os.Exit(0)
 	}
 
+	var serverCA []byte
+	var clientCert []byte
+	var clientKey []byte
+
+	if storageClient.Spec.ServerCASecret != nil && storageClient.Spec.ServerCASecret.Name != "" {
+		secret := &corev1.Secret{}
+		err = cl.Get(ctx, client.ObjectKey{
+			Name:      storageClient.Spec.ServerCASecret.Name,
+			Namespace: operatorNamespace,
+		}, secret)
+		if err != nil {
+			klog.Exitf("Failed to get server CA secret %s: %v", storageClient.Spec.ServerCASecret.Name, err)
+		}
+		serverCA = secret.Data["ca.crt"]
+		if len(serverCA) == 0 {
+			klog.Exitf("ca.crt not found in server CA secret %s", storageClient.Spec.ServerCASecret.Name)
+		}
+	}
+
+	if storageClient.Spec.ClientCertSecret != nil && storageClient.Spec.ClientCertSecret.Name != "" {
+		secret := &corev1.Secret{}
+		err = cl.Get(ctx, client.ObjectKey{
+			Name:      storageClient.Spec.ClientCertSecret.Name,
+			Namespace: operatorNamespace,
+		}, secret)
+		if err != nil {
+			klog.Exitf("Failed to get client cert secret %s: %v", storageClient.Spec.ClientCertSecret.Name, err)
+		}
+		clientCert = secret.Data["tls.crt"]
+		clientKey = secret.Data["tls.key"]
+		if len(clientCert) == 0 || len(clientKey) == 0 {
+			klog.Exitf("tls.crt or tls.key not found in client cert secret %s", storageClient.Spec.ClientCertSecret.Name)
+		}
+	}
+
 	providerClient, err := providerclient.NewProviderClient(
 		ctx,
 		storageClient.Spec.StorageProviderEndpoint,
 		utils.OcsClientTimeout,
+		serverCA,
+		storageClient.Spec.ServerName,
+		clientCert,
+		clientKey,
 	)
 	if err != nil {
 		klog.Exitf("Failed to create grpc client with endpoint %v: %v", storageClient.Spec.StorageProviderEndpoint, err)

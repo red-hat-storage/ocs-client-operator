@@ -11,10 +11,12 @@ import (
 
 	"github.com/go-logr/logr"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -106,7 +108,53 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, nil
 	}
 
-	ocsProviderClient, err := providerClient.NewProviderClient(r.ctx, storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
+	var serverCA []byte
+	var clientCert []byte
+	var clientKey []byte
+	operatorNamespace := utils.GetOperatorNamespace()
+
+	if storageClient.Spec.ServerCASecret != nil && storageClient.Spec.ServerCASecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := r.Get(r.ctx, types.NamespacedName{
+			Name:      storageClient.Spec.ServerCASecret.Name,
+			Namespace: operatorNamespace,
+		}, secret)
+		if err != nil {
+			r.log.Error(err, "failed to get server CA secret")
+			return reconcile.Result{}, err
+		}
+		serverCA = secret.Data["ca.crt"]
+		if len(serverCA) == 0 {
+			return reconcile.Result{}, fmt.Errorf("ca.crt not found in server CA secret %s", storageClient.Spec.ServerCASecret.Name)
+		}
+	}
+
+	if storageClient.Spec.ClientCertSecret != nil && storageClient.Spec.ClientCertSecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := r.Get(r.ctx, types.NamespacedName{
+			Name:      storageClient.Spec.ClientCertSecret.Name,
+			Namespace: operatorNamespace,
+		}, secret)
+		if err != nil {
+			r.log.Error(err, "failed to get client cert secret")
+			return reconcile.Result{}, err
+		}
+		clientCert = secret.Data["tls.crt"]
+		clientKey = secret.Data["tls.key"]
+		if len(clientCert) == 0 || len(clientKey) == 0 {
+			return reconcile.Result{}, fmt.Errorf("tls.crt or tls.key not found in client cert secret %s", storageClient.Spec.ClientCertSecret.Name)
+		}
+	}
+
+	ocsProviderClient, err := providerClient.NewProviderClient(
+		r.ctx,
+		storageClient.Spec.StorageProviderEndpoint,
+		utils.OcsClientTimeout,
+		serverCA,
+		storageClient.Spec.ServerName,
+		clientCert,
+		clientKey,
+	)
 	if err != nil {
 		r.log.Error(err, "failed to create provider client")
 		return reconcile.Result{}, err

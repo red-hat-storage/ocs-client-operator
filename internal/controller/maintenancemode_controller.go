@@ -10,9 +10,11 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	providerclient "github.com/red-hat-storage/ocs-operator/services/provider/api/v4/client"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -124,10 +126,50 @@ func (r *MaintenanceModeReconciler) Reconcile(ctx context.Context, _ ctrl.Reques
 }
 
 func (r *MaintenanceModeReconciler) toggleMaintenanceModeForClient(storageClient *v1alpha1.StorageClient, enable bool) error {
+	var serverCA []byte
+	var clientCert []byte
+	var clientKey []byte
+	operatorNamespace := utils.GetOperatorNamespace()
+
+	if storageClient.Spec.ServerCASecret != nil && storageClient.Spec.ServerCASecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := r.Client.Get(r.ctx, types.NamespacedName{
+			Name:      storageClient.Spec.ServerCASecret.Name,
+			Namespace: operatorNamespace,
+		}, secret)
+		if err != nil {
+			return fmt.Errorf("failed to get server CA secret %s: %v", storageClient.Spec.ServerCASecret.Name, err)
+		}
+		serverCA = secret.Data["ca.crt"]
+		if len(serverCA) == 0 {
+			return fmt.Errorf("ca.crt not found in server CA secret %s", storageClient.Spec.ServerCASecret.Name)
+		}
+	}
+
+	if storageClient.Spec.ClientCertSecret != nil && storageClient.Spec.ClientCertSecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := r.Client.Get(r.ctx, types.NamespacedName{
+			Name:      storageClient.Spec.ClientCertSecret.Name,
+			Namespace: operatorNamespace,
+		}, secret)
+		if err != nil {
+			return fmt.Errorf("failed to get client cert secret %s: %v", storageClient.Spec.ClientCertSecret.Name, err)
+		}
+		clientCert = secret.Data["tls.crt"]
+		clientKey = secret.Data["tls.key"]
+		if len(clientCert) == 0 || len(clientKey) == 0 {
+			return fmt.Errorf("tls.crt or tls.key not found in client cert secret %s", storageClient.Spec.ClientCertSecret.Name)
+		}
+	}
+
 	providerClient, err := providerclient.NewProviderClient(
 		r.ctx,
 		storageClient.Spec.StorageProviderEndpoint,
 		utils.OcsClientTimeout,
+		serverCA,
+		storageClient.Spec.ServerName,
+		clientCert,
+		clientKey,
 	)
 	if err != nil {
 		return fmt.Errorf(

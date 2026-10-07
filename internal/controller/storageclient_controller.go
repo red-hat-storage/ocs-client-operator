@@ -772,9 +772,50 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 
 // newExternalClusterClient returns the *providerClient.OCSProviderClient
 func (r *storageClientReconcile) newExternalClusterClient() (*providerClient.OCSProviderClient, error) {
+	var serverCA []byte
+	var clientCert []byte
+	var clientKey []byte
+
+	if r.storageClient.Spec.ServerCASecret != nil && r.storageClient.Spec.ServerCASecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := r.Get(r.ctx, types.NamespacedName{
+			Name:      r.storageClient.Spec.ServerCASecret.Name,
+			Namespace: r.OperatorNamespace,
+		}, secret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get server CA secret %s: %v", r.storageClient.Spec.ServerCASecret.Name, err)
+		}
+		serverCA = secret.Data["ca.crt"]
+		if len(serverCA) == 0 {
+			return nil, fmt.Errorf("ca.crt not found in server CA secret %s", r.storageClient.Spec.ServerCASecret.Name)
+		}
+	}
+
+	if r.storageClient.Spec.ClientCertSecret != nil && r.storageClient.Spec.ClientCertSecret.Name != "" {
+		secret := &corev1.Secret{}
+		err := r.Get(r.ctx, types.NamespacedName{
+			Name:      r.storageClient.Spec.ClientCertSecret.Name,
+			Namespace: r.OperatorNamespace,
+		}, secret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client cert secret %s: %v", r.storageClient.Spec.ClientCertSecret.Name, err)
+		}
+		clientCert = secret.Data["tls.crt"]
+		clientKey = secret.Data["tls.key"]
+		if len(clientCert) == 0 || len(clientKey) == 0 {
+			return nil, fmt.Errorf("tls.crt or tls.key not found in client cert secret %s", r.storageClient.Spec.ClientCertSecret.Name)
+		}
+	}
 
 	ocsProviderClient, err := providerClient.NewProviderClient(
-		r.ctx, r.storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
+		r.ctx,
+		r.storageClient.Spec.StorageProviderEndpoint,
+		utils.OcsClientTimeout,
+		serverCA,
+		r.storageClient.Spec.ServerName,
+		clientCert,
+		clientKey,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a new provider client with endpoint %v: %v", r.storageClient.Spec.StorageProviderEndpoint, err)
 	}
