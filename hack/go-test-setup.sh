@@ -1,20 +1,27 @@
 #!/bin/bash
 
-ENVTEST_ASSETS_DIR="${ENVTEST_ASSETS_DIR:-testbin}"
-SKIP_FETCH_TOOLS="${SKIP_FETCH_TOOLS:-}"
+set -euo pipefail
 
-mkdir -p "${ENVTEST_ASSETS_DIR}"
+mkdir -p "${ENVTEST_ASSETS}"
+export KUBEBUILDER_ASSETS="${ENVTEST_ASSETS}"
 
-pushd "${ENVTEST_ASSETS_DIR}" > /dev/null
-
-
-if [ ! -f setup-envtest.sh ]; then
-	curl -sSLo setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.8.3/hack/setup-envtest.sh
+if [ -x "${ENVTEST_ASSETS}/kube-apiserver" ]; then
+	return 0 2>/dev/null || exit 0
 fi
 
-source setup-envtest.sh
+tmp="$(mktemp)"
+trap 'rm -f "${tmp}"' EXIT
 
-fetch_envtest_tools "$(pwd)"
-setup_envtest_env "$(pwd)"
+for attempt in 1 2 3; do
+	echo "Downloading ${ENVTEST_ASSET_URL} (attempt ${attempt})"
+	if curl -fsSL --retry 3 --retry-delay 2 "${ENVTEST_ASSET_URL}" -o "${tmp}" \
+		&& gzip -t "${tmp}" \
+		&& tar -xzf "${tmp}" --strip-components=2 -C "${ENVTEST_ASSETS}"; then
+		return 0 2>/dev/null || exit 0
+	fi
+	echo "Downloaded envtest archive is invalid" >&2
+	sleep $((attempt * 2))
+done
 
-popd > /dev/null
+echo "Failed to download a valid envtest archive from ${ENVTEST_ASSET_URL}" >&2
+exit 1
