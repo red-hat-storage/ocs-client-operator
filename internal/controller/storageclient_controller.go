@@ -596,7 +596,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	}
 
 	r.storageClient.Status.Phase = v1alpha1.StorageClientInitializing
-	if controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
+	if r.storageClient.GetDeletionTimestamp().IsZero() && controllerutil.AddFinalizer(&r.storageClient, storageClientFinalizer) {
 		r.log.Info("Finalizer not found for StorageClient. Adding finalizer.", "StorageClient", r.storageClient.Name)
 		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed adding a finalizer to StorageClient: %v", err)
