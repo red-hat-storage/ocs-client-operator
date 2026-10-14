@@ -145,9 +145,10 @@ type StorageClientReconciler struct {
 type storageClientReconcile struct {
 	*StorageClientReconciler
 
-	ctx           context.Context
-	log           logr.Logger
-	storageClient v1alpha1.StorageClient
+	ctx              context.Context
+	log              logr.Logger
+	storageClient    v1alpha1.StorageClient
+	statusMessageSet bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -346,6 +347,12 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 
 	result, reconcileErr := r.reconcilePhases()
 
+	// FailedPrecondition returns nil after setting Message. Only clear when this
+	// reconcile succeeded and did not set an actable message.
+	if reconcileErr == nil && !r.statusMessageSet {
+		r.storageClient.Status.Message = ""
+	}
+
 	statusErr := r.Client.Status().Update(r.ctx, &r.storageClient)
 	if statusErr != nil {
 		r.log.Error(statusErr, "Failed to update StorageClient status.")
@@ -357,6 +364,11 @@ func (r *storageClientReconcile) reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	return result, nil
+}
+
+func (r *storageClientReconcile) setStatusMessage(msg string) {
+	r.storageClient.Status.Message = msg
+	r.statusMessageSet = true
 }
 
 func (r *storageClientReconcile) reconcileDynamicWatches() error {
@@ -635,6 +647,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 	if err != nil {
 		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
 			r.log.Info("Client does not meet hub requirements, stopping reconciliation", "reason", st.Message())
+			r.setStatusMessage("Client does not meet hub requirements, stopping reconciliation.")
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
@@ -730,29 +743,39 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 		if exist, err := r.hasPersistentVolumes(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify persistentvolumes dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
-			return reconcile.Result{}, fmt.Errorf("one or more persistentvolumes exist that are dependent on storageclient %s", r.storageClient.Name)
+			err := fmt.Errorf("one or more persistentvolumes exist that are dependent on storageclient %s", r.storageClient.Name)
+			r.setStatusMessage("Delete leftover PersistentVolumes.")
+			return reconcile.Result{}, err
 		}
 		if exist, err := r.hasVolumeSnapshotContents(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify volumesnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
-			return reconcile.Result{}, fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+			err := fmt.Errorf("one or more volumesnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+			r.setStatusMessage("Delete leftover VolumeSnapshots.")
+			return reconcile.Result{}, err
 		}
 		if exist, err := r.hasVolumeGroupSnapshotContents(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
-			return reconcile.Result{}, fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+			err := fmt.Errorf("one or more volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+			r.setStatusMessage("Delete leftover VolumeGroupSnapshots.")
+			return reconcile.Result{}, err
 		}
 		if exist, err := r.hasOdfVolumeGroupSnapshotContents(names); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to verify odf-volumegroupsnapshotcontents dependent on storageclient %q: %v", r.storageClient.Name, err)
 		} else if exist {
-			return reconcile.Result{}, fmt.Errorf("one or more odf-volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+			err := fmt.Errorf("one or more odf-volumegroupsnapshotcontents exist that are dependent on storageclient %s", r.storageClient.Name)
+			r.setStatusMessage("Delete leftover ODF VolumeGroupSnapshots.")
+			return reconcile.Result{}, err
 		}
 	}
 
 	if exist, err := r.hasObjectbucketClaims(); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to verify objectbucketclaims created by storageclient %q: %v", r.storageClient.Name, err)
 	} else if exist {
-		return reconcile.Result{}, fmt.Errorf("one or more objectbucketclaims created by storageclient %s exist", r.storageClient.Name)
+		err := fmt.Errorf("one or more objectbucketclaims created by storageclient %s exist", r.storageClient.Name)
+		r.setStatusMessage("Delete leftover ObjectBucketClaims.")
+		return reconcile.Result{}, err
 	}
 
 	if err := r.offboardConsumer(externalClusterClient); err != nil {
@@ -797,6 +820,9 @@ func (r *storageClientReconcile) onboardConsumer(externalClusterClient *provider
 
 	response, err := externalClusterClient.OnboardConsumer(r.ctx, onboardRequest)
 	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.InvalidArgument {
+			r.setStatusMessage("Failed to onboard consumer.")
+		}
 		return fmt.Errorf("failed to onboard consumer: %v", err)
 	}
 
