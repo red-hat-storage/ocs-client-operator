@@ -106,7 +106,18 @@ func (r *obcReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, nil
 	}
 
-	ocsProviderClient, err := providerClient.NewProviderClient(r.ctx, storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
+	tlsConfig, err := utils.LoadClientTLSConfig(r.ctx, r.Client, storageClient, utils.GetOperatorNamespace())
+	if err != nil {
+		r.log.Error(err, "failed to load client TLS config")
+		return reconcile.Result{}, err
+	}
+
+	ocsProviderClient, err := providerClient.NewProviderClientTLS(
+		r.ctx,
+		storageClient.Spec.StorageProviderEndpoint,
+		utils.OcsClientTimeout,
+		tlsConfig,
+	)
 	if err != nil {
 		r.log.Error(err, "failed to create provider client")
 		return reconcile.Result{}, err

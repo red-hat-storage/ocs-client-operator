@@ -772,9 +772,17 @@ func (r *storageClientReconcile) deletionPhase(externalClusterClient *providerCl
 
 // newExternalClusterClient returns the *providerClient.OCSProviderClient
 func (r *storageClientReconcile) newExternalClusterClient() (*providerClient.OCSProviderClient, error) {
+	tlsConfig, err := utils.LoadClientTLSConfig(r.ctx, r.Client, &r.storageClient, r.OperatorNamespace)
+	if err != nil {
+		return nil, err
+	}
 
-	ocsProviderClient, err := providerClient.NewProviderClient(
-		r.ctx, r.storageClient.Spec.StorageProviderEndpoint, utils.OcsClientTimeout)
+	ocsProviderClient, err := providerClient.NewProviderClientTLS(
+		r.ctx,
+		r.storageClient.Spec.StorageProviderEndpoint,
+		utils.OcsClientTimeout,
+		tlsConfig,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a new provider client with endpoint %v: %v", r.storageClient.Spec.StorageProviderEndpoint, err)
 	}

@@ -122,10 +122,16 @@ func main() {
 		os.Exit(0)
 	}
 
-	providerClient, err := providerclient.NewProviderClient(
+	tlsConfig, err := utils.LoadClientTLSConfig(ctx, cl, storageClient, operatorNamespace)
+	if err != nil {
+		klog.Exitf("Failed to load client TLS config: %v", err)
+	}
+
+	providerClient, err := providerclient.NewProviderClientTLS(
 		ctx,
 		storageClient.Spec.StorageProviderEndpoint,
 		utils.OcsClientTimeout,
+		tlsConfig,
 	)
 	if err != nil {
 		klog.Exitf("Failed to create grpc client with endpoint %v: %v", storageClient.Spec.StorageProviderEndpoint, err)
