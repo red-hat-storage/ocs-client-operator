@@ -1,0 +1,97 @@
+- id: startup
+  polarity: positive
+  question: >-
+    In our OpenShift Data Foundation client cluster, we installed the
+    ObjectBucketClaim CRD and the client-operator pod restarted soon after. Is
+    this restart expected, and should we be worried about our running storage?
+  expected: >-
+    The restart is expected. The ObjectBucketClaim controller is registered
+    only when its CRD exists at startup, so a CRD presence change restarts the
+    client operator to rebuild its watches. This is a brief control-plane
+    restart and does not by itself restart the CSI driver pods or indicate that
+    storage data was lost. Reconciliation pauses while the operator pod starts
+    again.
+
+- id: missing-storageclasses
+  polarity: positive
+  question: >-
+    Our OpenShift Data Foundation StorageClient says Connected, but no
+    StorageClasses are visible in the client cluster yet. Does Connected mean
+    the classes should already be there?
+  expected: >-
+    Connected means provider onboarding completed, not that every provider
+    object has already appeared. Initial provider state may still be
+    propagating. The operator fetches and applies supported objects from
+    provider desired state during reconciliation. StorageClasses appear when
+    they are included in that state. The status reporter runs every minute, so
+    provider changes may take a short time to reach the next reconciliation;
+    that interval is not an end-to-end deadline.
+
+- id: provider-update
+  polarity: positive
+  question: >-
+    Our storage team added a StorageClass for this OpenShift Data Foundation
+    client on the provider cluster, but it has not appeared on our side. Does
+    the provider push it directly, or how does the client learn about it?
+  expected: >-
+    The client operator fetches provider desired state during reconciliation.
+    Its status reporter contacts the provider on a one-minute schedule, and a
+    reported desired-state change queues reconciliation so the client can fetch
+    and apply supported objects such as StorageClasses. The one-minute value
+    is the reporter schedule, not a guarantee that the class will appear within
+    one minute. Job startup, provider response, and reconciliation add time.
+
+- id: driver-customization
+  polarity: positive
+  question: >-
+    We need different controller resource requests for the RBD CSI driver in
+    our OpenShift Data Foundation client cluster. Should those be set in the
+    shared CSI OperatorConfig or on the RBD Driver resource, and will the
+    client operator undo the change?
+  expected: >-
+    The shared CSI OperatorConfig supplies DriverSpecDefaults, while the
+    individual RBD Driver resource can set driver-specific values such as
+    controller resource requests and limits. A per-driver value is used for
+    that driver where it overrides a shared default. The client operator
+    rebuilds the shared OperatorConfig spec and writes selected fields on the
+    Driver resource, including controller host networking. It does not write
+    the controller resource requests and limits there, so those per-driver
+    values are not reset by this controller. Available fields depend on the
+    installed CSI operator version.
+
+- id: offboarding
+  polarity: positive
+  question: >-
+    I deleted a StorageClient in our OpenShift Data Foundation client cluster,
+    but it is still Offboarding. Some applications are still using volumes
+    from it. Is the operator stuck?
+  expected: >-
+    The operator holds StorageClient deletion while dependent PersistentVolumes,
+    snapshot contents, or associated ObjectBucketClaims remain. Applications
+    still using the volumes can keep dependent PersistentVolumes present. After
+    those dependencies are removed, the operator calls the provider to offboard
+    the client and removes its finalizer.
+
+- id: subscription-channel
+  polarity: negative
+  question: >-
+    We want to upgrade the OpenShift Data Foundation client operator. Can I
+    change its Subscription channel to the newer channel directly?
+  expected: >-
+    The validating webhook denies a requested channel that conflicts with a
+    non-empty desired channel recorded on any StorageClient. Use the channel
+    specified by the provider for the client. The change is allowed when it
+    matches the desired channel on every StorageClient that specifies one.
+
+- id: namespace-cleanup
+  polarity: negative
+  question: >-
+    The StorageClient is gone from our OpenShift Data Foundation client
+    cluster. Can I delete the namespace now, or does
+    ocs-client-operator-config still need to be removed?
+  expected: >-
+    Remove ocs-client-operator-config and wait for its deletion to complete
+    before deleting the namespace. Its cleanup waits until no StorageClients
+    remain, then removes the CSI resources and related resources it manages
+    before removing its finalizer. The namespace can remain Terminating while
+    this cleanup is pending.
