@@ -124,10 +124,16 @@ func (r *MaintenanceModeReconciler) Reconcile(ctx context.Context, _ ctrl.Reques
 }
 
 func (r *MaintenanceModeReconciler) toggleMaintenanceModeForClient(storageClient *v1alpha1.StorageClient, enable bool) error {
-	providerClient, err := providerclient.NewProviderClient(
+	tlsConfig, err := utils.LoadClientTLSConfig(r.ctx, r.Client, storageClient, utils.GetOperatorNamespace())
+	if err != nil {
+		return err
+	}
+
+	providerClient, err := providerclient.NewProviderClientTLS(
 		r.ctx,
 		storageClient.Spec.StorageProviderEndpoint,
 		utils.OcsClientTimeout,
+		tlsConfig,
 	)
 	if err != nil {
 		return fmt.Errorf(

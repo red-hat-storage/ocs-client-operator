@@ -155,8 +155,16 @@ func (ca *Runnable) fetchAlerts(ctx context.Context) {
 
 // fetchAlertsForClient calls the GetClientAlerts gRPC RPC for a single StorageClient.
 func (ca *Runnable) fetchAlertsForClient(ctx context.Context, sc *v1alpha1.StorageClient) ([]*pb.AlertInfo, error) {
-	ocsProviderClient, err := providerClient.NewProviderClient(
-		ctx, sc.Spec.StorageProviderEndpoint, utils.OcsClientTimeout,
+	tlsConfig, err := utils.LoadClientTLSConfig(ctx, ca.Client, sc, ca.namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	ocsProviderClient, err := providerClient.NewProviderClientTLS(
+		ctx,
+		sc.Spec.StorageProviderEndpoint,
+		utils.OcsClientTimeout,
+		tlsConfig,
 	)
 	if err != nil {
 		return nil, err

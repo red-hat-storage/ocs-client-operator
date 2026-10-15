@@ -31,7 +31,7 @@ require (
 	github.com/ramendr/ramen/api v0.1.0-rc1
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
-	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20260811052053-01752da3d060
+	github.com/red-hat-storage/ocs-operator/services/provider/api/v4 v4.0.0-20261014105411-8d78862d1238
 	github.com/red-hat-storage/ocs-tls-profiles/api v0.0.0-20260427105901-0c5f6d8fcd65
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/grpc v1.84.0
@@ -65,7 +65,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/fsnotify/fsnotify v1.10.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
@@ -90,7 +90,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kube-object-storage/lib-bucket-provisioner v0.0.0-20221122204822-d1a8c34382f1 // indirect
+	github.com/kube-object-storage/lib-bucket-provisioner v0.0.0-20260420161730-5164e3746489 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
