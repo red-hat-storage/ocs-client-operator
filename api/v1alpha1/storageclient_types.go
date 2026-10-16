@@ -66,6 +66,9 @@ type StorageClientSpec struct {
 type StorageClientStatus struct {
 	Phase storageClientPhase `json:"phase,omitempty"`
 
+	// +optional
+	Message string `json:"message,omitempty"`
+
 	InMaintenanceMode bool `json:"inMaintenanceMode,omitempty"`
 
 	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
