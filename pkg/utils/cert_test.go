@@ -124,7 +124,7 @@ func TestLoadClientTLSConfig(t *testing.T) {
 			check: func(t *testing.T, cfg *tls.Config) {
 				assert.False(t, cfg.InsecureSkipVerify)
 				assert.NotNil(t, cfg.RootCAs)
-				assert.Equal(t, defaultProviderServerSAN, cfg.ServerName)
+				assert.Equal(t, defaultProviderServerSAN(testNamespace), cfg.ServerName)
 			},
 		},
 		{
