@@ -38,9 +38,28 @@ func LoadClientTLSConfig(
 		if !certPool.AppendCertsFromPEM(serverCA) {
 			return nil, fmt.Errorf("failed to parse server CA certificate")
 		}
+		serverSAN := cmp.Or(storageClient.Spec.ServerSAN, defaultProviderServerSAN(namespace))
 		tlsConfig = &tls.Config{
-			RootCAs:    certPool,
-			ServerName: cmp.Or(storageClient.Spec.ServerSAN, defaultProviderServerSAN(namespace)),
+			// grpc-go sets ServerName from the endpoint authority, which supplies
+			// the Route hostname for SNI. Verify the backend service SAN separately.
+			InsecureSkipVerify: true, // #nosec G402 - VerifyConnection validates the chain and service SAN.
+			VerifyConnection: func(cs tls.ConnectionState) error {
+				if len(cs.PeerCertificates) == 0 {
+					return fmt.Errorf("server presented no certificate")
+				}
+				intermediatePool := x509.NewCertPool()
+				for _, cert := range cs.PeerCertificates[1:] {
+					intermediatePool.AddCert(cert)
+				}
+
+				_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{
+					Roots:         certPool,
+					Intermediates: intermediatePool,
+					DNSName:       serverSAN,
+					KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+				})
+				return err
+			},
 		}
 	}
 
