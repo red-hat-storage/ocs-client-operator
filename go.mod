@@ -22,7 +22,7 @@ require (
 	github.com/ceph/ceph-csi-operator/api v0.0.0-20260720045108-15b278476fc9
 	github.com/csi-addons/kubernetes-csi-addons v0.15.1
 	github.com/go-logr/logr v1.4.4
-	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.6.0
+	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.7.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.44.0
 	github.com/openshift/api v0.0.0-20260326111139-30c2ef7a272e
