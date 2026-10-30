@@ -668,6 +668,7 @@ spec:
           - ""
           resources:
           - configmaps
+          - secrets
           verbs:
           - get
           - list
