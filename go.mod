@@ -27,7 +27,7 @@ require (
 	github.com/onsi/gomega v1.44.0
 	github.com/openshift/api v0.0.0-20260326111139-30c2ef7a272e
 	github.com/operator-framework/api v0.45.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.2
 	github.com/ramendr/ramen/api v0.1.0
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250611085013-4bd0abb96745
 	github.com/red-hat-storage/ocs-client-operator/api v0.0.0-00010101000000-000000000000
