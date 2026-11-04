@@ -632,6 +632,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 			}
 		}
 		driverSpecDefaults.GenerateOMapInfo = ptr.To(c.shouldGenerateRBDOmapInfo())
+		driverSpecDefaults.EnableFencing = ptr.To(!c.shouldDisableAutoFencing())
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile csi operator config: %v", err)
@@ -1289,4 +1290,17 @@ func (c *OperatorConfigMapReconciler) hasVolumeSnapshotContentsWithNfsDriver() (
 		return false, fmt.Errorf("failed to list NFS driver VolumeSnapshotContents: %v", err)
 	}
 	return len(vscList.Items) != 0, nil
+}
+
+func (c *OperatorConfigMapReconciler) shouldDisableAutoFencing() bool {
+	infra := &configv1.Infrastructure{}
+	infra.Name = "cluster"
+	if err := c.get(infra); err != nil {
+		c.log.Info("failed to fetch infrastructure resource", "error", err)
+		return true
+	}
+	if infra.Status.PlatformStatus != nil && infra.Status.PlatformStatus.Type == configv1.KubevirtPlatformType {
+		return true
+	}
+	return false
 }
