@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	quotav1 "github.com/openshift/api/quota/v1"
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
-	"os"
-	"strings"
 
 	csiopv1a1 "github.com/ceph/ceph-csi-operator/api/v1alpha1"
 	nbv1 "github.com/noobaa/noobaa-operator/v5/pkg/apis/noobaa/v1alpha1"
@@ -202,6 +203,10 @@ func (r *StorageClientReconciler) reconcilePhases() (ctrl.Result, error) {
 
 	storageClientResponse, err := externalClusterClient.GetStorageConfig(r.ctx, r.storageClient.Status.ConsumerID)
 	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+			r.Log.Info("Client does not meet hub requirements, stopping reconciliation")
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
 	}
 
