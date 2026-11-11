@@ -54,9 +54,9 @@ spec:
       annotations:
         description: mTLS certificate material ({{ $labels.cert_type }}) is not configured in the spec of storage client {{ $labels.storage_client }}. The connection to the storage provider is not secured with mutual TLS.
         message: Storage client {{ $labels.storage_client }} has no mTLS {{ $labels.cert_type }} certificate reference configured.
-        severity_level: warning
+        severity_level: critical
       expr: |
         ocs_client_operator_storage_client_cert_status == 1
       for: 5m
       labels:
-        severity: warning
+        severity: critical
