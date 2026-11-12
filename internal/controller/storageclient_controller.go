@@ -653,6 +653,14 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, fmt.Errorf("failed to get StorageConfig: %v", err)
 	}
 
+	if storageClientResponse.ClientOperatorChannel != "" {
+		if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
+			if err := r.update(&r.storageClient); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
+			}
+		}
+	}
+
 	r.storageClient.Status.InMaintenanceMode = storageClientResponse.MaintenanceMode
 
 	kubeObjectsByGk := map[string]kubeObjectWithOpRecords{}
@@ -686,17 +694,7 @@ func (r *storageClientReconcile) reconcilePhases() (ctrl.Result, error) {
 		return reconcile.Result{}, combinedErr
 	}
 
-	update := false
-	if storageClientResponse.ClientOperatorChannel != "" {
-		if utils.AddAnnotation(&r.storageClient, utils.DesiredSubscriptionChannelAnnotationKey, storageClientResponse.ClientOperatorChannel) {
-			update = true
-		}
-	}
 	if utils.AddAnnotation(&r.storageClient, utils.DesiredConfigHashAnnotationKey, storageClientResponse.DesiredStateHash) {
-		update = true
-	}
-
-	if update {
 		if err := r.update(&r.storageClient); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update StorageClient with desired config hash annotation: %v", err)
 		}
