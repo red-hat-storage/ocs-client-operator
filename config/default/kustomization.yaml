@@ -61,11 +61,11 @@ namePrefix: ocs-client-operator-
 # the following config is for teaching kustomize how to do var substitution
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# the ServiceMonitor is now reconciled from code (see pkg/templates/operatorservicemonitor.go),
+# so on OLM upgrade the CSV-deployed one below is removed and recreated by the operator
+#- ../prometheus
 resources:
 - ../rbac
 - ../manager
 - ../crd
-# the ServiceMonitor is now reconciled from code (see pkg/templates/operatorservicemonitor.go),
-# so on OLM upgrade the CSV-deployed one below is removed and recreated by the operator
-#- ../prometheus
 - metrics_service.yaml
