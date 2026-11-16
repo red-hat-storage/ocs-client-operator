@@ -28,12 +28,15 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	ocsClientOperatorPackageName = "ocs-client-operator"
 )
+
+var requiredFeaturesForFastDiff = []string{"exclusive-lock", "object-map", "fast-diff"}
 
 var _ prometheus.Collector = &ResourceCollector{}
 
@@ -64,10 +67,57 @@ func (c *ResourceCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
+	c.collectRBDStorageClassImageFeatures(ctx, ch)
 	c.collectPVCount(ctx, ch, storageClients, templates.CephFsDriverName)
 	c.collectVSCCount(ctx, ch, storageClients, templates.CephFsDriverName)
 	c.collectUpgradeRequired(ctx, ch, storageClients)
 	c.collectCertStatus(ch, storageClients)
+}
+
+func (c *ResourceCollector) collectRBDStorageClassImageFeatures(ctx context.Context, ch chan<- prometheus.Metric) {
+	storageClasses := &storagev1.StorageClassList{}
+	if err := c.client.List(ctx, storageClasses); err != nil {
+		return
+	}
+
+	desc := prometheus.NewDesc(
+		"ocs_client_operator_storageclass_fast_diff_features_missing",
+		"RBD StorageClass is missing required image features",
+		[]string{"storageclass", "missing_features"}, nil,
+	)
+
+	for i := range storageClasses.Items {
+		sc := &storageClasses.Items[i]
+		if sc.Provisioner != templates.RBDDriverName {
+			continue
+		}
+
+		configuredFeatures := make(map[string]struct{})
+		for _, feature := range strings.Split(sc.Parameters["imageFeatures"], ",") {
+			configuredFeatures[strings.TrimSpace(feature)] = struct{}{}
+		}
+
+		missingFeatures := make([]string, 0, len(requiredFeaturesForFastDiff))
+		for _, feature := range requiredFeaturesForFastDiff {
+			if _, ok := configuredFeatures[feature]; !ok {
+				missingFeatures = append(missingFeatures, feature)
+			}
+		}
+		if len(missingFeatures) == 0 {
+			continue
+		}
+
+		m, err := prometheus.NewConstMetric(
+			desc,
+			prometheus.GaugeValue,
+			1,
+			sc.Name,
+			strings.Join(missingFeatures, ","),
+		)
+		if err == nil {
+			ch <- m
+		}
+	}
 }
 
 // boolToFloat64 maps true to 1 and false to 0 for gauge metric values.

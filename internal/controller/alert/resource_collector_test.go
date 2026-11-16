@@ -26,6 +26,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -39,6 +40,8 @@ func newTestScheme(t *testing.T) *runtime.Scheme {
 	err := v1alpha1.AddToScheme(scheme)
 	assert.NoError(t, err)
 	err = opv1a1.AddToScheme(scheme)
+	assert.NoError(t, err)
+	err = storagev1.AddToScheme(scheme)
 	assert.NoError(t, err)
 	return scheme
 }
@@ -96,6 +99,64 @@ func getLabelValue(metric *dto.Metric, labelName string) string {
 		}
 	}
 	return ""
+}
+
+func collectImageFeatureMetrics(t *testing.T, collector prometheus.Collector) []*dto.Metric {
+	t.Helper()
+	ch := make(chan prometheus.Metric, 10)
+	go func() {
+		collector.Collect(ch)
+		close(ch)
+	}()
+
+	var metrics []*dto.Metric
+	for m := range ch {
+		if !strings.Contains(m.Desc().String(), "ocs_client_operator_storageclass_fast_diff_features_missing") {
+			continue
+		}
+		metric := &dto.Metric{}
+		assert.NoError(t, m.Write(metric))
+		metrics = append(metrics, metric)
+	}
+	return metrics
+}
+
+func TestResourceCollector_StorageClassFastDiffFeatureMissing(t *testing.T) {
+	scheme := newTestScheme(t)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			&storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: "complete"},
+				Provisioner: "openshift-storage.rbd.csi.ceph.com",
+				Parameters:  map[string]string{"imageFeatures": "exclusive-lock,object-map,fast-diff"},
+			},
+			&storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: "partial"},
+				Provisioner: "openshift-storage.rbd.csi.ceph.com",
+				Parameters:  map[string]string{"imageFeatures": " exclusive-lock, fast-diff "},
+			},
+			&storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: "unset"},
+				Provisioner: "openshift-storage.rbd.csi.ceph.com",
+			},
+			&storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: "cephfs"},
+				Provisioner: "openshift-storage.cephfs.csi.ceph.com",
+			},
+		).
+		Build()
+
+	metrics := collectImageFeatureMetrics(t, NewResourceCollector(fakeClient, testNamespace))
+
+	assert.Len(t, metrics, 2)
+	metricsByStorageClass := make(map[string]*dto.Metric, len(metrics))
+	for _, metric := range metrics {
+		metricsByStorageClass[getLabelValue(metric, "storageclass")] = metric
+		assert.Equal(t, float64(1), metric.Gauge.GetValue())
+	}
+	assert.Equal(t, "object-map", getLabelValue(metricsByStorageClass["partial"], "missing_features"))
+	assert.Equal(t, "exclusive-lock,object-map,fast-diff", getLabelValue(metricsByStorageClass["unset"], "missing_features"))
 }
 
 func TestResourceCollector_UpgradeRequired_MatchingChannels_NoMetric(t *testing.T) {

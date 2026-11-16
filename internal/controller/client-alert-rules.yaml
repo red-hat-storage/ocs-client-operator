@@ -7,6 +7,17 @@ spec:
   groups:
   - name: client-provider-alert.rules
     rules:
+    - alert: StorageClassFastDiffFeatureMissing
+      annotations:
+        description: "RBD StorageClass {{ $labels.storageclass }} is missing image features required for efficient fast-diff operations: {{ $labels.missing_features }}."
+        message: Add exclusive-lock, object-map, and fast-diff to parameters.imageFeatures for StorageClass {{ $labels.storageclass }}.
+        severity_level: warning
+        storage_type: ceph
+      expr: |
+        ocs_client_operator_storageclass_fast_diff_features_missing > 0
+      for: 5m
+      labels:
+        severity: warning
     - alert: HighRBDCloneSnapshotCount
       annotations:
         description: Provider alert HighRBDCloneSnapshotCount is firing for storage client {{ $labels.storage_client }}.
