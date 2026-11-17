@@ -13,6 +13,7 @@ import (
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 
 	csiopv1 "github.com/ceph/ceph-csi-operator/api/v1"
+	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -856,6 +857,134 @@ func TestCsiContainerTLSExtraArgs(t *testing.T) {
 			result, err := buildContainerExtraArgs(tt.profile)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestAddKubeApiRateLimitArgs(t *testing.T) {
+	rateLimitContainers := []string{"csi-provisioner", "csi-resizer", "csi-attacher", "csi-snapshotter"}
+	withArgs := func(args ...string) map[string][]string {
+		expected := map[string][]string{}
+		for _, container := range rateLimitContainers {
+			expected[container] = args
+		}
+		return expected
+	}
+	tlsArgs := func() map[string][]string {
+		return map[string][]string{"csi-addons": {"--tls-min-version=VersionTLS12"}}
+	}
+
+	type testCase struct {
+		name     string
+		data     map[string]string
+		input    map[string][]string
+		expected map[string][]string
+	}
+	tests := []testCase{
+		{
+			name:     "no keys leaves nil unchanged",
+			data:     nil,
+			input:    nil,
+			expected: nil,
+		},
+		{
+			name:     "no keys leaves existing args unchanged",
+			data:     map[string]string{"unrelated": "1"},
+			input:    tlsArgs(),
+			expected: tlsArgs(),
+		},
+		{
+			name:     "qps only",
+			data:     map[string]string{csiKubeApiQPSKey: "50"},
+			expected: withArgs("--kube-api-qps=50"),
+		},
+		{
+			name:     "burst only",
+			data:     map[string]string{csiKubeApiBurstKey: "100"},
+			expected: withArgs("--kube-api-burst=100"),
+		},
+		{
+			name:     "both keys",
+			data:     map[string]string{csiKubeApiQPSKey: "50", csiKubeApiBurstKey: "100"},
+			expected: withArgs("--kube-api-qps=50", "--kube-api-burst=100"),
+		},
+		{
+			name:     "fractional qps",
+			data:     map[string]string{csiKubeApiQPSKey: "7.5"},
+			expected: withArgs("--kube-api-qps=7.5"),
+		},
+		{
+			name:     "qps in exponent form is normalized",
+			data:     map[string]string{csiKubeApiQPSKey: "1e2"},
+			expected: withArgs("--kube-api-qps=100"),
+		},
+		{
+			name:     "qps with a plus sign is normalized",
+			data:     map[string]string{csiKubeApiQPSKey: "+50"},
+			expected: withArgs("--kube-api-qps=50"),
+		},
+		{
+			name:     "burst with leading zeros is normalized",
+			data:     map[string]string{csiKubeApiBurstKey: "0100"},
+			expected: withArgs("--kube-api-burst=100"),
+		},
+		{
+			name:     "burst at the int32 limit",
+			data:     map[string]string{csiKubeApiBurstKey: "2147483647"},
+			expected: withArgs("--kube-api-burst=2147483647"),
+		},
+		{
+			name: "coexists with TLS args",
+			data: map[string]string{csiKubeApiQPSKey: "50"},
+			input: map[string][]string{
+				"csi-addons":      {"--tls-min-version=VersionTLS12"},
+				"csi-provisioner": {"--existing=1"},
+			},
+			expected: map[string][]string{
+				"csi-addons":      {"--tls-min-version=VersionTLS12"},
+				"csi-provisioner": {"--existing=1", "--kube-api-qps=50"},
+				"csi-resizer":     {"--kube-api-qps=50"},
+				"csi-attacher":    {"--kube-api-qps=50"},
+				"csi-snapshotter": {"--kube-api-qps=50"},
+			},
+		},
+	}
+	for _, invalid := range []string{"", "abc", "0", "-1", "NaN", "Inf", "-Inf", "1e-50", "1e50", " 5", "5 ", "5qps"} {
+		tests = append(tests, testCase{
+			name:     "invalid qps " + strconv.Quote(invalid) + " is ignored",
+			data:     map[string]string{csiKubeApiQPSKey: invalid},
+			input:    tlsArgs(),
+			expected: tlsArgs(),
+		})
+	}
+	for _, invalid := range []string{"", "abc", "0", "-1", "10.5", "1e2", "2147483648", "99999999999999999999", " 5", "5 "} {
+		tests = append(tests, testCase{
+			name:     "invalid burst " + strconv.Quote(invalid) + " is ignored",
+			data:     map[string]string{csiKubeApiBurstKey: invalid},
+			input:    tlsArgs(),
+			expected: tlsArgs(),
+		})
+	}
+	tests = append(tests,
+		testCase{
+			name:     "invalid qps does not block valid burst",
+			data:     map[string]string{csiKubeApiQPSKey: "abc", csiKubeApiBurstKey: "100"},
+			expected: withArgs("--kube-api-burst=100"),
+		},
+		testCase{
+			name:     "invalid burst does not block valid qps",
+			data:     map[string]string{csiKubeApiQPSKey: "50", csiKubeApiBurstKey: "-5"},
+			expected: withArgs("--kube-api-qps=50"),
+		},
+	)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &OperatorConfigMapReconciler{
+				log:               logr.Discard(),
+				operatorConfigMap: &corev1.ConfigMap{Data: tt.data},
+			}
+			assert.Equal(t, tt.expected, c.addKubeApiRateLimitArgs(tt.input))
 		})
 	}
 }
