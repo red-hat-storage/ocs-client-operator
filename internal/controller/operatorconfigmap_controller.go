@@ -45,6 +45,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"github.com/operator-framework/operator-lib/conditions"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	ocstlsv1 "github.com/red-hat-storage/ocs-tls-profiles/api/v1"
 	admrv1 "k8s.io/api/admissionregistration/v1"
@@ -137,6 +138,7 @@ type OperatorConfigMapReconciler struct {
 	AvailableCrds           map[string]bool
 	TlsProfile              *ocstlsv1.TLSProfile
 	UpdateAlertPollInterval func(time.Duration)
+	OperatorCondition       conditions.Condition
 
 	log                 logr.Logger
 	ctx                 context.Context
@@ -343,6 +345,7 @@ func (c *OperatorConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=subscriptions,verbs=get;list;watch;update;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=installplans,verbs=get;list;watch;patch
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=delete;list
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=operatorconditions,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=operatorconfigs,verbs=get;list;update;create;watch;delete
 //+kubebuilder:rbac:groups=csi.ceph.io,resources=drivers,verbs=get;list;update;create;watch;delete
@@ -382,6 +385,8 @@ func (c *OperatorConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		c.log.Error(err, "failed to list StorageClients")
 		return reconcile.Result{}, err
 	}
+
+	c.setUpgradeableCondition(storageClients)
 
 	disableVersionChecks, err := strconv.ParseBool(cmp.Or(c.operatorConfigMap.Data[disableVersionChecksKey], "false"))
 	if err != nil {
@@ -586,6 +591,43 @@ func (c *OperatorConfigMapReconciler) shouldEnableDriver(driverKey string) bool 
 		return false
 	}
 	return enableDriver
+}
+
+// getClientsWithoutServerCerts returns the number of StorageClients that do not
+// have client certificate authentication configured. A client is considered
+// configured iff both Spec.ServerCAConfigMap.Name and Spec.ClientCertSecret.Name
+// are set, matching the client cert status alert collector.
+func getClientsWithoutServerCerts(storageClients *v1alpha1.StorageClientList) int {
+	var count int
+	for i := range storageClients.Items {
+		spec := &storageClients.Items[i].Spec
+		if spec.ServerCAConfigMap.Name == "" || spec.ClientCertSecret.Name == "" {
+			count++
+		}
+	}
+	return count
+}
+
+// setUpgradeableCondition sets the OLM Upgradeable OperatorCondition to False
+// when any StorageClient lacks client certificate configuration, blocking the
+// operator's upgrade until certs are configured. It only logs on failure so the
+// rest of the reconcile is unaffected.
+func (c *OperatorConfigMapReconciler) setUpgradeableCondition(storageClients *v1alpha1.StorageClientList) {
+	if c.OperatorCondition == nil {
+		return
+	}
+	status := metav1.ConditionTrue
+	reason := "Ready"
+	message := "Operator is upgradeable"
+	if count := getClientsWithoutServerCerts(storageClients); count != 0 {
+		status = metav1.ConditionFalse
+		reason = "ClientCertsMissing"
+		message = fmt.Sprintf("%d StorageClient(s) have client certificate authentication not configured", count)
+	}
+	if err := c.OperatorCondition.Set(c.ctx, status,
+		conditions.WithReason(reason), conditions.WithMessage(message)); err != nil {
+		c.log.Error(err, "Unable to update Upgradeable OperatorCondition")
+	}
 }
 
 // getTopologyLabels returns a map of topology labels from the storage clients status and if the

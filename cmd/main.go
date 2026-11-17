@@ -223,6 +223,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	operatorCondition, err := controller.NewUpgradeable(mgr.GetClient())
+	if err != nil {
+		setupLog.Error(err, "unable to get Upgradeable OperatorCondition")
+		os.Exit(1)
+	}
+
 	if isAPIResourceAvailable(mgr.GetRESTMapper(), schema.GroupVersion{Group: "storage.k8s.io", Version: "v1"}, "volumeattributesclasses") {
 		availCrdsOrResources[controller.VolumeAttributesClassResourceName] = true
 	}
@@ -284,6 +290,7 @@ func main() {
 		AvailableCrds:           availCrdsOrResources,
 		TlsProfile:              startupProfile,
 		UpdateAlertPollInterval: alertRunnable.SetPollInterval,
+		OperatorCondition:       operatorCondition,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
 		os.Exit(1)
