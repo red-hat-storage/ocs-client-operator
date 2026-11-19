@@ -120,6 +120,8 @@ spec:
                 type: string
               inMaintenanceMode:
                 type: boolean
+              message:
+                type: string
               nfsDriverRequirements:
                 properties:
                   ctrlPluginHostNetwork:
