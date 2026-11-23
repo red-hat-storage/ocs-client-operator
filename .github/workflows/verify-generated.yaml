@@ -34,7 +34,7 @@ jobs:
             api/go.sum
       - name: Verify go deps
         run: make godeps-verify
-        if: github.actor != 'dependabot[bot]'
+        if: github.actor != 'dependabot[bot]' && github.actor != 'odf-ci-bot'
       - name: Verify bundle
         run: |
           make bundle

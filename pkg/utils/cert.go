@@ -12,8 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const defaultProviderServerSAN = "ocs-provider-server.openshift-storage.svc"
-
 // LoadClientTLSConfig loads the mTLS certificates configured on a StorageClient and returns a
 // *tls.Config ready for the provider client. Certificates live in the given namespace.
 func LoadClientTLSConfig(
@@ -40,9 +38,28 @@ func LoadClientTLSConfig(
 		if !certPool.AppendCertsFromPEM(serverCA) {
 			return nil, fmt.Errorf("failed to parse server CA certificate")
 		}
+		serverSAN := cmp.Or(storageClient.Spec.ServerSAN, defaultProviderServerSAN(namespace))
 		tlsConfig = &tls.Config{
-			RootCAs:    certPool,
-			ServerName: cmp.Or(storageClient.Spec.ServerSAN, defaultProviderServerSAN),
+			// grpc-go sets ServerName from the endpoint authority, which supplies
+			// the Route hostname for SNI. Verify the backend service SAN separately.
+			InsecureSkipVerify: true, // #nosec G402 - VerifyConnection validates the chain and service SAN.
+			VerifyConnection: func(cs tls.ConnectionState) error {
+				if len(cs.PeerCertificates) == 0 {
+					return fmt.Errorf("server presented no certificate")
+				}
+				intermediatePool := x509.NewCertPool()
+				for _, cert := range cs.PeerCertificates[1:] {
+					intermediatePool.AddCert(cert)
+				}
+
+				_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{
+					Roots:         certPool,
+					Intermediates: intermediatePool,
+					DNSName:       serverSAN,
+					KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+				})
+				return err
+			},
 		}
 	}
 
@@ -95,4 +112,8 @@ func loadClientCertificates(
 	// When the spec configures neither CA nor client cert, all returns are nil;
 	// the caller decides how to proceed (e.g. fall back to an insecure connection).
 	return serverCA, clientCert, clientKey, nil
+}
+
+func defaultProviderServerSAN(namespace string) string {
+	return fmt.Sprintf("ocs-provider-server.%s.svc", namespace)
 }

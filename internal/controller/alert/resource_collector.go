@@ -67,6 +67,36 @@ func (c *ResourceCollector) Collect(ch chan<- prometheus.Metric) {
 	c.collectPVCount(ctx, ch, storageClients, templates.CephFsDriverName)
 	c.collectVSCCount(ctx, ch, storageClients, templates.CephFsDriverName)
 	c.collectUpgradeRequired(ctx, ch, storageClients)
+	c.collectCertStatus(ch, storageClients)
+}
+
+// boolToFloat64 maps true to 1 and false to 0 for gauge metric values.
+func boolToFloat64(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// collectCertStatus reports whether each StorageClient's server CA ConfigMap
+// and client cert Secret references are set in the spec (1 = not configured).
+func (c *ResourceCollector) collectCertStatus(ch chan<- prometheus.Metric, storageClients *v1alpha1.StorageClientList) {
+	desc := prometheus.NewDesc(
+		"ocs_client_operator_storage_client_cert_status",
+		"mTLS certificate configuration status of the StorageClient (0=configured, 1=not configured in spec)",
+		[]string{"storage_client", "cert_type"}, nil,
+	)
+
+	for i := range storageClients.Items {
+		sc := &storageClients.Items[i]
+
+		if m, err := prometheus.NewConstMetric(desc, prometheus.GaugeValue, boolToFloat64(sc.Spec.ServerCAConfigMap.Name == ""), sc.Name, "server_ca"); err == nil {
+			ch <- m
+		}
+		if m, err := prometheus.NewConstMetric(desc, prometheus.GaugeValue, boolToFloat64(sc.Spec.ClientCertSecret.Name == ""), sc.Name, "client_cert"); err == nil {
+			ch <- m
+		}
+	}
 }
 
 func (c *ResourceCollector) clientProfileName(ctx context.Context, sc *v1alpha1.StorageClient) (string, error) {
