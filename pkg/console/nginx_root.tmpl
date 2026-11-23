@@ -60,6 +60,7 @@ http {
         "~*^GET:/[^/]+/[^/]+/[^/]+/?:.*tagging"        1;
         "~*^GET:/[^/]+/[^/]+/[^/]+/?:.*policyStatus"   1;
         "~*^GET:/[^/]+/[^/]+/[^/]+/?:.*publicAccessBlock"  1;
+        "~*^GET:/[^/]+/[^/]+/[^/]+/?:.*object-lock"   1;
 
         # Bucket-level PUT
         "~*^PUT:/[^/]+/[^/]+/[^/]+/?:$"                1; # CreateBucket
@@ -70,6 +71,7 @@ http {
         "~*^PUT:/[^/]+/[^/]+/[^/]+/?:.*policy"         1;
         "~*^PUT:/[^/]+/[^/]+/[^/]+/?:.*publicAccessBlock"  1;
         "~*^PUT:/[^/]+/[^/]+/[^/]+/?:.*encryption"     1;
+        "~*^PUT:/[^/]+/[^/]+/[^/]+/?:.*object-lock"   1;
 
         # Bucket-level DELETE
         "~*^DELETE:/[^/]+/[^/]+/[^/]+/?:$"             1; # DeleteBucket
@@ -82,6 +84,13 @@ http {
 
         # Object-level GET
         "~*^GET:/[^/]+/[^/]+/[^/]+/.+:.*tagging"     1;
+        "~*^GET:/[^/]+/[^/]+/[^/]+/.+:.*retention"    1;
+        "~*^GET:/[^/]+/[^/]+/[^/]+/.+:.*legal-hold"   1;
+
+        # Object-level PUT
+        "~*^PUT:/[^/]+/[^/]+/[^/]+/.+:.*retention"    1;
+        "~*^PUT:/[^/]+/[^/]+/[^/]+/.+:.*legal-hold"   1;
+
 
         # Object-level DELETE
         "~*^DELETE:/[^/]+/[^/]+/[^/]+/.+:.*x-id=DeleteObject"          1;
