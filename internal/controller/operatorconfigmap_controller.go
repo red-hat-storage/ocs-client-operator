@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"net/url"
 	"reflect"
 	goruntime "runtime"
@@ -92,6 +93,8 @@ const (
 	enableCephFsDriverKey             = "enableCephFsDriver"
 	enableNfsDriverKey                = "enableNfsDriver"
 	enableNvmeofDriverKey             = "enableNvmeofDriver"
+	csiKubeApiQPSKey                  = "csiKubeApiQPS"
+	csiKubeApiBurstKey                = "csiKubeApiBurst"
 
 	// AlertPollIntervalKey is the ConfigMap key for the client alert polling interval.
 	AlertPollIntervalKey = "alertPollInterval"
@@ -683,6 +686,7 @@ func (c *OperatorConfigMapReconciler) reconcileDelegatedCSI(storageClients *v1al
 	if err != nil {
 		return err
 	}
+	csiExtraArgs = c.addKubeApiRateLimitArgs(csiExtraArgs)
 
 	csiOperatorConfig := &csiopv1.OperatorConfig{}
 	csiOperatorConfig.Name = templates.CSIOperatorConfigName
@@ -1629,6 +1633,34 @@ func adjustCpuResourcesForIbmZ(req *corev1.ResourceRequirements, adjustFactor fl
 	if cpuQty, exists := req.Requests[corev1.ResourceCPU]; exists {
 		req.Requests[corev1.ResourceCPU] = utils.AdjustCPU(cpuQty, adjustFactor)
 	}
+}
+
+func (c *OperatorConfigMapReconciler) addKubeApiRateLimitArgs(extraArgs map[string][]string) map[string][]string {
+	var args []string
+	if val, ok := c.operatorConfigMap.Data[csiKubeApiQPSKey]; ok {
+		if qps, err := strconv.ParseFloat(val, 32); err == nil && qps > 0 && !math.IsInf(qps, 0) {
+			args = append(args, "--kube-api-qps="+strconv.FormatFloat(qps, 'f', -1, 32))
+		} else {
+			c.log.Error(err, "ignoring invalid configmap key data", "key", csiKubeApiQPSKey, "value", val)
+		}
+	}
+	if val, ok := c.operatorConfigMap.Data[csiKubeApiBurstKey]; ok {
+		if burst, err := strconv.ParseInt(val, 10, 32); err == nil && burst > 0 {
+			args = append(args, "--kube-api-burst="+strconv.FormatInt(burst, 10))
+		} else {
+			c.log.Error(err, "ignoring invalid configmap key data", "key", csiKubeApiBurstKey, "value", val)
+		}
+	}
+	if len(args) == 0 {
+		return extraArgs
+	}
+	if extraArgs == nil {
+		extraArgs = map[string][]string{}
+	}
+	for _, container := range []string{"csi-provisioner", "csi-resizer", "csi-attacher", "csi-snapshotter"} {
+		extraArgs[container] = append(extraArgs[container], args...)
+	}
+	return extraArgs
 }
 
 func buildContainerExtraArgs(tlsProfile *ocstlsv1.TLSProfile) (map[string][]string, error) {
