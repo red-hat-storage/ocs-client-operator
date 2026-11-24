@@ -162,7 +162,7 @@ jobs:
 
       - name: Set up Go ${{ steps.probe.outputs.target_go }}
         if: steps.compare.outputs.should_bump == 'true' && steps.bump.outputs.changed == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6.3.0 (Node 24)
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v6.3.0 (Node 24)
         with:
           go-version: ${{ steps.probe.outputs.target_go }}
           cache: false
